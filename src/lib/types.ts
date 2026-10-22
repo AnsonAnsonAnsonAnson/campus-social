@@ -1,0 +1,146 @@
+// Row shapes mirror supabase/migrations/*.sql (snake_case on purpose, so rows
+// from Supabase can be used directly).
+
+export type ReviewStatus = 'pending' | 'approved' | 'rejected';
+export type SocietyRole = 'owner' | 'admin' | 'editor';
+export type EventStatus = 'draft' | 'published' | 'cancelled';
+export type RegistrationStatus = 'confirmed' | 'waitlisted' | 'cancelled';
+
+export type Profile = {
+  id: string;
+  email: string;
+  display_name: string;
+  college: string | null;
+  major: string | null;
+  year_of_study: number | null;
+  avatar_url: string | null;
+  is_platform_admin: boolean;
+};
+
+export type Society = {
+  id: string;
+  name: string;
+  short_name: string | null;
+  description: string;
+  category: string;
+  college: string | null;
+  logo_url: string | null;
+  cover_url: string | null;
+  instagram: string | null;
+  website: string | null;
+  contact_email: string | null;
+  status: ReviewStatus;
+  verified: boolean;
+  follower_count: number;
+};
+
+export type SocietySummary = Pick<Society, 'id' | 'name' | 'short_name' | 'logo_url' | 'verified'>;
+
+export type CampusEvent = {
+  id: string;
+  society_id: string;
+  title: string;
+  description: string;
+  category: string;
+  location: string;
+  starts_at: string;
+  ends_at: string;
+  cover_url: string | null;
+  status: EventStatus;
+  registration_required: boolean;
+  capacity: number | null;
+  waitlist_enabled: boolean;
+  registration_opens_at: string | null;
+  registration_closes_at: string | null;
+  price_text: string | null;
+  confirmed_count: number;
+  waitlist_count: number;
+};
+
+export type EventWithSociety = CampusEvent & { society: SocietySummary };
+
+export type EventInput = Omit<CampusEvent, 'id' | 'confirmed_count' | 'waitlist_count'> & { id?: string };
+
+export type Registration = {
+  id: string;
+  event_id: string;
+  user_id: string;
+  status: RegistrationStatus;
+  ticket_code: string;
+  checked_in_at: string | null;
+  created_at: string;
+};
+
+export type Ticket = Registration & { event: EventWithSociety };
+
+export type Banner = {
+  id: string;
+  society_id: string;
+  event_id: string | null;
+  title: string;
+  subtitle: string | null;
+  image_url: string | null;
+  starts_at: string;
+  ends_at: string;
+  priority: number;
+  status: ReviewStatus;
+};
+
+export type BannerWithLinks = Banner & { society: SocietySummary; event: CampusEvent | null };
+
+export type CampusDateKind = 'university' | 'college' | 'holiday' | 'term' | 'exam' | 'deadline';
+
+export type CampusDate = {
+  id: string;
+  title: string;
+  kind: CampusDateKind;
+  college: string | null;
+  starts_on: string; // YYYY-MM-DD
+  ends_on: string;
+  url: string | null;
+};
+
+export type Attendee = {
+  registration_id: string;
+  display_name: string;
+  email: string;
+  college: string | null;
+  status: RegistrationStatus;
+  checked_in_at: string | null;
+  created_at: string;
+};
+
+export type CheckInResult = { ok: boolean; name?: string; message: string };
+
+export type MySociety = Society & { role: SocietyRole };
+
+export type SocietyInput = {
+  name: string;
+  short_name: string;
+  description: string;
+  category: string;
+  college: string;
+  instagram: string;
+  contact_email: string;
+};
+
+export type BannerInput = {
+  society_id: string;
+  event_id: string | null;
+  title: string;
+  subtitle: string | null;
+  image_url: string | null;
+  starts_at: string;
+  ends_at: string;
+};
+
+export type EventQuery = {
+  from?: string;
+  to?: string;
+  societyIds?: string[];
+  category?: string;
+  search?: string;
+  /** Include drafts (only returned for societies you help run). */
+  includeDrafts?: boolean;
+  limit?: number;
+};

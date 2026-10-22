@@ -1,0 +1,52 @@
+import { router } from 'expo-router';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { errorMessage } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { compactNumber } from '@/lib/format';
+import { space, useColors } from '@/lib/theme';
+import type { Society } from '@/lib/types';
+
+import { Button, Icon, SocietyAvatar } from './ui';
+
+export function FollowButton({ societyId, small = true }: { societyId: string; small?: boolean }) {
+  const { followIds, toggleFollow } = useAuth();
+  const following = followIds.has(societyId);
+  return (
+    <Button
+      small={small}
+      title={following ? 'Following' : 'Follow'}
+      icon={following ? 'checkmark' : 'add'}
+      variant={following ? 'secondary' : 'primary'}
+      onPress={() => toggleFollow(societyId).catch((e) => Alert.alert('Could not update', errorMessage(e)))}
+    />
+  );
+}
+
+export function SocietyRow({ society }: { society: Society }) {
+  const c = useColors();
+  return (
+    <Pressable
+      onPress={() => router.push(`/society/${society.id}`)}
+      style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.card }]}>
+      <SocietyAvatar name={society.name} uri={society.logo_url} />
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Text style={{ color: c.text, fontSize: 16, fontWeight: '600', flexShrink: 1 }} numberOfLines={1}>
+            {society.name}
+          </Text>
+          {society.verified && <Icon name="checkmark-circle" size={15} color={c.tint} />}
+        </View>
+        <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
+          {society.category}
+          {society.college ? ` · ${society.college}` : ''} · {compactNumber(society.follower_count)} followers
+        </Text>
+      </View>
+      <FollowButton societyId={society.id} />
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md },
+});
