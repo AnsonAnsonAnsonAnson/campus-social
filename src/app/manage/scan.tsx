@@ -93,7 +93,7 @@ export default function Scan() {
           <TextInput
             value={manual}
             onChangeText={setManual}
-            placeholder="Or type ticket code"
+            placeholder="Or type the 8-character code"
             placeholderTextColor="rgba(255,255,255,0.6)"
             autoCapitalize="none"
             autoCorrect={false}

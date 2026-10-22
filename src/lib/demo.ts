@@ -354,7 +354,10 @@ export const demoBackend: Backend = {
     await delay(200);
     const e = state.events.find((x) => x.id === eventId)!;
     if (!isMember(e.society_id)) throw new Error('Only society committee members can check people in');
-    const reg = state.registrations.find((r) => r.ticket_code === code);
+    const typed = code.trim().toLowerCase();
+    const reg =
+      state.registrations.find((r) => r.ticket_code === typed) ??
+      (typed.length === 8 ? state.registrations.find((r) => r.event_id === eventId && r.ticket_code.startsWith(typed)) : undefined);
     if (!reg) return { ok: false, message: 'Ticket not found' };
     const name = state.profile?.display_name ?? 'Student';
     if (reg.event_id !== eventId) return { ok: false, name, message: 'This ticket is for a different event' };
