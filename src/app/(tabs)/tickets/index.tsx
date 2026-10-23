@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { syncReminders } from '@/lib/notifications';
 import { space, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
 export default function Tickets() {
   const c = useColors();
@@ -39,9 +40,9 @@ export default function Tickets() {
         contentContainerStyle={{ flexGrow: 1 }}>
         <EmptyState
           icon="ticket-outline"
-          title="Your tickets live here"
-          body="Sign in with your CUHK email to register for events and get QR tickets."
-          action={<Button title="Sign in" onPress={() => router.push('/sign-in')} />}
+          title={t('Your tickets live here')}
+          body={t('Sign in with your CUHK email to register for events and get QR tickets.')}
+          action={<Button title={t('Sign in')} onPress={() => router.push('/sign-in')} />}
         />
       </ScrollView>
     );
@@ -57,11 +58,11 @@ export default function Tickets() {
       refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}>
       <ChipRow>
         <Chip
-          label={`Upcoming${upcoming.length ? ` (${upcoming.length})` : ''}`}
+          label={upcoming.length ? t('Upcoming ({n})', { n: upcoming.length }) : t('Upcoming')}
           selected={tab === 'upcoming'}
           onPress={() => setTab('upcoming')}
         />
-        <Chip label="Past" selected={tab === 'past'} onPress={() => setTab('past')} />
+        <Chip label={t('Past')} selected={tab === 'past'} onPress={() => setTab('past')} />
       </ChipRow>
       {q.loading && !q.data ? (
         <ListSkeleton rows={3} />
@@ -77,11 +78,11 @@ export default function Tickets() {
       ) : (
         <EmptyState
           icon="ticket-outline"
-          title={tab === 'upcoming' ? 'No upcoming tickets' : 'No past events yet'}
-          body={tab === 'upcoming' ? 'Find something fun on Discover and sign up in one tap.' : undefined}
+          title={tab === 'upcoming' ? t('No upcoming tickets') : t('No past events yet')}
+          body={tab === 'upcoming' ? t('Find something fun on Discover and sign up in one tap.') : undefined}
           action={
             tab === 'upcoming' ? (
-              <Button title="Discover events" variant="secondary" onPress={() => router.navigate('/discover')} />
+              <Button title={t('Discover events')} variant="secondary" onPress={() => router.navigate('/discover')} />
             ) : undefined
           }
         />

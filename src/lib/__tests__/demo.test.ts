@@ -57,7 +57,7 @@ it('tells registrants when an event moves or is cancelled', async () => {
   const hackNight = eid(2);
   const event = (await api.getEvent(hackNight))!;
   await api.saveEvent({ ...event, location: 'LT2' });
-  expect((await api.listNotifications())[0]).toMatchObject({ kind: 'event_updated', body: expect.stringContaining('new place') });
+  expect((await api.listNotifications())[0]).toMatchObject({ kind: 'event_updated', body: expect.stringContaining('地點有變') });
   await api.saveEvent({ ...event, location: 'LT2', status: 'cancelled' });
   expect((await api.listNotifications())[0].kind).toBe('event_cancelled');
   await api.markAllNotificationsRead();

@@ -10,6 +10,7 @@ import { COLLEGES } from '@/lib/constants';
 import { showAlert } from '@/lib/dialog';
 import { pickAndUploadImage } from '@/lib/pickImage';
 import { space, type, useColors } from '@/lib/theme';
+import { t } from '@/lib/i18n';
 
 export default function EditProfile() {
   const c = useColors();
@@ -28,7 +29,7 @@ export default function EditProfile() {
       const url = await pickAndUploadImage([1, 1]);
       if (url) setAvatar(url);
     } catch (e) {
-      showAlert('Could not upload photo', errorMessage(e));
+      showAlert(t('Could not upload photo'), errorMessage(e));
     } finally {
       setUploading(false);
     }
@@ -48,9 +49,9 @@ export default function EditProfile() {
       await refreshProfile();
       invalidate();
       router.back();
-      toast('Profile saved');
+      toast(t('Profile saved'));
     } catch (e) {
-      showAlert('Could not save', errorMessage(e));
+      showAlert(t('Could not save'), errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -65,31 +66,33 @@ export default function EditProfile() {
             <Button
               small
               variant="secondary"
-              title={uploading ? 'Uploading…' : 'Change photo'}
+              title={uploading ? t('Uploading…') : t('Change photo')}
               disabled={uploading}
               onPress={changePhoto}
             />
-            {avatar && <Button small variant="plain" title="Remove" onPress={() => setAvatar(null)} />}
+            {avatar && <Button small variant="plain" title={t('Remove')} onPress={() => setAvatar(null)} />}
           </View>
           <Text style={[type.footnote, { color: c.textSecondary }]}>{profile?.email}</Text>
         </View>
         <Field
-          label="Display name"
+          label={t('Display name')}
           value={name}
           onChangeText={setName}
           maxLength={60}
-          hint="Shown to society committees when you register."
+          hint={t('Shown to society committees when you register.')}
         />
-        <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600', textTransform: 'uppercase' }}>College</Text>
+        <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600', textTransform: 'uppercase' }}>{t('College')}</Text>
         <ChipRow>
           {COLLEGES.map((col) => (
-            <Chip key={col} label={col} selected={college === col} onPress={() => setCollege(col === college ? null : col)} />
+            <Chip key={col} label={t(col)} selected={college === col} onPress={() => setCollege(col === college ? null : col)} />
           ))}
         </ChipRow>
-        <Text style={{ color: c.textSecondary, fontSize: 12, marginTop: -8 }}>Your college’s dates show up in the Calendar tab.</Text>
-        <Field label="Major (optional)" value={major} onChangeText={setMajor} maxLength={80} />
-        <Field label="Year of study (optional)" value={year} onChangeText={setYear} keyboardType="number-pad" maxLength={1} />
-        <Button title="Save" loading={busy} disabled={!name.trim() || uploading} onPress={save} />
+        <Text style={{ color: c.textSecondary, fontSize: 12, marginTop: -8 }}>
+          {t('Your college’s dates show up in the Calendar tab.')}
+        </Text>
+        <Field label={t('Major (optional)')} value={major} onChangeText={setMajor} maxLength={80} />
+        <Field label={t('Year of study (optional)')} value={year} onChangeText={setYear} keyboardType="number-pad" maxLength={1} />
+        <Button title={t('Save')} loading={busy} disabled={!name.trim() || uploading} onPress={save} />
       </ScrollView>
     </KeyboardAvoidingView>
   );

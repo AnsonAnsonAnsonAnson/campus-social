@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
 import { Icon } from './ui';
 
@@ -20,7 +21,7 @@ export function NotificationBell() {
       onPress={() => router.push('/notifications')}
       hitSlop={10}
       accessibilityRole="button"
-      accessibilityLabel={n ? `Notifications, ${n} unread` : 'Notifications'}
+      accessibilityLabel={n ? t('Notifications, {n} unread', { n }) : t('Notifications')}
       style={styles.button}>
       <Icon name={n ? 'notifications' : 'notifications-outline'} size={24} color={c.tint} />
       {n > 0 && (

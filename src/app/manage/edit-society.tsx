@@ -10,6 +10,7 @@ import { COLLEGES, SOCIETY_CATEGORIES } from '@/lib/constants';
 import { showAlert } from '@/lib/dialog';
 import { pickAndUploadImage } from '@/lib/pickImage';
 import { radius, space, type, useColors } from '@/lib/theme';
+import { t } from '@/lib/i18n';
 
 type Form = Required<{ [K in keyof SocietyPatch]: string }>;
 
@@ -38,7 +39,7 @@ export default function EditSociety() {
     api
       .getSociety(societyId)
       .then((s) => {
-        if (!s) throw new Error("You don't have access to this society.");
+        if (!s) throw new Error(t("You don't have access to this society."));
         const f = { ...EMPTY };
         for (const k of Object.keys(EMPTY) as (keyof Form)[]) f[k] = (s[k] as string | null) ?? '';
         setForm(f);
@@ -57,7 +58,7 @@ export default function EditSociety() {
       const url = await pickAndUploadImage(kind === 'logo' ? [1, 1] : [3, 1]);
       if (url) set(kind === 'logo' ? 'logo_url' : 'cover_url')(url);
     } catch (e) {
-      showAlert('Could not upload image', errorMessage(e));
+      showAlert(t('Could not upload image'), errorMessage(e));
     } finally {
       setUploading(null);
     }
@@ -86,9 +87,9 @@ export default function EditSociety() {
       await api.updateSociety(societyId, patch);
       invalidate();
       router.back();
-      toast('Society updated');
+      toast(t('Society updated'));
     } catch (e) {
-      showAlert('Could not save', errorMessage(e));
+      showAlert(t('Could not save'), errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -97,11 +98,11 @@ export default function EditSociety() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-        <Pressable onPress={() => upload('cover')} accessibilityLabel="Change cover image" disabled={!!uploading}>
+        <Pressable onPress={() => upload('cover')} accessibilityLabel={t('Change cover image')} disabled={!!uploading}>
           <Artwork seed={societyId} uri={form.cover_url || null} style={styles.cover}>
             <View style={styles.hint}>
               <Icon name="image-outline" color="#fff" />
-              <Text style={{ color: '#fff', fontWeight: '600' }}>{uploading === 'cover' ? 'Uploading…' : 'Change cover'}</Text>
+              <Text style={{ color: '#fff', fontWeight: '600' }}>{uploading === 'cover' ? t('Uploading…') : t('Change cover')}</Text>
             </View>
           </Artwork>
         </Pressable>
@@ -110,55 +111,72 @@ export default function EditSociety() {
           <Button
             small
             variant="secondary"
-            title={uploading === 'logo' ? 'Uploading…' : 'Change logo'}
+            title={uploading === 'logo' ? t('Uploading…') : t('Change logo')}
             disabled={!!uploading}
             onPress={() => upload('logo')}
           />
         </View>
 
-        <Field label="Society name" value={form.name} onChangeText={set('name')} maxLength={120} />
-        <Field label="Short name" value={form.short_name} onChangeText={set('short_name')} maxLength={30} hint="Shown on event cards." />
+        <Field label={t('Society name')} value={form.name} onChangeText={set('name')} maxLength={120} />
         <Field
-          label="About"
+          label={t('Short name')}
+          value={form.short_name}
+          onChangeText={set('short_name')}
+          maxLength={30}
+          hint={t('Shown on event cards.')}
+        />
+        <Field
+          label={t('About')}
           value={form.description}
           onChangeText={set('description')}
           multiline
           maxLength={1000}
-          placeholder="What does your society do? When do you meet?"
+          placeholder={t('What does your society do? When do you meet?')}
         />
 
-        <Text style={[type.overline, { color: c.textSecondary, marginBottom: -8 }]}>Category</Text>
+        <Text style={[type.overline, { color: c.textSecondary, marginBottom: -8 }]}>{t('Category')}</Text>
         <ChipRow>
           {SOCIETY_CATEGORIES.map((cat) => (
-            <Chip key={cat} label={cat} selected={form.category === cat} onPress={() => set('category')(cat)} />
+            <Chip key={cat} label={t(cat)} selected={form.category === cat} onPress={() => set('category')(cat)} />
           ))}
         </ChipRow>
-        <Text style={[type.overline, { color: c.textSecondary, marginBottom: -8 }]}>College</Text>
+        <Text style={[type.overline, { color: c.textSecondary, marginBottom: -8 }]}>{t('College')}</Text>
         <ChipRow>
           {COLLEGES.map((col) => (
-            <Chip key={col} label={col} selected={form.college === col} onPress={() => set('college')(form.college === col ? '' : col)} />
+            <Chip
+              key={col}
+              label={t(col)}
+              selected={form.college === col}
+              onPress={() => set('college')(form.college === col ? '' : col)}
+            />
           ))}
         </ChipRow>
 
-        <Field label="Instagram" value={form.instagram} onChangeText={set('instagram')} placeholder="@yoursociety" autoCapitalize="none" />
         <Field
-          label="Website"
+          label={t('Instagram')}
+          value={form.instagram}
+          onChangeText={set('instagram')}
+          placeholder="@yoursociety"
+          autoCapitalize="none"
+        />
+        <Field
+          label={t('Website')}
           value={form.website}
           onChangeText={set('website')}
           placeholder="https://"
           autoCapitalize="none"
           keyboardType="url"
-          hint={websiteOk ? undefined : 'Start with https://'}
+          hint={websiteOk ? undefined : t('Start with https://')}
         />
         <Field
-          label="Contact email"
+          label={t('Contact email')}
           value={form.contact_email}
           onChangeText={set('contact_email')}
           keyboardType="email-address"
           autoCapitalize="none"
-          hint={emailOk ? undefined : 'Check the email address'}
+          hint={emailOk ? undefined : t('Check the email address')}
         />
-        <Button title="Save" loading={busy} disabled={!valid || !!uploading} onPress={save} />
+        <Button title={t('Save')} loading={busy} disabled={!valid || !!uploading} onPress={save} />
       </ScrollView>
     </KeyboardAvoidingView>
   );

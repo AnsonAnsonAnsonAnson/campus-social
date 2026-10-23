@@ -11,7 +11,7 @@ type ToastMessage = { id: number; text: string; icon: IconName; tone: 'success' 
 const listeners = new Set<(t: ToastMessage) => void>();
 let counter = 0;
 
-/** Brief confirmation shown above the tab bar, e.g. toast('Event saved'). */
+/** Brief confirmation shown above the tab bar, e.g. toast(t('Event saved')). */
 export function toast(text: string, opts: { icon?: IconName; tone?: ToastMessage['tone'] } = {}) {
   const tone = opts.tone ?? 'success';
   const icon = opts.icon ?? (tone === 'error' ? 'alert-circle' : tone === 'info' ? 'information-circle' : 'checkmark-circle');

@@ -12,6 +12,7 @@ import { showAlert } from '@/lib/dialog';
 import { markOnboarded } from '@/lib/onboarding';
 import { radius, space, type, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
+import { changeLanguage, LANGUAGES, t, useLang } from '@/lib/i18n';
 
 /** First-run setup: name, college and a few societies to follow, so Discover has something personal from day one. */
 export default function Welcome() {
@@ -21,6 +22,7 @@ export default function Welcome() {
   const [college, setCollege] = useState<string | null>(profile?.college ?? null);
   const [interests, setInterests] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const lang = useLang();
 
   const societies = useQuery(() => api.listSocieties({}));
 
@@ -50,7 +52,7 @@ export default function Welcome() {
       if (router.canGoBack()) router.back();
       else router.replace('/discover');
     } catch (e) {
-      showAlert('Could not save', errorMessage(e));
+      showAlert(t('Could not save'), errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -62,7 +64,7 @@ export default function Welcome() {
         options={{
           headerRight: () => (
             <Pressable onPress={() => finish(false)} hitSlop={10} accessibilityRole="button">
-              <Text style={{ color: c.tint, fontSize: 17 }}>Skip</Text>
+              <Text style={{ color: c.tint, fontSize: 17 }}>{t('Skip')}</Text>
             </Pressable>
           ),
         }}
@@ -70,40 +72,48 @@ export default function Welcome() {
       <ScrollView
         contentContainerStyle={{ paddingVertical: space.lg, gap: space.lg, paddingBottom: 60 }}
         keyboardShouldPersistTaps="handled">
+        <ChipRow>
+          {LANGUAGES.map((l) => (
+            <Chip key={l.code} label={l.label} selected={lang === l.code} onPress={() => changeLanguage(l.code, '/welcome')} />
+          ))}
+        </ChipRow>
+
         <View style={{ paddingHorizontal: space.lg, gap: space.xs }}>
-          <Text style={[type.largeTitle, { color: c.text }]}>Welcome to Campus Social</Text>
+          <Text style={[type.largeTitle, { color: c.text }]}>{t('Welcome to Campus Social')}</Text>
           <Text style={[type.subhead, { color: c.textSecondary, lineHeight: 21 }]}>
-            Three quick things and your feed will be all about what you’re into.
+            {t('Three quick things and your feed will be all about what you’re into.')}
           </Text>
         </View>
 
         <View style={{ paddingHorizontal: space.lg }}>
           <Field
-            label="Your name"
+            label={t('Your name')}
             value={name}
             onChangeText={setName}
             maxLength={60}
-            hint="Committees see this when you sign up for events."
+            hint={t('Committees see this when you sign up for events.')}
           />
         </View>
 
-        <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg, marginBottom: -8 }]}>Your college</Text>
+        <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg, marginBottom: -8 }]}>{t('Your college')}</Text>
         <ChipRow>
           {COLLEGES.map((col) => (
-            <Chip key={col} label={col} selected={college === col} onPress={() => setCollege(col === college ? null : col)} />
+            <Chip key={col} label={t(col)} selected={college === col} onPress={() => setCollege(col === college ? null : col)} />
           ))}
         </ChipRow>
 
-        <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg, marginBottom: -8 }]}>What are you into?</Text>
+        <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg, marginBottom: -8 }]}>
+          {t('What are you into?')}
+        </Text>
         <ChipRow>
           {SOCIETY_CATEGORIES.filter((cat) => cat !== 'Other').map((cat) => (
-            <Chip key={cat} label={cat} selected={interests.has(cat)} onPress={() => toggleInterest(cat)} />
+            <Chip key={cat} label={t(cat)} selected={interests.has(cat)} onPress={() => toggleInterest(cat)} />
           ))}
         </ChipRow>
 
         <View style={{ gap: space.sm }}>
           <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg }]}>
-            Societies to follow {followIds.size ? `· ${followIds.size} following` : ''}
+            {t('Societies to follow')} {followIds.size ? `· ${t('{n} following', { n: followIds.size })}` : ''}
           </Text>
           <View style={{ marginHorizontal: space.lg, borderRadius: radius.md, overflow: 'hidden' }}>
             {societies.loading && !societies.data
@@ -113,7 +123,7 @@ export default function Welcome() {
         </View>
 
         <View style={{ paddingHorizontal: space.lg }}>
-          <Button title="Done" loading={busy} disabled={!name.trim()} onPress={() => finish(true)} />
+          <Button title={t('Done')} loading={busy} disabled={!name.trim()} onPress={() => finish(true)} />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

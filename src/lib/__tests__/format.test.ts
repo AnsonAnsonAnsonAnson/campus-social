@@ -1,6 +1,10 @@
-import { describe, expect, it } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 
 import { addDays, availability, compactNumber, formatAgo, formatTime, hkDate, hkDayBounds } from '../format';
+import { setLang } from '../i18n';
+
+// These check the English wording; i18n.test.ts covers Chinese.
+beforeAll(() => setLang('en'));
 
 const base = {
   status: 'published',

@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { availability, formatDay, formatTime, formatWhen } from '@/lib/format';
 import { radius, space, useColors } from '@/lib/theme';
 import type { EventWithSociety } from '@/lib/types';
+import { t } from '@/lib/i18n';
 
 import { Artwork, Icon, Pill } from './ui';
 
@@ -63,7 +64,7 @@ export function EventRow({ event }: { event: EventWithSociety }) {
           {formatWhen(event.starts_at)}
         </Text>
         <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }} numberOfLines={2}>
-          {event.status === 'cancelled' ? `Cancelled: ${event.title}` : event.title}
+          {event.status === 'cancelled' ? t('Cancelled: {title}', { title: event.title }) : event.title}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Icon name="location-outline" size={13} />

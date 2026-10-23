@@ -10,6 +10,7 @@ import { pickAndUploadImage } from '@/lib/pickImage';
 import { radius, space, useColors } from '@/lib/theme';
 import type { ReviewStatus } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
 const REVIEW_TONE: Record<ReviewStatus, 'warning' | 'success' | 'danger'> = { pending: 'warning', approved: 'success', rejected: 'danger' };
 
@@ -32,7 +33,7 @@ export default function ManageSociety() {
   if (q.loading) return <Loading />;
   if (q.error) return <ErrorView message={q.error} onRetry={q.refresh} />;
   const s = q.data?.society;
-  if (!s) return <ErrorView message="You don't have access to this society." />;
+  if (!s) return <ErrorView message={t("You don't have access to this society.")} />;
 
   const isAdmin = q.data!.role !== 'editor';
 
@@ -44,18 +45,18 @@ export default function ManageSociety() {
       await api.updateSociety(s.id, { logo_url: url });
       invalidate();
     } catch (e) {
-      showAlert('Could not update logo', errorMessage(e));
+      showAlert(t('Could not update logo'), errorMessage(e));
     }
   };
 
   const removeBanner = async (id: string, title: string) => {
-    if (!(await confirmAsync('Remove banner?', `“${title}” will stop showing on Discover.`, 'Remove', true))) return;
+    if (!(await confirmAsync(t('Remove banner?'), t('“{title}” will stop showing on Discover.', { title }), t('Remove'), true))) return;
     try {
       await api.deleteBanner(id);
       invalidate();
-      toast('Banner removed');
+      toast(t('Banner removed'));
     } catch (e) {
-      showAlert('Could not remove', errorMessage(e));
+      showAlert(t('Could not remove'), errorMessage(e));
     }
   };
 
@@ -70,35 +71,45 @@ export default function ManageSociety() {
       <Stack.Screen options={{ title: s.short_name ?? s.name }} />
 
       <Card style={styles.header}>
-        <Pressable onPress={changeLogo} disabled={!isAdmin} accessibilityLabel="Change logo">
+        <Pressable onPress={changeLogo} disabled={!isAdmin} accessibilityLabel={t('Change logo')}>
           <SocietyAvatar name={s.name} uri={s.logo_url} size={64} />
         </Pressable>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={{ color: c.text, fontSize: 18, fontWeight: '700' }}>{s.name}</Text>
           <View style={{ flexDirection: 'row', gap: space.sm }}>
             <Pill
-              label={s.status === 'approved' ? (s.verified ? 'Verified' : 'Live') : s.status === 'pending' ? 'Pending review' : 'Rejected'}
+              label={
+                s.status === 'approved'
+                  ? s.verified
+                    ? t('Verified')
+                    : t('Live')
+                  : s.status === 'pending'
+                    ? t('Pending review')
+                    : t('Rejected')
+              }
               tone={REVIEW_TONE[s.status]}
             />
-            <Pill label={`You: ${q.data!.role}`} />
+            <Pill label={t('You: {role}', { role: t(q.data!.role) })} />
           </View>
         </View>
       </Card>
       {s.status === 'pending' && (
         <Text style={[styles.note, { color: c.textSecondary }]}>
-          The Student Affairs team is reviewing your society. You can prepare events now; students will see them once you’re approved.
+          {t(
+            'The Student Affairs team is reviewing your society. You can prepare events now; students will see them once you’re approved.',
+          )}
         </Text>
       )}
 
       <View style={styles.stats}>
-        <Stat label="Followers" value={compactNumber(s.follower_count)} />
-        <Stat label="Upcoming" value={String(upcoming.filter((e) => e.ends_at >= new Date().toISOString()).length)} />
-        <Stat label="Sign-ups" value={compactNumber(totalGoing)} />
+        <Stat label={t('Followers')} value={compactNumber(s.follower_count)} />
+        <Stat label={t('Upcoming')} value={String(upcoming.filter((e) => e.ends_at >= new Date().toISOString()).length)} />
+        <Stat label={t('Sign-ups')} value={compactNumber(totalGoing)} />
       </View>
 
       <Button
         style={{ marginHorizontal: space.lg }}
-        title="New event"
+        title={t('New event')}
         icon="add"
         onPress={() => router.push({ pathname: '/manage/event-form', params: { societyId: s.id } })}
       />
@@ -108,20 +119,20 @@ export default function ManageSociety() {
           {isAdmin && (
             <ListRow
               icon="create-outline"
-              title="Edit society details"
+              title={t('Edit society details')}
               onPress={() => router.push({ pathname: '/manage/edit-society', params: { societyId: s.id } })}
             />
           )}
           <ListRow
             icon="people-outline"
-            title="Committee"
+            title={t('Committee')}
             onPress={() => router.push({ pathname: '/manage/members', params: { societyId: s.id } })}
           />
-          <ListRow icon="eye-outline" title="View public page" onPress={() => router.push(`/society/${s.id}`)} />
+          <ListRow icon="eye-outline" title={t('View public page')} onPress={() => router.push(`/society/${s.id}`)} />
         </ListGroup>
       </View>
 
-      <SectionHeader title="Events" />
+      <SectionHeader title={t('Events')} />
       {upcoming.length ? (
         <View style={{ gap: space.sm }}>
           {upcoming.map((e) => (
@@ -139,12 +150,13 @@ export default function ManageSociety() {
                 {e.removed_at ? (
                   <Pill label="hidden" tone="danger" />
                 ) : (
-                  <Pill label={e.status} tone={e.status === 'published' ? 'success' : e.status === 'draft' ? 'warning' : 'danger'} />
+                  <Pill label={t(e.status)} tone={e.status === 'published' ? 'success' : e.status === 'draft' ? 'warning' : 'danger'} />
                 )}
                 {e.registration_required && (
                   <Text style={{ color: c.textSecondary, fontSize: 13 }}>
-                    {e.confirmed_count}
-                    {e.capacity ? `/${e.capacity}` : ''} going
+                    {e.capacity
+                      ? t('{n}/{capacity} going', { n: e.confirmed_count, capacity: e.capacity })
+                      : t('{n} going', { n: e.confirmed_count })}
                   </Text>
                 )}
               </View>
@@ -154,28 +166,28 @@ export default function ManageSociety() {
       ) : (
         <EmptyState
           icon="calendar-outline"
-          title="No events yet"
-          body="Create your first event. Students who follow you will see it on Discover."
+          title={t('No events yet')}
+          body={t('Create your first event. Students who follow you will see it on Discover.')}
         />
       )}
 
-      <SectionHeader title="Promotional banners" />
+      <SectionHeader title={t('Promotional banners')} />
       {q.data!.banners.length ? (
         <View style={{ gap: space.sm }}>
           {q.data!.banners.map((b) => (
             <View key={b.id} style={[styles.eventRow, { backgroundColor: c.card }]}>
               <View style={{ flex: 1, gap: 3 }}>
                 <Text style={{ color: c.text, fontWeight: '600' }}>{b.title}</Text>
-                <Text style={{ color: c.textSecondary, fontSize: 13 }}>Until {formatWhen(b.ends_at)}</Text>
+                <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('Until {when}', { when: formatWhen(b.ends_at) })}</Text>
               </View>
-              <Pill label={b.status} tone={REVIEW_TONE[b.status]} />
-              <Button small variant="plain" title="Remove" onPress={() => removeBanner(b.id, b.title)} />
+              <Pill label={t(b.status)} tone={REVIEW_TONE[b.status]} />
+              <Button small variant="plain" title={t('Remove')} onPress={() => removeBanner(b.id, b.title)} />
             </View>
           ))}
         </View>
       ) : (
         <Text style={{ color: c.textSecondary, marginHorizontal: space.lg }}>
-          Open one of your events and tap Promote to request a banner on the Discover page.
+          {t('Open one of your events and tap Promote to request a banner on the Discover page.')}
         </Text>
       )}
     </ScrollView>

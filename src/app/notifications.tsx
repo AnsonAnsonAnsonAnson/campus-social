@@ -12,6 +12,7 @@ import { formatAgo, hkDate, todayHK } from '@/lib/format';
 import { radius, space, type, useColors } from '@/lib/theme';
 import type { AppNotification, NotificationKind } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
 const ICONS: Record<NotificationKind, IconName> = {
   waitlist_promoted: 'ticket',
@@ -40,8 +41,8 @@ export default function Notifications() {
     const today = todayHK();
     const all = q.data ?? [];
     return [
-      { title: 'Today', data: all.filter((n) => hkDate(n.created_at) === today) },
-      { title: 'Earlier', data: all.filter((n) => hkDate(n.created_at) !== today) },
+      { title: t('Today'), data: all.filter((n) => hkDate(n.created_at) === today) },
+      { title: t('Earlier'), data: all.filter((n) => hkDate(n.created_at) !== today) },
     ].filter((s) => s.data.length);
   }, [q.data]);
 
@@ -52,7 +53,7 @@ export default function Notifications() {
   };
 
   const remove = async (n: AppNotification) => {
-    if (!(await confirmAsync('Delete notification?', n.title, 'Delete', true))) return;
+    if (!(await confirmAsync(t('Delete notification?'), n.title, t('Delete'), true))) return;
     try {
       await api.deleteNotification(n.id);
       invalidate();
@@ -63,7 +64,7 @@ export default function Notifications() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Notifications' }} />
+      <Stack.Screen options={{ title: t('Notifications') }} />
       {q.loading && !q.data ? (
         <ListSkeleton rows={5} />
       ) : q.error && !q.data ? (
@@ -80,8 +81,10 @@ export default function Notifications() {
           ListEmptyComponent={
             <EmptyState
               icon="notifications-outline"
-              title="You're all caught up"
-              body="We'll let you know when you get off a waitlist, an event you joined changes, or a society you follow posts something new."
+              title={t("You're all caught up")}
+              body={t(
+                'We’ll let you know when you get off a waitlist, an event you joined changes, or a society you follow posts something new.',
+              )}
             />
           }
           renderSectionHeader={({ section }) => <Text style={[styles.section, { color: c.textSecondary }]}>{section.title}</Text>}
@@ -94,8 +97,8 @@ export default function Notifications() {
                 onPress={tappable ? () => open(item) : undefined}
                 onLongPress={() => remove(item)}
                 accessibilityRole={tappable ? 'button' : undefined}
-                accessibilityLabel={`${unread ? 'Unread. ' : ''}${item.title}. ${item.body}. ${formatAgo(item.created_at)}`}
-                accessibilityHint="Long press to delete"
+                accessibilityLabel={`${unread ? t('Unread. ') : ''}${item.title}. ${item.body}. ${formatAgo(item.created_at)}`}
+                accessibilityHint={t('Long press to delete')}
                 style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.card }]}>
                 <View style={[styles.icon, { backgroundColor: item.kind === 'event_cancelled' ? c.danger : c.tint }]}>
                   <Icon name={ICONS[item.kind]} size={18} color="#fff" />

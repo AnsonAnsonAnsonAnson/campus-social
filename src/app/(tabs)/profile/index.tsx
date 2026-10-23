@@ -20,6 +20,7 @@ import {
 } from '@/lib/notifications';
 import { space, type, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
+import { changeLanguage, LANGUAGES, t, useLang } from '@/lib/i18n';
 
 export default function Profile() {
   const c = useColors();
@@ -27,6 +28,13 @@ export default function Profile() {
   const societies = useQuery(() => api.mySocieties(), [user?.id]);
   const unread = useQuery(() => api.unreadNotificationCount(), [user?.id]);
   const notif = useQuery(async () => ({ permission: await permissionState(), reminders: await remindersEnabled() }));
+  const lang = useLang();
+
+  const pickLanguage = () =>
+    showAlert('語言 · Language', undefined, [
+      ...LANGUAGES.map((l) => ({ text: l.label, onPress: () => changeLanguage(l.code, '/profile') })),
+      { text: t('Cancel'), style: 'cancel' as const },
+    ]);
 
   const toggleReminders = async (on: boolean) => {
     if (on && notif.data?.permission === 'undetermined' && !(await requestPermission())) {
@@ -36,29 +44,31 @@ export default function Profile() {
     await setRemindersEnabled(on);
     if (on) registerForPush();
     notif.refresh();
-    toast(on ? "Reminders on. We'll nudge you an hour before." : 'Reminders off', { tone: 'info' });
+    toast(on ? t("Reminders on. We'll nudge you an hour before.") : t('Reminders off'), { tone: 'info' });
   };
 
   const signOut = async () => {
     await unregisterForPush();
     await api.signOut();
-    toast('Signed out', { tone: 'info' });
+    toast(t('Signed out'), { tone: 'info' });
   };
 
   const confirmDelete = () =>
     showAlert(
-      'Delete your account?',
-      'This permanently deletes your profile, follows and tickets. Society events you created stay with the society. This cannot be undone.',
+      t('Delete your account?'),
+      t(
+        'This permanently deletes your profile, follows and tickets. Society events you created stay with the society. This cannot be undone.',
+      ),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('Cancel'), style: 'cancel' },
         {
-          text: 'Delete account',
+          text: t('Delete account'),
           style: 'destructive',
           onPress: () =>
             unregisterForPush()
               .then(() => api.deleteAccount())
-              .then(() => toast('Your account was deleted', { tone: 'info' }))
-              .catch((e) => showAlert('Could not delete account', errorMessage(e))),
+              .then(() => toast(t('Your account was deleted'), { tone: 'info' }))
+              .catch((e) => showAlert(t('Could not delete account'), errorMessage(e))),
         },
       ],
     );
@@ -70,9 +80,9 @@ export default function Profile() {
       contentContainerStyle={{ paddingBottom: 48, gap: space.xl, paddingTop: space.md }}>
       {api.isDemo && (
         <Card style={{ marginHorizontal: space.lg, gap: 6 }}>
-          <Pill label="Demo mode" tone="brand" />
+          <Pill label={t('Demo mode')} tone="brand" />
           <Text style={{ color: c.textSecondary, fontSize: 14, lineHeight: 20 }}>
-            You are seeing sample data. Sign in with any CUHK email and code 123456. Connect Supabase (see README) to go live.
+            {t('You are seeing sample data. Sign in with any CUHK email and code 123456. Connect Supabase (see README) to go live.')}
           </Text>
         </Card>
       )}
@@ -87,48 +97,50 @@ export default function Profile() {
             <Text style={{ color: c.textSecondary }} numberOfLines={1}>
               {user.email}
             </Text>
-            {!!profile?.college && <Text style={{ color: c.tint, fontWeight: '600' }}>{profile.college} College</Text>}
+            {!!profile?.college && (
+              <Text style={{ color: c.tint, fontWeight: '600' }}>{t('{college} College', { college: t(profile.college) })}</Text>
+            )}
           </View>
-          <Button small variant="secondary" title="Edit" onPress={() => router.push('/edit-profile')} />
+          <Button small variant="secondary" title={t('Edit')} onPress={() => router.push('/edit-profile')} />
         </Card>
       ) : (
         <EmptyState
           icon="person-circle-outline"
-          title="Sign in with your CUHK email"
-          body="Follow societies, register for events and keep your tickets in one place."
-          action={<Button title="Sign in" onPress={() => router.push('/sign-in')} />}
+          title={t('Sign in with your CUHK email')}
+          body={t('Follow societies, register for events and keep your tickets in one place.')}
+          action={<Button title={t('Sign in')} onPress={() => router.push('/sign-in')} />}
         />
       )}
 
       {user && (
-        <ListGroup title="Societies you help run">
+        <ListGroup title={t('Societies you help run')}>
           {(societies.data ?? []).map((s) => (
             <ListRow
               key={s.id}
               icon={s.status === 'approved' ? 'people' : 'hourglass-outline'}
               title={s.name}
-              value={s.status === 'approved' ? s.role : 'Pending review'}
+              value={s.status === 'approved' ? t(s.role) : t('Pending review')}
               onPress={() => router.push(`/manage/${s.id}`)}
             />
           ))}
-          <ListRow icon="add-circle-outline" title="Register a society" onPress={() => router.push('/new-society')} />
+          <ListRow icon="add-circle-outline" title={t('Register a society')} onPress={() => router.push('/new-society')} />
         </ListGroup>
       )}
 
       {user && (
-        <ListGroup title="Notifications">
+        <ListGroup title={t('Notifications')}>
           <ListRow
             icon="notifications-outline"
-            title="Inbox"
-            value={unread.data ? `${unread.data} new` : undefined}
+            title={t('Inbox')}
+            value={unread.data ? t('{n} new', { n: unread.data }) : undefined}
             onPress={() => router.push('/notifications')}
           />
           {notificationsSupported && notif.data && (
             <View style={[styles.switchRow, { backgroundColor: c.card }]}>
               <Icon name="alarm-outline" size={20} color={c.tint} />
               <View style={{ flex: 1 }}>
-                <Text style={[type.body, { color: c.text }]}>Event reminders</Text>
-                <Text style={[type.footnote, { color: c.textSecondary }]}>An hour before events you’re going to</Text>
+                <Text style={[type.body, { color: c.text }]}>{t('Event reminders')}</Text>
+                <Text style={[type.footnote, { color: c.textSecondary }]}>{t('An hour before events you’re going to')}</Text>
               </View>
               <Switch
                 value={notif.data.reminders && notif.data.permission === 'granted'}
@@ -139,28 +151,37 @@ export default function Profile() {
             </View>
           )}
           {notificationsSupported && notif.data?.permission === 'denied' && (
-            <ListRow icon="settings-outline" title="Allow notifications in Settings" onPress={() => Linking.openSettings()} />
+            <ListRow icon="settings-outline" title={t('Allow notifications in Settings')} onPress={() => Linking.openSettings()} />
           )}
         </ListGroup>
       )}
 
       {profile?.is_platform_admin && (
-        <ListGroup title="Admin">
-          <ListRow icon="shield-checkmark-outline" title="Review queue" onPress={() => router.push('/admin')} />
+        <ListGroup title={t('Admin')}>
+          <ListRow icon="shield-checkmark-outline" title={t('Review queue')} onPress={() => router.push('/admin')} />
         </ListGroup>
       )}
 
-      <ListGroup title="About">
-        <ListRow icon="lock-closed-outline" title="Privacy policy" onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} />
-        <ListRow icon="document-text-outline" title="Terms of use" onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)} />
-        <ListRow icon="mail-outline" title="Contact support" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
-        <ListRow icon="information-circle-outline" title="Version" value={Constants.expoConfig?.version ?? '1.0.0'} />
+      <ListGroup>
+        <ListRow
+          icon="language-outline"
+          title={t('Language')}
+          value={LANGUAGES.find((l) => l.code === lang)?.label}
+          onPress={pickLanguage}
+        />
+      </ListGroup>
+
+      <ListGroup title={t('About')}>
+        <ListRow icon="lock-closed-outline" title={t('Privacy policy')} onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} />
+        <ListRow icon="document-text-outline" title={t('Terms of use')} onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)} />
+        <ListRow icon="mail-outline" title={t('Contact support')} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
+        <ListRow icon="information-circle-outline" title={t('Version')} value={Constants.expoConfig?.version ?? '1.0.0'} />
       </ListGroup>
 
       {user && (
         <ListGroup>
-          <ListRow icon="log-out-outline" title="Sign out" onPress={signOut} />
-          <ListRow icon="trash-outline" title="Delete account" destructive onPress={confirmDelete} />
+          <ListRow icon="log-out-outline" title={t('Sign out')} onPress={signOut} />
+          <ListRow icon="trash-outline" title={t('Delete account')} destructive onPress={confirmDelete} />
         </ListGroup>
       )}
     </ScrollView>

@@ -3,6 +3,7 @@
 import type { AuthUser, Backend } from './backend';
 import { isCuhkEmail } from './backend';
 import { makeDemoBanners, makeDemoCampusDates, makeDemoEvents, demoSocieties } from './demoData';
+import { t } from './i18n';
 import type {
   AppNotification,
   Attendee,
@@ -92,7 +93,7 @@ function seedDemoInbox() {
     return {
       id: uid(),
       kind: 'new_event' as const,
-      title: `New from ${s.short_name ?? s.name}`,
+      title: t('New from {society}', { society: s.short_name ?? s.name }),
       body: e.title,
       event_id: e.id,
       society_id: s.id,
@@ -164,7 +165,12 @@ function fillFromWaitlist(e: CampusEvent) {
     next.status = 'confirmed';
     e.confirmed_count++;
     e.waitlist_count = Math.max(0, e.waitlist_count - 1);
-    notify('waitlist_promoted', 'You got a spot!', `A place opened up for ${e.title}. Your QR ticket is ready.`, e.id);
+    notify(
+      'waitlist_promoted',
+      t('You got a spot!'),
+      t('A place opened up for {title}. Your QR ticket is ready.', { title: e.title }),
+      e.id,
+    );
   }
 }
 
@@ -440,13 +446,26 @@ export const demoBackend: Backend = {
       // in demo mode there is only one person, so these are shown for illustration.
       const registered = state.registrations.some((r) => r.event_id === e.id && r.status !== 'cancelled');
       if (before.status === 'published' && e.status === 'cancelled' && registered) {
-        notify('event_cancelled', 'Event cancelled', `${e.title} has been cancelled.`, e.id, e.society_id);
+        const s = state.societies.find((x) => x.id === e.society_id)!;
+        const society = s.short_name ?? s.name;
+        notify(
+          'event_cancelled',
+          t('Event cancelled'),
+          t('{title} by {society} has been cancelled.', { title: e.title, society }),
+          e.id,
+          e.society_id,
+        );
       } else if (before.status === 'published' && e.status === 'published' && registered) {
         const time = before.starts_at !== e.starts_at;
         const place = before.location !== e.location;
         if (time || place) {
-          const what = time && place ? 'time and place' : time ? 'time' : 'place';
-          notify('event_updated', 'Event details changed', `${e.title} has a new ${what}. Check the details.`, e.id, e.society_id);
+          const body =
+            time && place
+              ? t('{title} has a new time and place. Check the details.', { title: e.title })
+              : time
+                ? t('{title} has a new time. Check the details.', { title: e.title })
+                : t('{title} has a new place. Check the details.', { title: e.title });
+          notify('event_updated', t('Event details changed'), body, e.id, e.society_id);
         }
       }
       return e.id;
@@ -606,7 +625,7 @@ export const demoBackend: Backend = {
     const wasApproved = s.status === 'approved';
     Object.assign(s, { status, verified });
     if (status === 'approved' && !wasApproved && isMember(id)) {
-      notify('society_approved', 'Your society is live', `${s.name} is now visible to every student.`, null, id);
+      notify('society_approved', t('Your society is live'), t('{name} is now visible to every student.', { name: s.name }), null, id);
     }
   },
   async reviewBanner(id, status, priority) {

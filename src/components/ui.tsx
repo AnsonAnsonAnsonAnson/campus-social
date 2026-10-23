@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 
 import { artFor, radius, space, useColors } from '@/lib/theme';
+import { t } from '@/lib/i18n';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -152,9 +153,9 @@ export function ErrorView({ message, onRetry }: { message: string; onRetry?: () 
   return (
     <EmptyState
       icon="cloud-offline-outline"
-      title="Something went wrong"
+      title={t('Something went wrong')}
       body={message}
-      action={onRetry && <Button title="Try again" variant="secondary" onPress={onRetry} />}
+      action={onRetry && <Button title={t('Try again')} variant="secondary" onPress={onRetry} />}
     />
   );
 }
