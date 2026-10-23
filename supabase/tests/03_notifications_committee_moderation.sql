@@ -61,7 +61,7 @@ select tests.login('00000000-0000-0000-0000-0000000000c1');
 update public.events set location = 'LT1' where id = :'eid';
 update public.events set title = 'Renamed' where id = :'eid';
 select tests.login('00000000-0000-0000-0000-0000000000c3');
-select tests.eq((select body from public.notifications where kind = 'event_updated'), 'Notify event has a new place. Check the details.', 'location change notifies once');
+select tests.eq((select body from public.notifications where kind = 'event_updated'), '「Notify event」的地點有變，請查看詳情。', 'location change notifies once');
 select tests.login('00000000-0000-0000-0000-0000000000c2');
 select tests.eq((select count(*) from public.notifications where kind = 'event_updated'), 0::bigint, 'cancelled registrants not told');
 
