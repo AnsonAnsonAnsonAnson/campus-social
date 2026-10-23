@@ -26,8 +26,14 @@ run() {
   fi
 }
 
+if ! diff -q <(bash scripts/make-setup-sql.sh --stdout) supabase/setup.sql > /dev/null; then
+  echo "supabase/setup.sql is out of date: run bash scripts/make-setup-sql.sh"
+  exit 1
+fi
+
 run supabase/tests/00_supabase_stub.sql
-for f in supabase/migrations/*.sql; do run "$f"; done
+# setup.sql is every migration in order, and is what new projects paste in.
+run supabase/setup.sql
 run supabase/seed.sql
 for f in supabase/tests/[0-9][0-9]_*.sql; do
   [[ "$f" == *00_supabase_stub.sql ]] || run "$f"

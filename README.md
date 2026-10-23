@@ -34,11 +34,11 @@ Scan the QR code with the Camera app on your iPhone (install **Expo Go** from th
 ## Connect Supabase (real data)
 
 1. Create a project at [supabase.com](https://supabase.com). Pick the **Singapore** region (closest to Hong Kong).
-2. Apply the schema. With the Supabase CLI: `supabase link --project-ref <ref>` then `supabase db push`. Or paste each file in `supabase/migrations/` into the SQL editor and run them in filename order.
-3. Optional sample content: run `supabase/seed.sql` in the SQL editor (regenerate with `npm run seed`).
+2. Apply the schema. On a new project, open **SQL Editor**, paste all of `supabase/setup.sql` and press **Run** (it is every migration in one transaction; regenerate it with `bash scripts/make-setup-sql.sh` after adding a migration). Later migrations: paste just the new file, or use the Supabase CLI (`supabase link --project-ref <ref>` then `supabase db push`).
+3. Optional sample content for a test project: run `supabase/seed.sql` in the SQL editor (regenerate with `npm run seed`). Don't run it on the project students will use.
 4. **Auth → Emails → Magic link template**: make sure it includes `{{ .Token }}` so students receive a 6-digit code instead of only a link.
 5. **Auth → SMTP**: set up your own SMTP (e.g. Resend, Postmark). Supabase's built-in mailer is rate-limited and not meant for production.
-6. Copy `.env.example` to `.env` and fill in `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Project Settings → API). Restart `npx expo start`.
+6. Copy `.env.example` to `.env` and fill in `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Project Settings → API). Restart `npx expo start`. EAS builds take the same two values from `env` in `eas.json`. Both are safe to ship inside the app (row level security protects the data); never put the secret or `service_role` key in the app or the repo.
 7. Make yourself an admin after signing in once:
    ```sql
    update public.profiles set is_platform_admin = true where email = 'you@link.cuhk.edu.hk';
@@ -49,7 +49,7 @@ Scan the QR code with the Camera app on your iPhone (install **Expo Go** from th
 
 The in-app inbox and local event reminders work without this. To also send pushes:
 
-1. Run `npx eas-cli@latest init` so `app.json` has `extra.eas.projectId` (the app only registers for push when it has one), and upload your APNs key / FCM credentials with `npx eas-cli@latest credentials`.
+1. `app.json` has `extra.eas.projectId` (the app only registers for push when it has one; `npx eas-cli@latest init` sets it for a new Expo project). Upload your APNs key / FCM credentials with `npx eas-cli@latest credentials`.
 2. Deploy the sender: `supabase functions deploy send-push --no-verify-jwt`, then set a random secret: `supabase secrets set PUSH_WEBHOOK_SECRET=<long random string>` (optionally `EXPO_ACCESS_TOKEN` if you turn on enhanced push security in Expo).
 3. In the dashboard, **Database → Webhooks → Create a new hook**: table `notifications`, event `Insert`, type **Supabase Edge Functions**, function `send-push`, and add an HTTP header `x-webhook-secret` with the same secret.
 
@@ -63,10 +63,7 @@ You need an Apple Developer account (US$99/year) and an Expo account. No Mac is 
 2. **Name.** The app is called Campus Social. Apple may reject an app that presents itself as a university's official app or uses its logo without permission (guideline 5.2), so keep "CUHK" to descriptive text (for example "for CUHK students") unless the university gives written permission.
 3. **EAS setup.**
    ```bash
-   npx eas-cli@latest login
-   npx eas-cli@latest init            # links the project, fills extra.eas.projectId
-   npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_URL --value ... --environment production
-   npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY --value ... --environment production
+   npx eas-cli@latest login            # the Expo account that owns the project in app.json
    npx eas-cli@latest build -p ios --profile production
    npx eas-cli@latest submit -p ios --latest
    ```

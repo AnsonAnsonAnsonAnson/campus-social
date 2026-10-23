@@ -23,7 +23,7 @@ npx expo-doctor             # diagnose dependency and config issues
 npx expo install --fix      # fix incompatible package versions
 ```
 
-Run lint, typecheck and tests before declaring any task done. Database changes go in a new file in `supabase/migrations/` with tests in `supabase/tests/`; keep `src/lib/demo.ts` behaving like the SQL.
+Run lint, typecheck and tests before declaring any task done. Database changes go in a new file in `supabase/migrations/` with tests in `supabase/tests/`, then run `bash scripts/make-setup-sql.sh` to refresh `supabase/setup.sql`; keep `src/lib/demo.ts` behaving like the SQL.
 
 ## Navigation & Routing
 
