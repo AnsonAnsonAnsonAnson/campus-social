@@ -1,11 +1,12 @@
 import { router } from 'expo-router';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { compactNumber } from '@/lib/format';
 import { space, useColors } from '@/lib/theme';
 import type { Society } from '@/lib/types';
+import { showAlert } from '@/lib/dialog';
 
 import { Button, Icon, SocietyAvatar } from './ui';
 
@@ -18,7 +19,7 @@ export function FollowButton({ societyId, small = true }: { societyId: string; s
       title={following ? 'Following' : 'Follow'}
       icon={following ? 'checkmark' : 'add'}
       variant={following ? 'secondary' : 'primary'}
-      onPress={() => toggleFollow(societyId).catch((e) => Alert.alert('Could not update', errorMessage(e)))}
+      onPress={() => toggleFollow(societyId).catch((e) => showAlert('Could not update', errorMessage(e)))}
     />
   );
 }

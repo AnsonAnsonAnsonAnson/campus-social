@@ -53,13 +53,17 @@ export type CampusEvent = {
   registration_opens_at: string | null;
   registration_closes_at: string | null;
   price_text: string | null;
+  /** Optional question attendees answer when they sign up. */
+  signup_question: string | null;
   confirmed_count: number;
   waitlist_count: number;
+  /** Set when moderators take the event down; only its committee still sees it. */
+  removed_at: string | null;
 };
 
 export type EventWithSociety = CampusEvent & { society: SocietySummary };
 
-export type EventInput = Omit<CampusEvent, 'id' | 'confirmed_count' | 'waitlist_count'> & { id?: string };
+export type EventInput = Omit<CampusEvent, 'id' | 'confirmed_count' | 'waitlist_count' | 'removed_at'> & { id?: string };
 
 export type Registration = {
   id: string;
@@ -67,6 +71,7 @@ export type Registration = {
   user_id: string;
   status: RegistrationStatus;
   ticket_code: string;
+  answer: string | null;
   checked_in_at: string | null;
   created_at: string;
 };
@@ -106,6 +111,7 @@ export type Attendee = {
   email: string;
   college: string | null;
   status: RegistrationStatus;
+  answer: string | null;
   checked_in_at: string | null;
   created_at: string;
 };
@@ -143,4 +149,38 @@ export type EventQuery = {
   /** Include drafts (only returned for societies you help run). */
   includeDrafts?: boolean;
   limit?: number;
+};
+
+export type NotificationKind =
+  'waitlist_promoted' | 'event_cancelled' | 'event_updated' | 'new_event' | 'society_approved' | 'committee_added';
+
+export type AppNotification = {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  event_id: string | null;
+  society_id: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+export type SocietyMember = {
+  user_id: string;
+  display_name: string;
+  email: string;
+  role: SocietyRole;
+  created_at: string;
+};
+
+export type ReportTarget = 'event' | 'society' | 'banner';
+
+export type OpenReport = {
+  id: string;
+  target_type: ReportTarget;
+  target_id: string;
+  target_name: string;
+  reason: string;
+  report_count: number;
+  created_at: string;
 };

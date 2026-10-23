@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Icon } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
-import { TICKET_QR_PREFIX } from '@/lib/constants';
+import { LEGACY_TICKET_QR_PREFIX, TICKET_QR_PREFIX } from '@/lib/constants';
 import { radius, space } from '@/lib/theme';
 import type { CheckInResult } from '@/lib/types';
 
@@ -24,7 +24,8 @@ export default function Scan() {
   const last = useRef<{ code: string; at: number } | null>(null);
 
   const handle = async (raw: string) => {
-    const code = raw.startsWith(TICKET_QR_PREFIX) ? raw.slice(TICKET_QR_PREFIX.length) : raw.trim();
+    const prefix = [TICKET_QR_PREFIX, LEGACY_TICKET_QR_PREFIX].find((p) => raw.startsWith(p));
+    const code = prefix ? raw.slice(prefix.length) : raw.trim();
     const now = Date.now();
     if (busy.current || (last.current?.code === code && now - last.current.at < SAME_CODE_COOLDOWN_MS)) return;
     busy.current = true;
@@ -60,7 +61,7 @@ export default function Scan() {
       ) : (
         <View style={styles.permission}>
           <Icon name="camera-outline" size={48} color="#fff" />
-          <Text style={styles.permissionText}>Allow camera access to scan attendees' QR tickets.</Text>
+          <Text style={styles.permissionText}>Allow camera access to scan attendees’ QR tickets.</Text>
           {permission && <Button title="Allow camera" onPress={requestPermission} />}
         </View>
       )}

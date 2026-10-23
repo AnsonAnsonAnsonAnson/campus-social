@@ -112,6 +112,8 @@ type EventSeed = Omit<
   | 'waitlist_enabled'
   | 'confirmed_count'
   | 'waitlist_count'
+  | 'signup_question'
+  | 'removed_at'
 > &
   Partial<CampusEvent>;
 
@@ -125,6 +127,8 @@ function event(n: number, e: EventSeed): CampusEvent {
     waitlist_enabled: true,
     confirmed_count: 0,
     waitlist_count: 0,
+    signup_question: null,
+    removed_at: null,
     ...e,
   };
 }
@@ -157,6 +161,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       registration_required: true,
       capacity: 80,
       price_text: 'Free',
+      signup_question: 'What would you like to build? (Helps us form teams)',
       confirmed_count: 61,
     }),
     event(3, {

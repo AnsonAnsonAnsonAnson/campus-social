@@ -36,7 +36,9 @@ export const EVENT_CATEGORIES = [
 ] as const;
 
 /** Prefix for QR ticket payloads, so the scanner can ignore unrelated QR codes. */
-export const TICKET_QR_PREFIX = 'cuhkcampus:ticket:';
+export const TICKET_QR_PREFIX = 'campussocial:ticket:';
+/** Tickets issued before the app was renamed. */
+export const LEGACY_TICKET_QR_PREFIX = 'cuhkcampus:ticket:';
 
 export const SUPPORT_EMAIL = 'support@example.com';
 export const PRIVACY_URL = 'https://example.com/privacy';

@@ -2,12 +2,14 @@ import { router, Stack } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 
+import { Skeleton } from '@/components/Skeleton';
 import { SocietyRow } from '@/components/SocietyRow';
-import { Button, Chip, ChipRow, EmptyState, ErrorView, Loading, SectionHeader } from '@/components/ui';
+import { Button, Chip, ChipRow, EmptyState, ErrorView, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { SOCIETY_CATEGORIES } from '@/lib/constants';
 import { space, useColors } from '@/lib/theme';
+import { useDebouncedValue } from '@/lib/useDebouncedValue';
 import { useQuery } from '@/lib/useQuery';
 
 export default function Societies() {
@@ -17,7 +19,8 @@ export default function Societies() {
   const [category, setCategory] = useState<string | null>(null);
   const [showFollowing, setShowFollowing] = useState(false);
 
-  const q = useQuery(() => api.listSocieties({ search, category: category ?? undefined }), [search, category]);
+  const query = useDebouncedValue(search.trim(), 250);
+  const q = useQuery(() => api.listSocieties({ search: query, category: category ?? undefined }), [query, category]);
 
   const list = useMemo(() => (q.data ?? []).filter((s) => !showFollowing || followIds.has(s.id)), [q.data, showFollowing, followIds]);
 
@@ -53,7 +56,17 @@ export default function Societies() {
         renderItem={({ item }) => <SocietyRow society={item} />}
         ListEmptyComponent={
           q.loading ? (
-            <Loading />
+            <View style={{ gap: space.lg, padding: space.lg }} accessibilityLabel="Loading">
+              {Array.from({ length: 6 }, (_, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                  <Skeleton width={44} height={44} round={12} />
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <Skeleton width="60%" height={15} />
+                    <Skeleton width="35%" height={12} />
+                  </View>
+                </View>
+              ))}
+            </View>
           ) : q.error ? (
             <ErrorView message={q.error} onRetry={q.refresh} />
           ) : (

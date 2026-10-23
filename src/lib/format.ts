@@ -100,3 +100,13 @@ export function availability(e: {
   if (left <= Math.max(5, e.capacity * 0.1)) return { kind: 'few', label: `${left} spot${left === 1 ? '' : 's'} left` };
   return { kind: 'open', label: `${left} spots left` };
 }
+
+/** "Just now", "5m", "3h", "Yesterday", then a date. For notification timestamps. */
+export function formatAgo(iso: string, now = Date.now()) {
+  const mins = Math.floor((now - new Date(iso).getTime()) / 60_000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m`;
+  if (mins < 24 * 60) return `${Math.floor(mins / 60)}h`;
+  if (hkDate(iso) === hkDate(new Date(now - 86400_000))) return 'Yesterday';
+  return monthDayFmt.format(new Date(iso));
+}

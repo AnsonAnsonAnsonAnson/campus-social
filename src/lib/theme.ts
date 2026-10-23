@@ -19,6 +19,8 @@ const light = {
   warning: '#B26A00',
   danger: '#C62828',
   onTint: '#FFFFFF',
+  toast: '#1C1C1E',
+  onToast: '#FFFFFF',
 };
 
 const dark: typeof light = {
@@ -34,6 +36,8 @@ const dark: typeof light = {
   warning: '#F0A33A',
   danger: '#FF6B6B',
   onTint: '#1A0B22',
+  toast: '#F4F4F6',
+  onToast: '#111114',
 };
 
 export type Colors = typeof light;
@@ -60,3 +64,15 @@ export function artFor(seed: string) {
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
   return ART[Math.abs(h) % ART.length];
 }
+
+/** Type scale, roughly the iOS text styles. Use these instead of ad hoc font sizes. */
+export const type = {
+  largeTitle: { fontSize: 32, fontWeight: '800' },
+  title: { fontSize: 22, fontWeight: '700' },
+  headline: { fontSize: 17, fontWeight: '600' },
+  body: { fontSize: 16 },
+  subhead: { fontSize: 15 },
+  footnote: { fontSize: 13 },
+  caption: { fontSize: 12, fontWeight: '600' },
+  overline: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
+} as const;

@@ -1,9 +1,37 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
-import { AuthProvider } from '@/lib/auth';
+import { ToastHost } from '@/components/Toast';
+import { AuthProvider, useAuth } from '@/lib/auth';
+import { eventIdFrom, notificationsSupported, refreshReminders, registerForPush } from '@/lib/notifications';
 import { useColors } from '@/lib/theme';
+
+/** Opens the event when a reminder or push is tapped, and keeps reminders and the push token current. */
+function NotificationRouting() {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!notificationsSupported) return;
+    const open = (r: Notifications.NotificationResponse | null) => {
+      const id = eventIdFrom(r);
+      if (id) router.push(`/event/${id}`);
+    };
+    open(Notifications.getLastNotificationResponse());
+    const sub = Notifications.addNotificationResponseReceivedListener(open);
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    refreshReminders();
+    registerForPush();
+  }, [user]);
+
+  return null;
+}
 
 export default function RootLayout() {
   const scheme = useColorScheme();
@@ -28,7 +56,13 @@ export default function RootLayout() {
           <Stack.Screen name="manage/attendees" options={{ title: 'Attendees' }} />
           <Stack.Screen name="manage/scan" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="admin/index" options={{ title: 'Review queue' }} />
+          <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+          <Stack.Screen name="manage/members" options={{ title: 'Committee' }} />
+          <Stack.Screen name="manage/edit-society" options={{ presentation: 'modal', title: 'Edit society' }} />
+          <Stack.Screen name="welcome" options={{ presentation: 'modal', title: 'Welcome', gestureEnabled: false }} />
         </Stack>
+        <NotificationRouting />
+        <ToastHost />
         <StatusBar style="auto" />
       </AuthProvider>
     </ThemeProvider>

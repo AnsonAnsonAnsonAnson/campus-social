@@ -1,10 +1,12 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, ScrollView, Text } from 'react-native';
+import { ScrollView, Text } from 'react-native';
 
+import { toast } from '@/components/Toast';
 import { Button, Chip, ChipRow, Field } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { space, useColors } from '@/lib/theme';
+import { showAlert } from '@/lib/dialog';
 
 const REASONS = ['Spam or scam', 'Inappropriate content', 'Impersonation', 'Unsafe event', 'Other'];
 
@@ -20,9 +22,9 @@ export default function Report() {
     try {
       await api.report(type, id, [reason, details.trim()].filter(Boolean).join(': '));
       router.back();
-      Alert.alert('Thanks for letting us know', 'Our team reviews every report within 24 hours.');
+      toast('Thanks. Our team reviews every report within 24 hours.');
     } catch (e) {
-      Alert.alert('Could not send report', errorMessage(e));
+      showAlert('Could not send report', errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -30,7 +32,7 @@ export default function Report() {
 
   return (
     <ScrollView style={{ backgroundColor: c.background }} contentContainerStyle={{ padding: space.lg, gap: space.lg }}>
-      <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>What's wrong with {name ? `“${name}”` : `this ${type}`}?</Text>
+      <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>What’s wrong with {name ? `“${name}”` : `this ${type}`}?</Text>
       <ChipRow>
         {REASONS.map((r) => (
           <Chip key={r} label={r} selected={reason === r} onPress={() => setReason(r)} />

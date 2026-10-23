@@ -1,12 +1,21 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 
 import { Button, Field, Icon } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { isCuhkEmail } from '@/lib/backend';
 import { DEMO_CODE } from '@/lib/demo';
+import { showAlert } from '@/lib/dialog';
+import { needsOnboarding } from '@/lib/onboarding';
 import { space, useColors } from '@/lib/theme';
+
+/** Leave the sign-in sheet: first-timers go to the welcome screen, everyone else back to where they were. */
+async function done() {
+  if (await needsOnboarding().catch(() => false)) router.replace('/welcome');
+  else if (router.canGoBack()) router.back();
+  else router.replace('/discover');
+}
 
 export default function SignIn() {
   const c = useColors();
@@ -18,7 +27,7 @@ export default function SignIn() {
 
   const sendCode = async () => {
     if (!isCuhkEmail(email)) {
-      Alert.alert('Use your CUHK email', 'Sign in with your @link.cuhk.edu.hk (students) or @cuhk.edu.hk (staff) address.');
+      showAlert('Use your CUHK email', 'Sign in with your @link.cuhk.edu.hk (students) or @cuhk.edu.hk (staff) address.');
       return;
     }
     setBusy(true);
@@ -26,7 +35,7 @@ export default function SignIn() {
       await api.sendCode(email);
       setStep('code');
     } catch (e) {
-      Alert.alert('Could not send code', errorMessage(e));
+      showAlert('Could not send code', errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -36,9 +45,9 @@ export default function SignIn() {
     setBusy(true);
     try {
       await api.verifyCode(email, code);
-      router.back();
+      await done();
     } catch (e) {
-      Alert.alert('Could not sign in', errorMessage(e));
+      showAlert('Could not sign in', errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -48,9 +57,9 @@ export default function SignIn() {
     setBusy(true);
     try {
       await api.signInWithPassword(email, password);
-      router.back();
+      await done();
     } catch (e) {
-      Alert.alert('Could not sign in', errorMessage(e));
+      showAlert('Could not sign in', errorMessage(e));
     } finally {
       setBusy(false);
     }

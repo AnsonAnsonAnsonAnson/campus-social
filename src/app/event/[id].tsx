@@ -1,19 +1,23 @@
 import * as Calendar from 'expo-calendar/legacy';
 import * as Linking from 'expo-linking';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
-import { ActionSheetIOS, Alert, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActionSheetIOS, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Skeleton } from '@/components/Skeleton';
 import { FollowButton } from '@/components/SocietyRow';
 import { TicketQR } from '@/components/TicketCard';
-import { Artwork, Button, ErrorView, Icon, Loading, Pill, SocietyAvatar, type IconName } from '@/components/ui';
+import { toast } from '@/components/Toast';
+import { Artwork, Button, ErrorView, Field, Icon, Pill, SocietyAvatar, type IconName } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { showAlert } from '@/lib/dialog';
 import { availability, formatWhen } from '@/lib/format';
-import { radius, space, useColors } from '@/lib/theme';
+import { offerNotifications, refreshReminders } from '@/lib/notifications';
+import { radius, space, type, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
-import * as Haptics from 'expo-haptics';
 
 export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,6 +25,8 @@ export default function EventScreen() {
   const insets = useSafeAreaInsets();
   const { user, requireSignIn } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState('');
 
   const q = useQuery(async () => {
     const [event, registration, mine] = await Promise.all([api.getEvent(id), api.myRegistration(id), api.mySocieties()]);
@@ -29,7 +35,7 @@ export default function EventScreen() {
     return { event, registration, position, isCommittee };
   }, [id, user?.id]);
 
-  if (q.loading) return <Loading />;
+  if (q.loading) return <EventSkeleton />;
   if (q.error) return <ErrorView message={q.error} onRetry={q.refresh} />;
   const event = q.data?.event;
   if (!event) return <ErrorView message="This event is no longer available." />;
@@ -39,28 +45,33 @@ export default function EventScreen() {
   const avail = availability(event);
   const past = event.ends_at < new Date().toISOString();
 
-  const register = async () => {
+  const startRegister = () => {
     if (!requireSignIn()) return;
+    if (event.signup_question) setAsking(true);
+    else register();
+  };
+
+  const register = async () => {
     setBusy(true);
     try {
-      const r = await api.register(event.id);
+      const r = await api.register(event.id, answer);
+      setAsking(false);
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       invalidate();
-      Alert.alert(
-        r.status === 'confirmed' ? "You're in! 🎉" : "You're on the waitlist",
-        r.status === 'confirmed'
-          ? 'Your QR ticket is saved in the Tickets tab.'
-          : "We'll move you up automatically if a spot opens. Check the Tickets tab for your status.",
-      );
+      toast(r.status === 'confirmed' ? "You're in! Your QR ticket is ready." : "You're on the waitlist. We'll move you up automatically.", {
+        icon: r.status === 'confirmed' ? 'ticket' : 'hourglass',
+      });
+      await offerNotifications();
+      refreshReminders();
     } catch (e) {
-      Alert.alert('Could not register', errorMessage(e));
+      showAlert('Could not register', errorMessage(e));
     } finally {
       setBusy(false);
     }
   };
 
   const cancel = () =>
-    Alert.alert(
+    showAlert(
       reg?.status === 'waitlisted' ? 'Leave the waitlist?' : 'Cancel your spot?',
       'Your spot will go to the next person on the waitlist.',
       [
@@ -73,8 +84,10 @@ export default function EventScreen() {
             try {
               await api.cancelRegistration(event.id);
               invalidate();
+              toast(reg?.status === 'waitlisted' ? 'You left the waitlist' : 'Your spot was cancelled', { tone: 'info' });
+              refreshReminders();
             } catch (e) {
-              Alert.alert('Could not cancel', errorMessage(e));
+              showAlert('Could not cancel', errorMessage(e));
             } finally {
               setBusy(false);
             }
@@ -94,7 +107,7 @@ export default function EventScreen() {
         timeZone: 'Asia/Hong_Kong',
       });
     } catch (e) {
-      Alert.alert('Could not open calendar', errorMessage(e));
+      showAlert('Could not open calendar', errorMessage(e));
     }
   };
 
@@ -113,7 +126,7 @@ export default function EventScreen() {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 3, destructiveButtonIndex: 2 }, run);
     } else {
-      Alert.alert(event.title, undefined, [
+      showAlert(event.title, undefined, [
         { text: options[0], onPress: () => run(0) },
         { text: options[1], onPress: () => run(1) },
         { text: options[2], onPress: () => run(2) },
@@ -123,7 +136,8 @@ export default function EventScreen() {
   };
 
   let primary: React.ReactNode;
-  if (event.status === 'cancelled') primary = <Button title="This event was cancelled" disabled onPress={() => {}} />;
+  if (event.removed_at) primary = <Button title="Removed by moderators" disabled onPress={() => {}} />;
+  else if (event.status === 'cancelled') primary = <Button title="This event was cancelled" disabled onPress={() => {}} />;
   else if (past) primary = <Button title="This event has ended" disabled onPress={() => {}} />;
   else if (active)
     primary = (
@@ -135,8 +149,9 @@ export default function EventScreen() {
       />
     );
   else if (avail.kind === 'open' || avail.kind === 'few')
-    primary = <Button title="Register" icon="ticket-outline" loading={busy} onPress={register} />;
-  else if (avail.kind === 'waitlist') primary = <Button title="Join waitlist" icon="hourglass-outline" loading={busy} onPress={register} />;
+    primary = <Button title="Register" icon="ticket-outline" loading={busy} onPress={startRegister} />;
+  else if (avail.kind === 'waitlist')
+    primary = <Button title="Join waitlist" icon="hourglass-outline" loading={busy} onPress={startRegister} />;
   else if (avail.kind === 'drop-in') primary = <Button title="Add to calendar" icon="calendar-outline" onPress={addToCalendar} />;
   else primary = <Button title={avail.label} disabled onPress={() => {}} />;
 
@@ -161,6 +176,7 @@ export default function EventScreen() {
             <Pill label={event.category} tone="brand" />
             {event.status === 'draft' && <Pill label="Draft" tone="warning" />}
             {event.status === 'cancelled' && <Pill label="Cancelled" tone="danger" />}
+            {!!event.removed_at && <Pill label="Hidden by moderators" tone="danger" />}
           </View>
           <Text style={[styles.title, { color: c.text }]} accessibilityRole="header">
             {event.title}
@@ -203,15 +219,17 @@ export default function EventScreen() {
                   </Text>
                   <TicketQR code={reg.ticket_code} size={200} />
                   <Text style={{ color: c.textSecondary, fontSize: 13 }}>Show this QR code at the door</Text>
+                  {!!reg.answer && <YourAnswer question={event.signup_question} answer={reg.answer} />}
                 </>
               ) : (
                 <>
                   <Text style={{ color: c.warning, fontWeight: '700', fontSize: 17 }}>
-                    You're #{q.data?.position || '?'} on the waitlist
+                    You’re #{q.data?.position || '?'} on the waitlist
                   </Text>
                   <Text style={{ color: c.textSecondary, textAlign: 'center' }}>
-                    If someone cancels, you'll be moved up automatically and your ticket will appear here.
+                    If someone cancels, you’ll be moved up automatically and your ticket will appear here.
                   </Text>
+                  {!!reg.answer && <YourAnswer question={event.signup_question} answer={reg.answer} />}
                 </>
               )}
             </View>
@@ -234,6 +252,61 @@ export default function EventScreen() {
           />
         )}
         <View style={{ flex: 1 }}>{primary}</View>
+      </View>
+
+      <Modal visible={asking} transparent animationType="slide" onRequestClose={() => setAsking(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAsking(false)} accessibilityLabel="Close" />
+          <View style={[styles.sheet, { backgroundColor: c.background, paddingBottom: Math.max(insets.bottom, space.lg) }]}>
+            <Text style={[type.title, { color: c.text }]}>One quick question</Text>
+            <Text style={[type.subhead, { color: c.textSecondary }]}>{event.society.name} asks everyone who signs up:</Text>
+            <Text style={[type.headline, { color: c.text }]}>{event.signup_question}</Text>
+            <Field
+              label="Your answer"
+              value={answer}
+              onChangeText={setAnswer}
+              maxLength={500}
+              multiline
+              autoFocus
+              placeholder="Your answer (optional)"
+              style={{ minHeight: 90 }}
+            />
+            <Button
+              title={avail.kind === 'waitlist' ? 'Join waitlist' : 'Confirm registration'}
+              icon="ticket-outline"
+              loading={busy}
+              onPress={register}
+            />
+            <Button title="Not now" variant="plain" onPress={() => setAsking(false)} />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+function YourAnswer({ question, answer }: { question: string | null; answer: string }) {
+  const c = useColors();
+  return (
+    <View
+      style={{ alignSelf: 'stretch', gap: 2, paddingTop: space.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border }}>
+      <Text style={[type.footnote, { color: c.textSecondary }]}>{question ?? 'Your answer'}</Text>
+      <Text style={[type.subhead, { color: c.text }]}>{answer}</Text>
+    </View>
+  );
+}
+
+function EventSkeleton() {
+  const c = useColors();
+  return (
+    <View style={{ flex: 1, backgroundColor: c.background }} accessibilityLabel="Loading">
+      <Skeleton height={260} round={0} />
+      <View style={{ padding: space.lg, gap: space.md }}>
+        <Skeleton width={80} height={20} round={10} />
+        <Skeleton width="90%" height={28} />
+        <Skeleton width="60%" height={28} />
+        <Skeleton height={64} round={radius.lg} />
+        <Skeleton height={150} round={radius.lg} />
       </View>
     </View>
   );
@@ -268,6 +341,8 @@ const styles = StyleSheet.create({
   infoCard: { borderRadius: radius.lg, paddingVertical: space.xs },
   info: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md },
   ticket: { alignItems: 'center', gap: space.md, padding: space.lg, borderRadius: radius.lg },
+  sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
+  sheet: { padding: space.lg, gap: space.md, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
   bottomBar: {
     position: 'absolute',
     left: 0,

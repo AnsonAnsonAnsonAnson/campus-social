@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "CUHK Campus",
-    "slug": "cuhk-campus",
-    "scheme": "cuhkcampus",
+    "name": "Campus Social",
+    "slug": "campus-social",
+    "scheme": "campussocial",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.ansonchow.cuhkcampus",
+      "bundleIdentifier": "com.ansonchow.campussocial",
       "buildNumber": "1",
       "supportsTablet": false,
       "config": {
@@ -27,7 +27,7 @@
       }
     },
     "android": {
-      "package": "com.ansonchow.cuhkcampus",
+      "package": "com.ansonchow.campussocial",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#6E2A8C",
@@ -78,7 +78,13 @@
           "writeOnlyAccess": true
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "color": "#6E2A8C"
+        }
+      ]
     ],
     "extra": {
       "eas": {}

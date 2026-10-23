@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
 
+import { toast } from '@/components/Toast';
 import { Button, Card, Chip, ChipRow, Field } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { COLLEGES, SOCIETY_CATEGORIES } from '@/lib/constants';
 import { space, useColors } from '@/lib/theme';
+import { showAlert } from '@/lib/dialog';
 
 export default function NewSociety() {
   const c = useColors();
@@ -27,9 +29,9 @@ export default function NewSociety() {
       const id = await api.createSociety(form);
       invalidate();
       router.replace(`/manage/${id}`);
-      Alert.alert('Submitted for review', 'You can set up events now. Your society becomes public once the app team verifies it.');
+      toast('Submitted for review. You can set up events now.');
     } catch (e) {
-      Alert.alert('Could not register society', errorMessage(e));
+      showAlert('Could not register society', errorMessage(e));
     } finally {
       setBusy(false);
     }

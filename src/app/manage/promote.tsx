@@ -1,13 +1,15 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { toast } from '@/components/Toast';
 import { DateTimeField } from '@/components/DateTimeField';
 import { Artwork, Button, Card, Field, Icon, Loading } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { pickAndUploadImage } from '@/lib/pickImage';
 import { radius, space, useColors } from '@/lib/theme';
 import type { EventWithSociety } from '@/lib/types';
+import { showAlert } from '@/lib/dialog';
 
 export default function Promote() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -46,9 +48,9 @@ export default function Promote() {
       });
       invalidate();
       router.back();
-      Alert.alert('Banner requested', 'The app team will review it shortly. You can see its status on your society dashboard.');
+      toast('Banner requested. The app team will review it shortly.');
     } catch (e) {
-      Alert.alert('Could not request banner', errorMessage(e));
+      showAlert('Could not request banner', errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -70,7 +72,7 @@ export default function Promote() {
               const url = await pickAndUploadImage([3, 2]);
               if (url) setImage(url);
             } catch (e) {
-              Alert.alert('Could not upload image', errorMessage(e));
+              showAlert('Could not upload image', errorMessage(e));
             }
           }}>
           <Artwork seed={event.id} uri={image} style={styles.preview}>

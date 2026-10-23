@@ -17,11 +17,13 @@ npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — re
 npx expo start              # start the dev server
 npx expo lint               # lint
 npx tsc --noEmit            # typecheck
+npm test                    # unit tests (jest-expo)
+npm run test:db             # database tests against a local Postgres (PGHOST/PGUSER/PGPASSWORD)
 npx expo-doctor             # diagnose dependency and config issues
 npx expo install --fix      # fix incompatible package versions
 ```
 
-Run lint and typecheck before declaring any task done.
+Run lint, typecheck and tests before declaring any task done. Database changes go in a new file in `supabase/migrations/` with tests in `supabase/tests/`; keep `src/lib/demo.ts` behaving like the SQL.
 
 ## Navigation & Routing
 

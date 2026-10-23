@@ -49,9 +49,10 @@ export default function CalendarScreen() {
   }, [data.data, filter, followIds]);
 
   // Show university-wide dates plus the student's own college.
+  const college = profile?.college;
   const campusDates = useMemo(
-    () => (data.data?.campusDates ?? []).filter((d) => !d.college || !profile?.college || d.college === profile.college),
-    [data.data, profile?.college],
+    () => (data.data?.campusDates ?? []).filter((d) => !d.college || !college || d.college === college),
+    [data.data, college],
   );
 
   const marked = useMemo(() => {

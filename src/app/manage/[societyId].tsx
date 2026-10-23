@@ -1,8 +1,10 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Card, EmptyState, ErrorView, Loading, Pill, SectionHeader, SocietyAvatar } from '@/components/ui';
+import { toast } from '@/components/Toast';
+import { Button, Card, EmptyState, ErrorView, ListGroup, ListRow, Loading, Pill, SectionHeader, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
+import { confirmAsync, showAlert } from '@/lib/dialog';
 import { compactNumber, formatWhen } from '@/lib/format';
 import { pickAndUploadImage } from '@/lib/pickImage';
 import { radius, space, useColors } from '@/lib/theme';
@@ -17,12 +19,14 @@ export default function ManageSociety() {
 
   const q = useQuery(async () => {
     const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
-    const [society, events, banners] = await Promise.all([
+    const [society, events, banners, mine] = await Promise.all([
       api.getSociety(societyId),
       api.listEvents({ societyIds: [societyId], from: weekAgo, includeDrafts: true }),
       api.societyBanners(societyId),
+      api.mySocieties(),
     ]);
-    return { society, events, banners };
+    const role = mine.find((m) => m.id === societyId)?.role ?? 'editor';
+    return { society, events, banners, role };
   }, [societyId]);
 
   if (q.loading) return <Loading />;
@@ -30,25 +34,28 @@ export default function ManageSociety() {
   const s = q.data?.society;
   if (!s) return <ErrorView message="You don't have access to this society." />;
 
+  const isAdmin = q.data!.role !== 'editor';
+
   const changeLogo = async () => {
+    if (!isAdmin) return;
     try {
       const url = await pickAndUploadImage([1, 1]);
       if (!url) return;
       await api.updateSociety(s.id, { logo_url: url });
       invalidate();
     } catch (e) {
-      Alert.alert('Could not update logo', errorMessage(e));
+      showAlert('Could not update logo', errorMessage(e));
     }
   };
 
-  const changeCover = async () => {
+  const removeBanner = async (id: string, title: string) => {
+    if (!(await confirmAsync('Remove banner?', `“${title}” will stop showing on Discover.`, 'Remove', true))) return;
     try {
-      const url = await pickAndUploadImage([3, 1]);
-      if (!url) return;
-      await api.updateSociety(s.id, { cover_url: url });
+      await api.deleteBanner(id);
       invalidate();
+      toast('Banner removed');
     } catch (e) {
-      Alert.alert('Could not update cover', errorMessage(e));
+      showAlert('Could not remove', errorMessage(e));
     }
   };
 
@@ -63,17 +70,25 @@ export default function ManageSociety() {
       <Stack.Screen options={{ title: s.short_name ?? s.name }} />
 
       <Card style={styles.header}>
-        <Pressable onPress={changeLogo} accessibilityLabel="Change logo">
+        <Pressable onPress={changeLogo} disabled={!isAdmin} accessibilityLabel="Change logo">
           <SocietyAvatar name={s.name} uri={s.logo_url} size={64} />
         </Pressable>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={{ color: c.text, fontSize: 18, fontWeight: '700' }}>{s.name}</Text>
-          <Pill
-            label={s.status === 'approved' ? (s.verified ? 'Verified' : 'Live') : s.status === 'pending' ? 'Pending review' : 'Rejected'}
-            tone={REVIEW_TONE[s.status]}
-          />
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            <Pill
+              label={s.status === 'approved' ? (s.verified ? 'Verified' : 'Live') : s.status === 'pending' ? 'Pending review' : 'Rejected'}
+              tone={REVIEW_TONE[s.status]}
+            />
+            <Pill label={`You: ${q.data!.role}`} />
+          </View>
         </View>
       </Card>
+      {s.status === 'pending' && (
+        <Text style={[styles.note, { color: c.textSecondary }]}>
+          The Student Affairs team is reviewing your society. You can prepare events now; students will see them once you’re approved.
+        </Text>
+      )}
 
       <View style={styles.stats}>
         <Stat label="Followers" value={compactNumber(s.follower_count)} />
@@ -81,15 +96,29 @@ export default function ManageSociety() {
         <Stat label="Sign-ups" value={compactNumber(totalGoing)} />
       </View>
 
-      <View style={{ flexDirection: 'row', gap: space.sm, marginHorizontal: space.lg }}>
-        <Button
-          style={{ flex: 1 }}
-          title="New event"
-          icon="add"
-          onPress={() => router.push({ pathname: '/manage/event-form', params: { societyId: s.id } })}
-        />
-        <Button title="Cover" icon="image-outline" variant="secondary" onPress={changeCover} />
-        <Button title="Page" icon="eye-outline" variant="secondary" onPress={() => router.push(`/society/${s.id}`)} />
+      <Button
+        style={{ marginHorizontal: space.lg }}
+        title="New event"
+        icon="add"
+        onPress={() => router.push({ pathname: '/manage/event-form', params: { societyId: s.id } })}
+      />
+
+      <View style={{ marginTop: space.lg }}>
+        <ListGroup>
+          {isAdmin && (
+            <ListRow
+              icon="create-outline"
+              title="Edit society details"
+              onPress={() => router.push({ pathname: '/manage/edit-society', params: { societyId: s.id } })}
+            />
+          )}
+          <ListRow
+            icon="people-outline"
+            title="Committee"
+            onPress={() => router.push({ pathname: '/manage/members', params: { societyId: s.id } })}
+          />
+          <ListRow icon="eye-outline" title="View public page" onPress={() => router.push(`/society/${s.id}`)} />
+        </ListGroup>
       </View>
 
       <SectionHeader title="Events" />
@@ -107,7 +136,11 @@ export default function ManageSociety() {
                 <Text style={{ color: c.textSecondary, fontSize: 13 }}>{formatWhen(e.starts_at)}</Text>
               </View>
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                <Pill label={e.status} tone={e.status === 'published' ? 'success' : e.status === 'draft' ? 'warning' : 'danger'} />
+                {e.removed_at ? (
+                  <Pill label="hidden" tone="danger" />
+                ) : (
+                  <Pill label={e.status} tone={e.status === 'published' ? 'success' : e.status === 'draft' ? 'warning' : 'danger'} />
+                )}
                 {e.registration_required && (
                   <Text style={{ color: c.textSecondary, fontSize: 13 }}>
                     {e.confirmed_count}
@@ -136,17 +169,7 @@ export default function ManageSociety() {
                 <Text style={{ color: c.textSecondary, fontSize: 13 }}>Until {formatWhen(b.ends_at)}</Text>
               </View>
               <Pill label={b.status} tone={REVIEW_TONE[b.status]} />
-              <Button
-                small
-                variant="plain"
-                title="Remove"
-                onPress={() =>
-                  api
-                    .deleteBanner(b.id)
-                    .then(invalidate)
-                    .catch((e) => Alert.alert('Could not remove', errorMessage(e)))
-                }
-              />
+              <Button small variant="plain" title="Remove" onPress={() => removeBanner(b.id, b.title)} />
             </View>
           ))}
         </View>
@@ -171,6 +194,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: space.md, margin: space.lg },
+  note: { marginHorizontal: space.lg, marginTop: -space.sm, marginBottom: space.lg, fontSize: 14, lineHeight: 20 },
   stats: { flexDirection: 'row', gap: space.sm, marginHorizontal: space.lg, marginBottom: space.lg },
   stat: { flex: 1, borderRadius: radius.md, padding: space.md, alignItems: 'center' },
   eventRow: {

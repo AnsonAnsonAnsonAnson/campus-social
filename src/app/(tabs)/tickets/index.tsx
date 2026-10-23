@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 
 import { TicketCard } from '@/components/TicketCard';
-import { Button, Chip, ChipRow, EmptyState, ErrorView, Loading } from '@/components/ui';
+import { ListSkeleton } from '@/components/Skeleton';
+import { Button, Chip, ChipRow, EmptyState, ErrorView } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { syncReminders } from '@/lib/notifications';
 import { space, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
 
@@ -14,6 +16,11 @@ export default function Tickets() {
   const { user } = useAuth();
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
   const q = useQuery(() => api.myTickets(), [user?.id]);
+
+  // Tickets just loaded fresh from the server: a good moment to fix up reminders.
+  useEffect(() => {
+    if (q.data) syncReminders(q.data).catch(() => undefined);
+  }, [q.data]);
 
   const { upcoming, past } = useMemo(() => {
     const now = new Date().toISOString();
@@ -57,7 +64,7 @@ export default function Tickets() {
         <Chip label="Past" selected={tab === 'past'} onPress={() => setTab('past')} />
       </ChipRow>
       {q.loading && !q.data ? (
-        <Loading />
+        <ListSkeleton rows={3} />
       ) : q.error && !q.data ? (
         <ErrorView message={q.error} onRetry={q.refresh} />
       ) : list.length ? (

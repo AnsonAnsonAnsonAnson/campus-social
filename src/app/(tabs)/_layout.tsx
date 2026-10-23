@@ -1,6 +1,15 @@
 import { NativeTabs } from 'expo-router/native-tabs';
+import { Platform } from 'react-native';
 
 import { useColors } from '@/lib/theme';
+
+// The web preview draws the tab bar as a pill floating over the top of the
+// page; leave room for it so it doesn't cover screen headers.
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = '[class*="tabContent"] { padding-top: 64px; box-sizing: border-box; }';
+  document.head.appendChild(style);
+}
 
 export default function TabsLayout() {
   const c = useColors();
