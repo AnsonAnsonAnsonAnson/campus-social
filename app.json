@@ -7,6 +7,11 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "locales": {
+      "zh-Hant": "./locales/zh-Hant.json",
+      "zh-HK": "./locales/zh-Hant.json",
+      "en": "./locales/en.json"
+    },
     "ios": {
       "bundleIdentifier": "com.ansonchow.campussocial",
       "buildNumber": "1",
@@ -15,7 +20,8 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "CFBundleAllowMixedLocalizations": true
+        "CFBundleAllowMixedLocalizations": true,
+        "CFBundleLocalizations": ["zh-Hant", "zh-HK", "en"]
       },
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": [
@@ -59,6 +65,7 @@
         "expo-camera",
         {
           "cameraPermission": "Society committee members use the camera to scan attendees' QR tickets at the door.",
+          "microphonePermission": false,
           "recordAudioAndroid": false
         }
       ],
@@ -75,6 +82,7 @@
         {
           "calendarPermission": "Add events you sign up for to your calendar.",
           "writeOnlyCalendarPermission": "Add events you sign up for to your calendar.",
+          "remindersPermission": false,
           "writeOnlyAccess": true
         }
       ],
