@@ -115,6 +115,14 @@ export default function EventScreen() {
     }
   };
 
+  const openMap = () => {
+    // Society locations are short ("LT1, YIA"), so search for them on campus.
+    const query = encodeURIComponent(`${event.location}, CUHK, Sha Tin`);
+    Linking.openURL(
+      Platform.OS === 'ios' ? `https://maps.apple.com/?q=${query}` : `https://www.google.com/maps/search/?api=1&query=${query}`,
+    );
+  };
+
   const share = () =>
     Share.share({
       message: `${event.title} · ${formatWhen(event.starts_at, event.ends_at)} @ ${event.location}\n${Linking.createURL(`/event/${event.id}`)}`,
@@ -204,7 +212,12 @@ export default function EventScreen() {
               onPress={addToCalendar}
               hint={t('Add to calendar')}
             />
-            <Info icon="location-outline" title={event.location || t('Location TBC')} />
+            <Info
+              icon="location-outline"
+              title={event.location || t('Location TBC')}
+              onPress={event.location ? openMap : undefined}
+              hint={event.location ? t('Open in Maps') : undefined}
+            />
             <Info icon="cash-outline" title={event.price_text || t('Free')} />
             {event.registration_required && (
               <Info
