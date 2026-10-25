@@ -9,6 +9,7 @@ import { Platform } from 'react-native';
 import { api } from './api';
 import { confirmAsync } from './dialog';
 import { formatTime } from './format';
+import { getLang, t } from './i18n';
 import type { Ticket } from './types';
 
 export const notificationsSupported = Platform.OS !== 'web';
@@ -26,7 +27,7 @@ if (notificationsSupported) {
   });
   if (Platform.OS === 'android') {
     Notifications.setNotificationChannelAsync(ANDROID_CHANNEL, {
-      name: 'Event reminders and updates',
+      name: t('Event reminders and updates'),
       // eslint-disable-next-line import/namespace -- re-exported enum the import plugin can't follow
       importance: Notifications.AndroidImportance.HIGH,
     }).catch(() => undefined);
@@ -67,9 +68,9 @@ export async function offerNotifications() {
   if ((await permissionState()) !== 'undetermined' || (await readSetting(ASKED_KEY))) return;
   await AsyncStorage.setItem(ASKED_KEY, '1').catch(() => undefined);
   const yes = await confirmAsync(
-    'Get a reminder before events?',
-    "We'll remind you an hour before things you signed up for, and tell you straight away if you get off a waitlist.",
-    'Turn on',
+    t('Get a reminder before events?'),
+    t('We’ll remind you an hour before things you signed up for, and tell you straight away if you get off a waitlist.'),
+    t('Turn on'),
   );
   if (yes && (await requestPermission())) await registerForPush();
 }
@@ -81,18 +82,19 @@ export async function setRemindersEnabled(on: boolean) {
 
 /**
  * Makes the scheduled reminders match the person's tickets: one an hour before
- * each confirmed, upcoming event. The id includes the start time, so a moved
- * event gets a new reminder and a cancelled ticket loses its reminder.
+ * each confirmed, upcoming event. The id includes the start time and language,
+ * so a moved event or a language switch gets a new reminder and a cancelled
+ * ticket loses its reminder.
  */
 export async function syncReminders(tickets: Ticket[]) {
   if (!notificationsSupported) return;
   const on = (await remindersEnabled()) && (await permissionState()) === 'granted';
   const wanted = new Map<string, Ticket>();
   if (on) {
-    for (const t of tickets) {
-      const fireAt = new Date(t.event.starts_at).getTime() - REMINDER_LEAD_MS;
-      if (t.status === 'confirmed' && t.event.status === 'published' && fireAt > Date.now() + 60_000) {
-        wanted.set(`${REMINDER_PREFIX}${t.event.id}:${t.event.starts_at}`, t);
+    for (const tk of tickets) {
+      const fireAt = new Date(tk.event.starts_at).getTime() - REMINDER_LEAD_MS;
+      if (tk.status === 'confirmed' && tk.event.status === 'published' && fireAt > Date.now() + 60_000) {
+        wanted.set(`${REMINDER_PREFIX}${tk.event.id}:${tk.event.starts_at}:${getLang()}`, tk);
       }
     }
   }
@@ -101,18 +103,18 @@ export async function syncReminders(tickets: Ticket[]) {
     if (!wanted.has(n.identifier)) await Notifications.cancelScheduledNotificationAsync(n.identifier);
   }
   const have = new Set(scheduled.map((n) => n.identifier));
-  for (const [identifier, t] of wanted) {
+  for (const [identifier, tk] of wanted) {
     if (have.has(identifier)) continue;
     await Notifications.scheduleNotificationAsync({
       identifier,
       content: {
-        title: `${t.event.title} starts at ${formatTime(t.event.starts_at)}`,
-        body: `${t.event.location}. Your QR ticket is in the Tickets tab.`,
-        data: { eventId: t.event.id },
+        title: t('{title} starts at {time}', { title: tk.event.title, time: formatTime(tk.event.starts_at) }),
+        body: t('{location}. Your QR ticket is in the Tickets tab.', { location: tk.event.location }),
+        data: { eventId: tk.event.id },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: new Date(new Date(t.event.starts_at).getTime() - REMINDER_LEAD_MS),
+        date: new Date(new Date(tk.event.starts_at).getTime() - REMINDER_LEAD_MS),
         channelId: ANDROID_CHANNEL,
       },
     });

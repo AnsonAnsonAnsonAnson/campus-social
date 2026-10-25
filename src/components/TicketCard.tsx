@@ -6,12 +6,13 @@ import { TICKET_QR_PREFIX } from '@/lib/constants';
 import { formatWhen } from '@/lib/format';
 import { radius, space, useColors } from '@/lib/theme';
 import type { Ticket } from '@/lib/types';
+import { t } from '@/lib/i18n';
 
 import { Artwork, Icon, Pill } from './ui';
 
 export function TicketQR({ code, size = 180 }: { code: string; size?: number }) {
   return (
-    <View style={styles.qrWrap} accessible accessibilityLabel="Ticket QR code. Show this at the door.">
+    <View style={styles.qrWrap} accessible accessibilityLabel={t('Ticket QR code. Show this at the door.')}>
       <QRCode value={TICKET_QR_PREFIX + code} size={size} backgroundColor="#fff" color="#000" />
     </View>
   );
@@ -21,11 +22,11 @@ export function TicketCard({ ticket, showQR }: { ticket: Ticket; showQR: boolean
   const c = useColors();
   const e = ticket.event;
   const status = ticket.checked_in_at ? (
-    <Pill label="Checked in" tone="success" />
+    <Pill label={t('Checked in')} tone="success" />
   ) : ticket.status === 'confirmed' ? (
-    <Pill label="Confirmed" tone="success" />
+    <Pill label={t('Confirmed')} tone="success" />
   ) : (
-    <Pill label="Waitlist" tone="warning" />
+    <Pill label={t('Waitlist')} tone="warning" />
   );
 
   return (
@@ -50,14 +51,14 @@ export function TicketCard({ ticket, showQR }: { ticket: Ticket; showQR: boolean
         </View>
         <View style={[styles.line, { justifyContent: 'space-between' }]}>
           {status}
-          {e.status === 'cancelled' && <Pill label="Event cancelled" tone="danger" />}
+          {e.status === 'cancelled' && <Pill label={t('Event cancelled')} tone="danger" />}
         </View>
       </View>
       {showQR && ticket.status === 'confirmed' && e.status !== 'cancelled' && (
         <View style={[styles.qrSection, { borderTopColor: c.border }]}>
           <TicketQR code={ticket.ticket_code} />
           <Text style={{ color: c.textSecondary, fontSize: 13 }}>
-            Show this at the door · #{ticket.ticket_code.slice(0, 8).toUpperCase()}
+            {t('Show this at the door · #{code}', { code: ticket.ticket_code.slice(0, 8).toUpperCase() })}
           </Text>
         </View>
       )}

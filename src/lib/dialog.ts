@@ -1,5 +1,7 @@
 import { Alert, Platform, type AlertButton } from 'react-native';
 
+import { t } from './i18n';
+
 /**
  * Alert.alert that also works in the web preview, where React Native's Alert
  * does nothing. Same signature as Alert.alert.
@@ -18,7 +20,7 @@ export function showAlert(title: string, message?: string, buttons?: AlertButton
     if (window.confirm(`${text}\n\n${actions[0].text}?`)) actions[0].onPress?.();
   } else {
     const menu = actions.map((b, i) => `${i + 1}. ${b.text}`).join('\n');
-    const pick = Number(window.prompt(`${text}\n\n${menu}\n\nType a number`, '1'));
+    const pick = Number(window.prompt(`${text}\n\n${menu}\n\n${t('Type a number')}`, '1'));
     actions[pick - 1]?.onPress?.();
   }
 }
@@ -27,7 +29,7 @@ export function showAlert(title: string, message?: string, buttons?: AlertButton
 export function confirmAsync(title: string, message: string, confirmText: string, destructive = false) {
   return new Promise<boolean>((resolve) =>
     showAlert(title, message, [
-      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+      { text: t('Cancel'), style: 'cancel', onPress: () => resolve(false) },
       { text: confirmText, style: destructive ? 'destructive' : 'default', onPress: () => resolve(true) },
     ]),
   );

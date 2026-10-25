@@ -14,6 +14,7 @@ import { EVENT_CATEGORIES } from '@/lib/constants';
 import { space, useColors } from '@/lib/theme';
 import { useDebouncedValue } from '@/lib/useDebouncedValue';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
 const DAY = 86400_000;
 
@@ -51,7 +52,7 @@ export default function Discover() {
         options={{
           headerRight: () => <NotificationBell />,
           headerSearchBarOptions: {
-            placeholder: 'Events, societies, places',
+            placeholder: t('Events, societies, places'),
             hideWhenScrolling: true,
             onChangeText: (e) => setSearch(e.nativeEvent.text),
             onCancelButtonPress: () => setSearch(''),
@@ -74,30 +75,34 @@ export default function Discover() {
 
           {sections.following.length > 0 && (
             <>
-              <SectionHeader title="From societies you follow" />
+              <SectionHeader title={t('From societies you follow')} />
               <HorizontalEvents events={sections.following} />
             </>
           )}
 
           {sections.thisWeek.length > 0 && (
             <>
-              <SectionHeader title="This week" />
+              <SectionHeader title={t('This week')} />
               <HorizontalEvents events={sections.thisWeek} />
             </>
           )}
 
-          <SectionHeader title="Upcoming" />
+          <SectionHeader title={t('Upcoming')} />
           <ChipRow>
-            <Chip label="All" selected={!category} onPress={() => setCategory(null)} />
+            <Chip label={t('All')} selected={!category} onPress={() => setCategory(null)} />
             {EVENT_CATEGORIES.map((cat) => (
-              <Chip key={cat} label={cat} selected={category === cat} onPress={() => setCategory(cat === category ? null : cat)} />
+              <Chip key={cat} label={t(cat)} selected={category === cat} onPress={() => setCategory(cat === category ? null : cat)} />
             ))}
           </ChipRow>
           <View style={{ gap: space.sm, marginTop: space.md }}>
             {sections.upcoming.length ? (
               sections.upcoming.map((e) => <EventRow key={e.id} event={e} />)
             ) : (
-              <EmptyState icon="calendar-outline" title="Nothing here yet" body="No upcoming events in this category. Check back soon!" />
+              <EmptyState
+                icon="calendar-outline"
+                title={t('Nothing here yet')}
+                body={t('No upcoming events in this category. Check back soon!')}
+              />
             )}
           </View>
         </ScrollView>
@@ -134,12 +139,16 @@ function SearchResults({ query }: { query: string }) {
       {results.loading && !results.data ? (
         <ListSkeleton rows={4} />
       ) : empty ? (
-        <EmptyState icon="search" title={`No results for “${query}”`} body="Try a society name, an event or a building." />
+        <EmptyState
+          icon="search"
+          title={t('No results for “{query}”', { query })}
+          body={t('Try a society name, an event or a building.')}
+        />
       ) : (
         <>
           {!!results.data?.societies.length && (
             <>
-              <SectionHeader title="Societies" />
+              <SectionHeader title={t('Societies')} />
               {results.data.societies.slice(0, 5).map((s) => (
                 <SocietyRow key={s.id} society={s} />
               ))}
@@ -147,7 +156,7 @@ function SearchResults({ query }: { query: string }) {
           )}
           {!!results.data?.events.length && (
             <>
-              <SectionHeader title="Events" />
+              <SectionHeader title={t('Events')} />
               <View style={{ gap: space.sm }}>
                 {results.data.events.map((e) => (
                   <EventRow key={e.id} event={e} />

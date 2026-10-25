@@ -12,14 +12,16 @@ import { confirmAsync, showAlert } from '@/lib/dialog';
 import { radius, space, type, useColors } from '@/lib/theme';
 import type { SocietyMember, SocietyRole } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
 type AssignableRole = Exclude<SocietyRole, 'owner'>;
 
-const ROLE_INFO: Record<SocietyRole, string> = {
-  owner: 'Everything, including handing the society over',
-  admin: 'Edit the society, manage the committee and events',
-  editor: 'Create and edit events, check people in',
-};
+const roleInfo = (role: SocietyRole) =>
+  ({
+    owner: t('Everything, including handing the society over'),
+    admin: t('Edit the society, manage the committee and events'),
+    editor: t('Create and edit events, check people in'),
+  })[role];
 
 export default function Members() {
   const { societyId } = useLocalSearchParams<{ societyId: string }>();
@@ -43,16 +45,19 @@ export default function Members() {
       invalidate();
       toast(done);
     } catch (e) {
-      showAlert('Something went wrong', errorMessage(e));
+      showAlert(t('Something went wrong'), errorMessage(e));
     }
   };
 
   const add = async () => {
     setAdding(true);
-    await run(async () => {
-      await api.addMember(societyId, email, role);
-      setEmail('');
-    }, `Added as ${role}`);
+    await run(
+      async () => {
+        await api.addMember(societyId, email, role);
+        setEmail('');
+      },
+      t('Added as {role}', { role: t(role) }),
+    );
     setAdding(false);
   };
 
@@ -61,66 +66,69 @@ export default function Members() {
     const name = m.display_name || m.email;
     if (isMe) {
       if (m.role === 'owner') {
-        showAlert('You own this society', 'To leave, first make someone else the owner by tapping their name.');
+        showAlert(t('You own this society'), t('To leave, first make someone else the owner by tapping their name.'));
         return;
       }
-      showAlert('Leave the committee?', "You won't be able to manage this society any more.", [
-        { text: 'Cancel', style: 'cancel' },
+      showAlert(t('Leave the committee?'), t("You won't be able to manage this society any more."), [
+        { text: t('Cancel'), style: 'cancel' },
         {
-          text: 'Leave committee',
+          text: t('Leave committee'),
           style: 'destructive',
           onPress: () =>
             run(async () => {
               await api.removeMember(societyId, m.user_id);
               router.dismissTo('/profile');
-            }, 'You left the committee'),
+            }, t('You left the committee')),
         },
       ]);
       return;
     }
     if (!canManage || m.role === 'owner') return;
     const other: AssignableRole = m.role === 'admin' ? 'editor' : 'admin';
-    showAlert(name, ROLE_INFO[m.role], [
-      { text: `Make ${other}`, onPress: () => run(() => api.setMemberRole(societyId, m.user_id, other), `${name} is now ${other}`) },
+    showAlert(name, roleInfo(m.role), [
+      {
+        text: t('Make {role}', { role: t(other) }),
+        onPress: () => run(() => api.setMemberRole(societyId, m.user_id, other), t('{name} is now {role}', { name, role: t(other) })),
+      },
       ...(myRole === 'owner'
         ? [
             {
-              text: 'Make owner',
+              text: t('Make owner'),
               onPress: async () => {
                 if (
                   await confirmAsync(
-                    `Make ${name} the owner?`,
-                    "You'll become an admin. Only the owner can hand the society over again.",
-                    'Transfer ownership',
+                    t('Make {name} the owner?', { name }),
+                    t("You'll become an admin. Only the owner can hand the society over again."),
+                    t('Transfer ownership'),
                     true,
                   )
                 ) {
-                  run(() => api.transferOwnership(societyId, m.user_id), `${name} now owns the society`);
+                  run(() => api.transferOwnership(societyId, m.user_id), t('{name} now owns the society', { name }));
                 }
               },
             },
           ]
         : []),
       {
-        text: 'Remove from committee',
+        text: t('Remove from committee'),
         style: 'destructive' as const,
-        onPress: () => run(() => api.removeMember(societyId, m.user_id), `${name} removed`),
+        onPress: () => run(() => api.removeMember(societyId, m.user_id), t('{name} removed', { name })),
       },
-      { text: 'Cancel', style: 'cancel' as const },
+      { text: t('Cancel'), style: 'cancel' as const },
     ]);
   };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-        <SectionHeader title={`${members.length} on the committee`} />
+        <SectionHeader title={t('{n} on the committee', { n: members.length })} />
         <View style={[styles.group, { backgroundColor: c.card }]}>
           {members.map((m, i) => (
             <Pressable
               key={m.user_id}
               onPress={() => manage(m)}
               accessibilityRole="button"
-              accessibilityLabel={`${m.display_name || m.email}, ${m.role}`}
+              accessibilityLabel={`${m.display_name || m.email}, ${t(m.role)}`}
               style={({ pressed }) => [
                 styles.row,
                 { backgroundColor: pressed ? c.fill : c.card, borderTopColor: c.border, borderTopWidth: i ? StyleSheet.hairlineWidth : 0 },
@@ -129,45 +137,51 @@ export default function Members() {
               <View style={{ flex: 1 }}>
                 <Text style={[type.body, { color: c.text }]} numberOfLines={1}>
                   {m.display_name || m.email}
-                  {m.user_id === user?.id ? ' (you)' : ''}
+                  {m.user_id === user?.id ? t(' (you)') : ''}
                 </Text>
                 <Text style={[type.footnote, { color: c.textSecondary }]} numberOfLines={1}>
                   {m.email}
                 </Text>
               </View>
-              <Pill label={m.role} tone={m.role === 'owner' ? 'brand' : m.role === 'admin' ? 'success' : 'neutral'} />
+              <Pill label={t(m.role)} tone={m.role === 'owner' ? 'brand' : m.role === 'admin' ? 'success' : 'neutral'} />
             </Pressable>
           ))}
         </View>
 
         {canManage ? (
           <>
-            <SectionHeader title="Add someone" />
+            <SectionHeader title={t('Add someone')} />
             <Card style={{ marginHorizontal: space.lg, gap: space.md }}>
               <Field
-                label="Their CUHK email"
+                label={t('Their CUHK email')}
                 value={email}
                 onChangeText={setEmail}
                 placeholder="1155xxxxxx@link.cuhk.edu.hk"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
-                hint="They need to have signed in to the app once."
+                hint={t('They need to have signed in to the app once.')}
               />
               <View style={{ flexDirection: 'row', gap: space.sm }}>
                 {(['editor', 'admin'] as const).map((r) => (
-                  <Chip key={r} label={r === 'editor' ? 'Editor' : 'Admin'} selected={role === r} onPress={() => setRole(r)} />
+                  <Chip key={r} label={r === 'editor' ? t('Editor') : t('Admin')} selected={role === r} onPress={() => setRole(r)} />
                 ))}
               </View>
-              <Text style={[type.footnote, { color: c.textSecondary }]}>{ROLE_INFO[role]}.</Text>
-              <Button title="Add to committee" icon="person-add-outline" loading={adding} disabled={!isCuhkEmail(email)} onPress={add} />
+              <Text style={[type.footnote, { color: c.textSecondary }]}>{roleInfo(role)}.</Text>
+              <Button
+                title={t('Add to committee')}
+                icon="person-add-outline"
+                loading={adding}
+                disabled={!isCuhkEmail(email)}
+                onPress={add}
+              />
             </Card>
           </>
         ) : (
           <View style={styles.note}>
             <Icon name="information-circle-outline" />
             <Text style={[type.footnote, { color: c.textSecondary, flex: 1 }]}>
-              Editors can manage events. Ask an admin or the owner to change the committee.
+              {t('Editors can manage events. Ask an admin or the owner to change the committee.')}
             </Text>
           </View>
         )}

@@ -11,12 +11,14 @@ import { formatAgo, formatWhen } from '@/lib/format';
 import { radius, space, type, useColors } from '@/lib/theme';
 import type { OpenReport } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
-const TAKE_DOWN: Record<OpenReport['target_type'], string> = {
-  event: 'Hide event',
-  society: 'Reject society',
-  banner: 'Pull banner',
-};
+const takeDownLabel = (type: OpenReport['target_type']) =>
+  ({
+    event: t('Hide event'),
+    society: t('Reject society'),
+    banner: t('Pull banner'),
+  })[type];
 
 /** Review queue for the app team: reports, new societies and banner requests. */
 export default function Admin() {
@@ -42,16 +44,16 @@ export default function Admin() {
         invalidate();
         toast(done);
       })
-      .catch((e) => showAlert('Could not update', errorMessage(e)));
+      .catch((e) => showAlert(t('Could not update'), errorMessage(e)));
 
   const takeDown = async (r: OpenReport) => {
     const ok = await confirmAsync(
-      `${TAKE_DOWN[r.target_type]}?`,
-      `“${r.target_name}” will no longer be shown to students. Its committee can still see it.`,
-      TAKE_DOWN[r.target_type],
+      t('{action}?', { action: takeDownLabel(r.target_type) }),
+      t('“{name}” will no longer be shown to students. Its committee can still see it.', { name: r.target_name }),
+      takeDownLabel(r.target_type),
       true,
     );
-    if (ok) act(() => api.resolveReport(r.id, 'removed'), 'Taken down');
+    if (ok) act(() => api.resolveReport(r.id, 'removed'), t('Taken down'));
   };
 
   const view = (r: OpenReport) => {
@@ -69,18 +71,23 @@ export default function Admin() {
       contentContainerStyle={{ paddingBottom: 48 }}
       refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}>
       {!reported.length && !societies.length && !banners.length && (
-        <EmptyState icon="checkmark-done-circle-outline" title="All caught up" body="No reports or requests waiting for review." />
+        <EmptyState
+          icon="checkmark-done-circle-outline"
+          title={t('All caught up')}
+          body={t('No reports or requests waiting for review.')}
+        />
       )}
 
-      {!!reported.length && <SectionHeader title={`Reports (${reported.length})`} />}
+      {!!reported.length && <SectionHeader title={t('Reports ({n})', { n: reported.length })} />}
       {reported.map((group) => {
         const r = group[0];
         return (
           <View key={`${r.target_type}:${r.target_id}`} style={[styles.card, { backgroundColor: c.card }]}>
             <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
-              <Pill label={r.target_type} tone="danger" />
+              <Pill label={t(r.target_type)} tone="danger" />
               <Text style={[type.footnote, { color: c.textSecondary }]}>
-                {group.length} report{group.length === 1 ? '' : 's'} · latest {formatAgo(group[group.length - 1].created_at)}
+                {group.length === 1 ? t('1 report') : t('{n} reports', { n: group.length })} ·{' '}
+                {t('latest {ago}', { ago: formatAgo(group[group.length - 1].created_at) })}
               </Text>
             </View>
             <Text style={[type.headline, { color: c.text }]}>{r.target_name}</Text>
@@ -90,20 +97,20 @@ export default function Admin() {
               </Text>
             ))}
             <View style={styles.actions}>
-              {r.target_type !== 'banner' && <Button small variant="secondary" title="View" onPress={() => view(r)} />}
-              <Button small variant="destructive" title={TAKE_DOWN[r.target_type]} onPress={() => takeDown(r)} />
+              {r.target_type !== 'banner' && <Button small variant="secondary" title={t('View')} onPress={() => view(r)} />}
+              <Button small variant="destructive" title={takeDownLabel(r.target_type)} onPress={() => takeDown(r)} />
               <Button
                 small
                 variant="plain"
-                title="Dismiss"
-                onPress={() => act(() => api.resolveReport(r.id, 'dismissed'), 'Report dismissed')}
+                title={t('Dismiss')}
+                onPress={() => act(() => api.resolveReport(r.id, 'dismissed'), t('Report dismissed'))}
               />
             </View>
           </View>
         );
       })}
 
-      {!!societies.length && <SectionHeader title={`Societies (${societies.length})`} />}
+      {!!societies.length && <SectionHeader title={t('Societies ({n})', { n: societies.length })} />}
       {societies.map((s) => (
         <View key={s.id} style={[styles.card, { backgroundColor: c.card }]}>
           <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
@@ -111,7 +118,7 @@ export default function Admin() {
             <View style={{ flex: 1 }}>
               <Text style={{ color: c.text, fontWeight: '700', fontSize: 16 }}>{s.name}</Text>
               <Text style={{ color: c.textSecondary }}>
-                {s.category}
+                {t(s.category)}
                 {s.contact_email ? ` · ${s.contact_email}` : ''}
                 {s.instagram ? ` · ${s.instagram}` : ''}
               </Text>
@@ -121,26 +128,26 @@ export default function Admin() {
           <View style={styles.actions}>
             <Button
               small
-              title="Approve + verify"
-              onPress={() => act(() => api.reviewSociety(s.id, 'approved', true), 'Society approved and verified')}
+              title={t('Approve + verify')}
+              onPress={() => act(() => api.reviewSociety(s.id, 'approved', true), t('Society approved and verified'))}
             />
             <Button
               small
               variant="secondary"
-              title="Approve"
-              onPress={() => act(() => api.reviewSociety(s.id, 'approved', false), 'Society approved')}
+              title={t('Approve')}
+              onPress={() => act(() => api.reviewSociety(s.id, 'approved', false), t('Society approved'))}
             />
             <Button
               small
               variant="plain"
-              title="Reject"
-              onPress={() => act(() => api.reviewSociety(s.id, 'rejected', false), 'Society rejected')}
+              title={t('Reject')}
+              onPress={() => act(() => api.reviewSociety(s.id, 'rejected', false), t('Society rejected'))}
             />
           </View>
         </View>
       ))}
 
-      {!!banners.length && <SectionHeader title={`Banners (${banners.length})`} />}
+      {!!banners.length && <SectionHeader title={t('Banners ({n})', { n: banners.length })} />}
       {banners.map((b) => (
         <View key={b.id} style={[styles.card, { backgroundColor: c.card }]}>
           <Text style={{ color: c.tint, fontWeight: '700' }}>{b.society.name}</Text>
@@ -150,18 +157,18 @@ export default function Admin() {
             {formatWhen(b.starts_at)} → {formatWhen(b.ends_at)}
           </Text>
           <View style={styles.actions}>
-            <Button small title="Approve" onPress={() => act(() => api.reviewBanner(b.id, 'approved', 0), 'Banner approved')} />
+            <Button small title={t('Approve')} onPress={() => act(() => api.reviewBanner(b.id, 'approved', 0), t('Banner approved'))} />
             <Button
               small
               variant="secondary"
-              title="Approve as featured"
-              onPress={() => act(() => api.reviewBanner(b.id, 'approved', 10), 'Banner featured')}
+              title={t('Approve as featured')}
+              onPress={() => act(() => api.reviewBanner(b.id, 'approved', 10), t('Banner featured'))}
             />
             <Button
               small
               variant="plain"
-              title="Reject"
-              onPress={() => act(() => api.reviewBanner(b.id, 'rejected', 0), 'Banner rejected')}
+              title={t('Reject')}
+              onPress={() => act(() => api.reviewBanner(b.id, 'rejected', 0), t('Banner rejected'))}
             />
           </View>
         </View>

@@ -77,9 +77,10 @@ for (const b of makeDemoBanners(now)) {
 }
 for (const d of makeDemoCampusDates(now)) {
   out.push(
-    `insert into public.campus_dates (id, title, kind, college, starts_on, ends_on) values (${[
+    `insert into public.campus_dates (id, title, title_zh, kind, college, starts_on, ends_on) values (${[
       q(d.id),
       q(d.title),
+      q(d.title_zh ?? null),
       q(d.kind),
       q(d.college),
       day(d.starts_on),

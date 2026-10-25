@@ -1,0 +1,12 @@
+{
+  "ios": {
+    "CFBundleDisplayName": "Campus Social",
+    "NSCameraUsageDescription": "學會幹事會使用相機，在入場時掃描參加者的二維碼門票。",
+    "NSPhotoLibraryUsageDescription": "為學會標誌、活動封面及宣傳橫幅選擇相片。",
+    "NSCalendarsUsageDescription": "將你已報名的活動加入日曆。",
+    "NSCalendarsWriteOnlyAccessUsageDescription": "將你已報名的活動加入日曆。"
+  },
+  "android": {
+    "app_name": "Campus Social"
+  }
+}

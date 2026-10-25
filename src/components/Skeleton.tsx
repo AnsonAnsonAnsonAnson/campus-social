@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, ScrollView, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
 
 import { radius, space, useColors } from '@/lib/theme';
+import { t } from '@/lib/i18n';
 
 /** Grey placeholder block that gently pulses while content loads. */
 export function Skeleton({
@@ -58,7 +59,7 @@ export function EventRowSkeleton() {
 
 export function ListSkeleton({ rows = 6 }: { rows?: number }) {
   return (
-    <View style={{ gap: space.sm, paddingTop: space.lg }} accessible accessibilityLabel="Loading" accessibilityRole="progressbar">
+    <View style={{ gap: space.sm, paddingTop: space.lg }} accessible accessibilityLabel={t('Loading')} accessibilityRole="progressbar">
       {Array.from({ length: rows }, (_, i) => (
         <EventRowSkeleton key={i} />
       ))}
@@ -75,7 +76,7 @@ export function FeedSkeleton() {
       scrollEnabled={false}
       style={{ backgroundColor: c.background }}
       contentContainerStyle={{ paddingTop: space.sm }}
-      accessibilityLabel="Loading"
+      accessibilityLabel={t('Loading')}
       accessibilityRole="progressbar">
       <Skeleton height={190} round={radius.lg} style={{ marginHorizontal: space.lg, width: undefined }} />
       <Skeleton width={180} height={22} style={{ marginHorizontal: space.lg, marginTop: space.xl, marginBottom: space.md }} />

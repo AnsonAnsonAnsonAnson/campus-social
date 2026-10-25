@@ -1,17 +1,28 @@
 import * as Notifications from 'expo-notifications';
-import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { ToastHost } from '@/components/Toast';
+import { api } from '@/lib/api';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { eventIdFrom, notificationsSupported, refreshReminders, registerForPush } from '@/lib/notifications';
 import { useColors } from '@/lib/theme';
+import { loadLang, t, takeReturnRoute, useLang } from '@/lib/i18n';
 
-/** Opens the event when a reminder or push is tapped, and keeps reminders and the push token current. */
+/**
+ * Opens the event when a reminder or push is tapped, and keeps reminders, the
+ * push token and the profile's language (which notifications are written in)
+ * current.
+ */
 function NotificationRouting() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const lang = useLang();
+
+  useEffect(() => {
+    if (profile && profile.locale !== lang) api.updateProfile({ locale: lang }).catch(() => undefined);
+  }, [profile, lang]);
 
   useEffect(() => {
     if (!notificationsSupported) return;
@@ -33,35 +44,58 @@ function NotificationRouting() {
   return null;
 }
 
+/** After a language change remounts the app, reopens the screen the person was on. */
+function ReturnAfterLanguageChange() {
+  const ready = !!useRootNavigationState()?.key;
+  useEffect(() => {
+    if (!ready) return;
+    const to = takeReturnRoute();
+    if (to) router.navigate(to as never);
+  }, [ready]);
+  return null;
+}
+
 export default function RootLayout() {
   const scheme = useColorScheme();
   const c = useColors();
+  const lang = useLang();
+  const [langLoaded, setLangLoaded] = useState(false);
   const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
   const theme = { ...base, colors: { ...base.colors, primary: c.tint, background: c.background, card: c.card } };
 
+  useEffect(() => {
+    loadLang().finally(() => setLangLoaded(true));
+  }, []);
+
+  // The splash screen stays up for the few milliseconds this takes.
+  if (!langLoaded) return null;
+
+  // Keyed on language: screens read text when they render, so a language
+  // change remounts the app rather than leaving half the screens untranslated.
   return (
-    <ThemeProvider value={theme}>
+    <ThemeProvider value={theme} key={lang}>
       <AuthProvider>
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="event/[id]" options={{ title: '', headerTransparent: true, headerTintColor: '#fff' }} />
           <Stack.Screen name="society/[id]" options={{ title: '' }} />
-          <Stack.Screen name="sign-in" options={{ presentation: 'modal', title: 'Sign in' }} />
-          <Stack.Screen name="edit-profile" options={{ presentation: 'modal', title: 'Edit profile' }} />
-          <Stack.Screen name="new-society" options={{ presentation: 'modal', title: 'Register a society' }} />
-          <Stack.Screen name="report" options={{ presentation: 'formSheet', title: 'Report', sheetAllowedDetents: [0.6, 1] }} />
-          <Stack.Screen name="manage/[societyId]" options={{ title: 'Manage' }} />
-          <Stack.Screen name="manage/event-form" options={{ presentation: 'modal', title: 'Event' }} />
-          <Stack.Screen name="manage/promote" options={{ presentation: 'modal', title: 'Promote event' }} />
-          <Stack.Screen name="manage/attendees" options={{ title: 'Attendees' }} />
+          <Stack.Screen name="sign-in" options={{ presentation: 'modal', title: t('Sign in') }} />
+          <Stack.Screen name="edit-profile" options={{ presentation: 'modal', title: t('Edit profile') }} />
+          <Stack.Screen name="new-society" options={{ presentation: 'modal', title: t('Register a society') }} />
+          <Stack.Screen name="report" options={{ presentation: 'formSheet', title: t('Report'), sheetAllowedDetents: [0.6, 1] }} />
+          <Stack.Screen name="manage/[societyId]" options={{ title: t('Manage') }} />
+          <Stack.Screen name="manage/event-form" options={{ presentation: 'modal', title: t('Event') }} />
+          <Stack.Screen name="manage/promote" options={{ presentation: 'modal', title: t('Promote event') }} />
+          <Stack.Screen name="manage/attendees" options={{ title: t('Attendees') }} />
           <Stack.Screen name="manage/scan" options={{ presentation: 'fullScreenModal', headerShown: false }} />
-          <Stack.Screen name="admin/index" options={{ title: 'Review queue' }} />
-          <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
-          <Stack.Screen name="manage/members" options={{ title: 'Committee' }} />
-          <Stack.Screen name="manage/edit-society" options={{ presentation: 'modal', title: 'Edit society' }} />
-          <Stack.Screen name="welcome" options={{ presentation: 'modal', title: 'Welcome', gestureEnabled: false }} />
+          <Stack.Screen name="admin/index" options={{ title: t('Review queue') }} />
+          <Stack.Screen name="notifications" options={{ title: t('Notifications') }} />
+          <Stack.Screen name="manage/members" options={{ title: t('Committee') }} />
+          <Stack.Screen name="manage/edit-society" options={{ presentation: 'modal', title: t('Edit society') }} />
+          <Stack.Screen name="welcome" options={{ presentation: 'modal', title: t('Welcome'), gestureEnabled: false }} />
         </Stack>
         <NotificationRouting />
+        <ReturnAfterLanguageChange />
         <ToastHost />
         <StatusBar style="auto" />
       </AuthProvider>

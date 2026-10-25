@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { api, invalidate } from './api';
+import { clearSavedTickets } from './ticketCache';
 import type { AuthUser } from './backend';
 import type { Profile } from './types';
 
@@ -27,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadUserData = useCallback(async (u: AuthUser | null) => {
     setUser(u);
     if (!u) {
+      clearSavedTickets();
       setProfile(null);
       setFollowIds(new Set());
       return;

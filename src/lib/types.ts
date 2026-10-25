@@ -1,6 +1,8 @@
 // Row shapes mirror supabase/migrations/*.sql (snake_case on purpose, so rows
 // from Supabase can be used directly).
 
+import type { Lang } from './i18n';
+
 export type ReviewStatus = 'pending' | 'approved' | 'rejected';
 export type SocietyRole = 'owner' | 'admin' | 'editor';
 export type EventStatus = 'draft' | 'published' | 'cancelled';
@@ -15,6 +17,8 @@ export type Profile = {
   year_of_study: number | null;
   avatar_url: string | null;
   is_platform_admin: boolean;
+  /** App language; notifications are written in it. */
+  locale?: Lang;
 };
 
 export type Society = {
@@ -98,6 +102,8 @@ export type CampusDateKind = 'university' | 'college' | 'holiday' | 'term' | 'ex
 export type CampusDate = {
   id: string;
   title: string;
+  /** Traditional Chinese title, shown when the app is in Chinese. */
+  title_zh?: string | null;
   kind: CampusDateKind;
   college: string | null;
   starts_on: string; // YYYY-MM-DD

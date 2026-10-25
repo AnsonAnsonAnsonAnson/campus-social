@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Calendar } from 'react-native-calendars';
+import { Calendar, LocaleConfig } from 'react-native-calendars';
 
 import { EventRow } from '@/components/EventCard';
 import { Chip, ChipRow, EmptyState, Icon } from '@/components/ui';
@@ -10,8 +10,22 @@ import { addDays, formatDayRange, formatLongDay, hkDate, todayHK } from '@/lib/f
 import { radius, space, useColors } from '@/lib/theme';
 import type { CampusDate, EventWithSociety } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
+import { getLang, onLanguageChange, t } from '@/lib/i18n';
 
 type Filter = 'all' | 'following' | 'going';
+
+// Month and weekday names for the calendar grid. The library's built-in
+// default is English; this adds Traditional Chinese.
+LocaleConfig.locales['zh-Hant'] = {
+  monthNames: Array.from({ length: 12 }, (_, i) => `${i + 1}月`),
+  monthNamesShort: Array.from({ length: 12 }, (_, i) => `${i + 1}月`),
+  dayNames: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],
+  dayNamesShort: ['日', '一', '二', '三', '四', '五', '六'],
+  today: '今日',
+};
+onLanguageChange((lang) => {
+  LocaleConfig.defaultLocale = lang === 'zh-Hant' ? 'zh-Hant' : '';
+});
 
 const KIND_ICON = {
   university: 'school-outline',
@@ -24,6 +38,7 @@ const KIND_ICON = {
 
 export default function CalendarScreen() {
   const c = useColors();
+  const zh = getLang() === 'zh-Hant';
   const { user, followIds, profile } = useAuth();
   const [selected, setSelected] = useState(todayHK());
   const [month, setMonth] = useState(todayHK().slice(0, 7));
@@ -78,15 +93,16 @@ export default function CalendarScreen() {
       contentContainerStyle={{ paddingBottom: 40 }}
       refreshControl={<RefreshControl refreshing={data.refreshing} onRefresh={data.refresh} />}>
       <ChipRow>
-        <Chip label="All events" selected={filter === 'all'} onPress={() => setFilter('all')} />
-        <Chip label="Following" icon="heart" selected={filter === 'following'} onPress={() => setFilter('following')} />
-        <Chip label="Going" icon="ticket" selected={filter === 'going'} onPress={() => setFilter('going')} />
+        <Chip label={t('All events')} selected={filter === 'all'} onPress={() => setFilter('all')} />
+        <Chip label={t('Following')} icon="heart" selected={filter === 'following'} onPress={() => setFilter('following')} />
+        <Chip label={t('Going')} icon="ticket" selected={filter === 'going'} onPress={() => setFilter('going')} />
       </ChipRow>
 
       <View style={[styles.calendarCard, { backgroundColor: c.card }]}>
         <Calendar
           key={c.background}
           current={`${month}-01`}
+          monthFormat={zh ? "yyyy'年'M'月'" : 'MMMM yyyy'}
           markingType="multi-dot"
           markedDates={marked}
           onDayPress={(d) => setSelected(d.dateString)}
@@ -106,9 +122,9 @@ export default function CalendarScreen() {
           }}
         />
         <View style={styles.legend}>
-          <Legend color={c.tint} label="Events" />
-          <Legend color={c.success} label="Going" />
-          <Legend color={c.gold} label="Campus dates" />
+          <Legend color={c.tint} label={t('Events')} />
+          <Legend color={c.success} label={t('Going')} />
+          <Legend color={c.gold} label={t('Campus dates')} />
         </View>
       </View>
 
@@ -125,7 +141,11 @@ export default function CalendarScreen() {
       </View>
 
       {!dayEvents.length && !dayDates.length && !data.loading && (
-        <EmptyState icon="calendar-clear-outline" title="Nothing on this day" body="Pick another date, or switch to All events." />
+        <EmptyState
+          icon="calendar-clear-outline"
+          title={t('Nothing on this day')}
+          body={t('Pick another date, or switch to All events.')}
+        />
       )}
     </ScrollView>
   );
@@ -147,9 +167,9 @@ function CampusDateRow({ item }: { item: CampusDate }) {
     <View style={[styles.campusRow, { backgroundColor: c.card, borderLeftColor: c.gold }]}>
       <Icon name={KIND_ICON[item.kind]} size={20} color={c.gold} />
       <View style={{ flex: 1 }}>
-        <Text style={{ color: c.text, fontWeight: '600', fontSize: 15 }}>{item.title}</Text>
+        <Text style={{ color: c.text, fontWeight: '600', fontSize: 15 }}>{(getLang() === 'zh-Hant' && item.title_zh) || item.title}</Text>
         <Text style={{ color: c.textSecondary, fontSize: 13 }}>
-          {item.college ? `${item.college} College · ` : ''}
+          {item.college ? `${t('{college} College', { college: t(item.college) })} · ` : ''}
           {formatDayRange(item.starts_on, item.ends_on)}
         </Text>
       </View>

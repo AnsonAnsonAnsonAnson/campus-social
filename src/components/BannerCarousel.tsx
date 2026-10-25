@@ -5,6 +5,7 @@ import { FlatList, Pressable, StyleSheet, Text, View, useWindowDimensions } from
 import { formatWhen } from '@/lib/format';
 import { radius, space, useColors } from '@/lib/theme';
 import type { BannerWithLinks } from '@/lib/types';
+import { t } from '@/lib/i18n';
 
 import { Artwork } from './ui';
 
@@ -54,7 +55,7 @@ export function BannerCarousel({ banners }: { banners: BannerWithLinks[] }) {
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Promoted: ${item.title}`}
+            accessibilityLabel={t('Promoted: {title}', { title: item.title })}
             onPress={() => router.push(item.event_id ? `/event/${item.event_id}` : `/society/${item.society_id}`)}>
             <Artwork seed={item.id} uri={item.image_url} style={[styles.banner, { width: cardWidth }]}>
               <View style={styles.scrim} />

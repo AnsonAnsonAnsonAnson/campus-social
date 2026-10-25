@@ -10,7 +10,7 @@ A student app for CUHK: follow societies, discover events, sign up Eventbrite-st
 | **Calendar** | Month view with dots for events, your tickets and campus dates (term, exams, holidays, your college's dates); filter All / Following / Going |
 | **Societies** | Directory with categories, verified badges, follower counts and one-tap follow |
 | **Tickets** | Upcoming and past registrations, QR ticket for the next event, waitlist status |
-| **Profile** | Photo, college, major, societies you run, notification settings, review queue (admins), privacy/terms/support, sign out, delete account |
+| **Profile** | Photo, college, major, societies you run, notification settings, language, review queue (admins), privacy/terms/support, sign out, delete account |
 
 New students get a short welcome screen after their first sign-in (name, college, interests, suggested societies to follow).
 
@@ -19,6 +19,8 @@ Society committees get: a dashboard per society; editing the society's details, 
 How sign-ups work: registration goes through Postgres functions that lock the event row, so capacity can't be oversold. When a confirmed person cancels or the committee raises capacity, the first person on the waitlist is promoted automatically.
 
 Notifications: the database writes an inbox row when someone gets off a waitlist, an event they joined is cancelled or moves, a society they follow publishes an event, their society is approved, or they're added to a committee. The app shows these in the inbox, schedules a local reminder an hour before each event you're going to, and (once push is set up, below) the `send-push` Edge Function delivers each inbox row as a push notification.
+
+Languages: the app opens in Traditional Chinese (Hong Kong wording) with English as the second language, switchable in Profile (or on the welcome screen). Dates and times follow the language (下午6:30 / 6:30pm), notifications and pushes are written in each person's chosen language, and the App Store name, permission prompts and listing (`store/app-store-listing.md`) come in both. Events and societies are shown as their committees wrote them.
 
 Trust and safety: only `@link.cuhk.edu.hk` / `@cuhk.edu.hk` emails can create accounts; new societies and banners wait for admin approval (stops impersonation and spam); events, societies and banners can be reported, and admins see grouped reports in the review queue where they can dismiss them or take the item down; in-app account deletion (society ownership passes to another committee member).
 
@@ -68,7 +70,7 @@ You need an Apple Developer account (US$99/year) and an Expo account. No Mac is 
    npx eas-cli@latest submit -p ios --latest
    ```
    Use the `preview` profile to install test builds on your own phone, or TestFlight via `submit`.
-4. **App Store Connect listing.** You need a privacy policy URL and support URL (update `PRIVACY_URL`, `TERMS_URL`, `SUPPORT_EMAIL` in `src/lib/constants.ts`), screenshots (6.9" iPhone), description and keywords, and age rating.
+4. **App Store Connect listing.** You need a privacy policy URL and support URL (update `PRIVACY_URL`, `TERMS_URL`, `SUPPORT_EMAIL` in `src/lib/constants.ts`), screenshots (6.9" iPhone), description and keywords (both languages are ready in `store/app-store-listing.md`; set the primary language to Chinese (Traditional)), and age rating.
 5. **App Privacy answers.** Data collected and linked to the user: email address, name, user ID, photos (society uploads only), other user content (event sign-ups). Not used for tracking. No third-party analytics are included.
 6. **Review account.** Reviewers can't receive a CUHK email code. Create a user in Supabase **Auth → Users → Add user** with a password, add the address to `public.allowed_emails` first, make it a committee member of a test society, and give the credentials in App Review notes. They sign in via "Sign in with a password instead".
 7. **Things App Review checks that are already handled:** account deletion in-app, report button on user-generated content plus a moderation queue, purpose strings for camera/photos/calendar, encryption export answer (`usesNonExemptEncryption: false`), privacy manifest for UserDefaults.
@@ -91,12 +93,17 @@ src/lib/
   demo.ts           In-memory demo implementation
   demoData.ts       Sample societies, events, banners, campus dates
   notifications.ts  Local reminders and push registration
+  i18n.ts           t('English text') lookups, language setting
+src/i18n/zh-Hant.ts Traditional Chinese for every English string
+locales/            Localized app name and permission prompts (iOS/Android)
+store/              App Store listing text in both languages
   __tests__/        Unit tests (jest)
 supabase/
   migrations/       Schema, RLS policies, RPCs (register, cancel, check-in, committee, moderation, ...)
   functions/        send-push Edge Function
   tests/            Database tests (run against plain Postgres)
   seed.sql          Generated sample data
+  setup.sql         All migrations in one file, for a new project's SQL Editor
 ```
 
 Useful scripts: `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:db` (needs a local Postgres; set `PGHOST`, `PGUSER`, `PGPASSWORD`), `npm run format`, `npm run seed`. GitHub Actions runs all of them on every pull request.
