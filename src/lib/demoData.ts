@@ -112,6 +112,8 @@ type EventSeed = Omit<
   | 'waitlist_enabled'
   | 'confirmed_count'
   | 'waitlist_count'
+  | 'signup_question'
+  | 'removed_at'
 > &
   Partial<CampusEvent>;
 
@@ -125,6 +127,8 @@ function event(n: number, e: EventSeed): CampusEvent {
     waitlist_enabled: true,
     confirmed_count: 0,
     waitlist_count: 0,
+    signup_question: null,
+    removed_at: null,
     ...e,
   };
 }
@@ -157,6 +161,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       registration_required: true,
       capacity: 80,
       price_text: 'Free',
+      signup_question: 'What would you like to build? (Helps us form teams)',
       confirmed_count: 61,
     }),
     event(3, {
@@ -347,6 +352,7 @@ export function makeDemoCampusDates(now = new Date()): CampusDate[] {
   const date = (
     n: number,
     title: string,
+    title_zh: string,
     kind: CampusDate['kind'],
     from: number,
     to = from,
@@ -354,6 +360,7 @@ export function makeDemoCampusDates(now = new Date()): CampusDate[] {
   ): CampusDate => ({
     id: cid(n),
     title,
+    title_zh,
     kind,
     college,
     starts_on: d(from),
@@ -361,13 +368,13 @@ export function makeDemoCampusDates(now = new Date()): CampusDate[] {
     url: null,
   });
   return [
-    date(1, 'Add/drop period ends', 'deadline', 1),
-    date(2, 'Reading week', 'term', 14, 18),
-    date(3, 'Chung Chi Founders Day', 'college', 7, 7, 'Chung Chi'),
-    date(4, 'Public holiday', 'holiday', 10),
-    date(5, 'Course evaluation opens', 'university', 20),
-    date(6, 'New Asia High Table Dinner', 'college', 12, 12, 'New Asia'),
-    date(7, 'Last day of classes', 'term', 35),
-    date(8, 'Examination period', 'exam', 38, 50),
+    date(1, 'Add/drop period ends', '加退選截止', 'deadline', 1),
+    date(2, 'Reading week', '閱讀週', 'term', 14, 18),
+    date(3, 'Chung Chi Founders Day', '崇基立校日', 'college', 7, 7, 'Chung Chi'),
+    date(4, 'Public holiday', '公眾假期', 'holiday', 10),
+    date(5, 'Course evaluation opens', '課程評估開始', 'university', 20),
+    date(6, 'New Asia High Table Dinner', '新亞高桌晚宴', 'college', 12, 12, 'New Asia'),
+    date(7, 'Last day of classes', '最後上課日', 'term', 35),
+    date(8, 'Examination period', '考試期', 'exam', 38, 50),
   ];
 }

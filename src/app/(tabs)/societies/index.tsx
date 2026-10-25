@@ -2,13 +2,16 @@ import { router, Stack } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 
+import { Skeleton } from '@/components/Skeleton';
 import { SocietyRow } from '@/components/SocietyRow';
-import { Button, Chip, ChipRow, EmptyState, ErrorView, Loading, SectionHeader } from '@/components/ui';
+import { Button, Chip, ChipRow, EmptyState, ErrorView, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { SOCIETY_CATEGORIES } from '@/lib/constants';
 import { space, useColors } from '@/lib/theme';
+import { useDebouncedValue } from '@/lib/useDebouncedValue';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
 export default function Societies() {
   const c = useColors();
@@ -17,7 +20,8 @@ export default function Societies() {
   const [category, setCategory] = useState<string | null>(null);
   const [showFollowing, setShowFollowing] = useState(false);
 
-  const q = useQuery(() => api.listSocieties({ search, category: category ?? undefined }), [search, category]);
+  const query = useDebouncedValue(search.trim(), 250);
+  const q = useQuery(() => api.listSocieties({ search: query, category: category ?? undefined }), [query, category]);
 
   const list = useMemo(() => (q.data ?? []).filter((s) => !showFollowing || followIds.has(s.id)), [q.data, showFollowing, followIds]);
 
@@ -26,7 +30,7 @@ export default function Societies() {
       <Stack.Screen
         options={{
           headerSearchBarOptions: {
-            placeholder: 'Search societies',
+            placeholder: t('Search societies'),
             onChangeText: (e) => setSearch(e.nativeEvent.text),
             onCancelButtonPress: () => setSearch(''),
           },
@@ -42,10 +46,10 @@ export default function Societies() {
         ListHeaderComponent={
           <View style={{ paddingVertical: space.sm }}>
             <ChipRow>
-              <Chip label="Following" icon="heart" selected={showFollowing} onPress={() => setShowFollowing((v) => !v)} />
-              <Chip label="All" selected={!category} onPress={() => setCategory(null)} />
+              <Chip label={t('Following')} icon="heart" selected={showFollowing} onPress={() => setShowFollowing((v) => !v)} />
+              <Chip label={t('All')} selected={!category} onPress={() => setCategory(null)} />
               {SOCIETY_CATEGORIES.map((cat) => (
-                <Chip key={cat} label={cat} selected={category === cat} onPress={() => setCategory(cat === category ? null : cat)} />
+                <Chip key={cat} label={t(cat)} selected={category === cat} onPress={() => setCategory(cat === category ? null : cat)} />
               ))}
             </ChipRow>
           </View>
@@ -53,22 +57,32 @@ export default function Societies() {
         renderItem={({ item }) => <SocietyRow society={item} />}
         ListEmptyComponent={
           q.loading ? (
-            <Loading />
+            <View style={{ gap: space.lg, padding: space.lg }} accessibilityLabel={t('Loading')}>
+              {Array.from({ length: 6 }, (_, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                  <Skeleton width={44} height={44} round={12} />
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <Skeleton width="60%" height={15} />
+                    <Skeleton width="35%" height={12} />
+                  </View>
+                </View>
+              ))}
+            </View>
           ) : q.error ? (
             <ErrorView message={q.error} onRetry={q.refresh} />
           ) : (
             <EmptyState
               icon="people-outline"
-              title={showFollowing ? 'You are not following any societies yet' : 'No societies found'}
-              body={showFollowing ? 'Follow societies to see their events first on Discover and in your calendar.' : undefined}
+              title={showFollowing ? t('You are not following any societies yet') : t('No societies found')}
+              body={showFollowing ? t('Follow societies to see their events first on Discover and in your calendar.') : undefined}
             />
           )
         }
         ListFooterComponent={
           <View style={{ padding: space.lg, paddingBottom: 48 }}>
-            <SectionHeader title="Run a society?" />
+            <SectionHeader title={t('Run a society?')} />
             <Button
-              title="Register your society"
+              title={t('Register your society')}
               icon="megaphone-outline"
               variant="secondary"
               onPress={() => requireSignIn() && router.push('/new-society')}

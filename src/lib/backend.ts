@@ -1,4 +1,5 @@
 import type {
+  AppNotification,
   Attendee,
   Banner,
   BannerInput,
@@ -9,17 +10,21 @@ import type {
   EventQuery,
   EventWithSociety,
   MySociety,
+  OpenReport,
   Profile,
   Registration,
+  ReportTarget,
   ReviewStatus,
   Society,
   SocietyInput,
+  SocietyMember,
+  SocietyRole,
   Ticket,
 } from './types';
 
 export type AuthUser = { id: string; email: string };
 
-export type ProfilePatch = Partial<Pick<Profile, 'display_name' | 'college' | 'major' | 'year_of_study' | 'avatar_url'>>;
+export type ProfilePatch = Partial<Pick<Profile, 'display_name' | 'college' | 'major' | 'year_of_study' | 'avatar_url' | 'locale'>>;
 
 export type SocietyPatch = Partial<
   Pick<
@@ -58,9 +63,18 @@ export interface Backend {
   myTickets(): Promise<Ticket[]>;
   myRegistration(eventId: string): Promise<Registration | null>;
   waitlistPosition(eventId: string): Promise<number>;
-  register(eventId: string): Promise<Registration>;
+  /** `answer` replies to the event's sign-up question, if it has one. */
+  register(eventId: string, answer?: string): Promise<Registration>;
   cancelRegistration(eventId: string): Promise<void>;
-  report(targetType: 'event' | 'society' | 'banner', targetId: string, reason: string): Promise<void>;
+  report(targetType: ReportTarget, targetId: string, reason: string): Promise<void>;
+
+  // Notifications
+  listNotifications(): Promise<AppNotification[]>;
+  unreadNotificationCount(): Promise<number>;
+  markAllNotificationsRead(): Promise<void>;
+  deleteNotification(id: string): Promise<void>;
+  registerPushToken(token: string, platform: 'ios' | 'android' | 'web'): Promise<void>;
+  unregisterPushToken(token: string): Promise<void>;
 
   // Society committee
   mySocieties(): Promise<MySociety[]>;
@@ -70,6 +84,13 @@ export interface Backend {
   deleteEvent(id: string): Promise<void>;
   listAttendees(eventId: string): Promise<Attendee[]>;
   checkIn(eventId: string, ticketCode: string): Promise<CheckInResult>;
+  /** Manual check-in (or undo) from the attendee list. */
+  setCheckedIn(registrationId: string, checked: boolean): Promise<void>;
+  listMembers(societyId: string): Promise<SocietyMember[]>;
+  addMember(societyId: string, email: string, role: Exclude<SocietyRole, 'owner'>): Promise<void>;
+  setMemberRole(societyId: string, userId: string, role: Exclude<SocietyRole, 'owner'>): Promise<void>;
+  removeMember(societyId: string, userId: string): Promise<void>;
+  transferOwnership(societyId: string, userId: string): Promise<void>;
   societyBanners(societyId: string): Promise<Banner[]>;
   requestBanner(input: BannerInput): Promise<void>;
   deleteBanner(id: string): Promise<void>;
@@ -80,6 +101,9 @@ export interface Backend {
   pendingBanners(): Promise<BannerWithLinks[]>;
   reviewSociety(id: string, status: ReviewStatus, verified: boolean): Promise<void>;
   reviewBanner(id: string, status: ReviewStatus, priority: number): Promise<void>;
+  openReports(): Promise<OpenReport[]>;
+  /** 'removed' takes the reported event down (or rejects the society / banner). */
+  resolveReport(id: string, action: 'dismissed' | 'removed'): Promise<void>;
 }
 
 export function isCuhkEmail(email: string) {

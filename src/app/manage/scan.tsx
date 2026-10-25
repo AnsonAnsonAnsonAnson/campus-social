@@ -7,9 +7,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Icon } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
-import { TICKET_QR_PREFIX } from '@/lib/constants';
+import { LEGACY_TICKET_QR_PREFIX, TICKET_QR_PREFIX } from '@/lib/constants';
 import { radius, space } from '@/lib/theme';
 import type { CheckInResult } from '@/lib/types';
+import { t } from '@/lib/i18n';
 
 const SAME_CODE_COOLDOWN_MS = 3000;
 
@@ -24,7 +25,8 @@ export default function Scan() {
   const last = useRef<{ code: string; at: number } | null>(null);
 
   const handle = async (raw: string) => {
-    const code = raw.startsWith(TICKET_QR_PREFIX) ? raw.slice(TICKET_QR_PREFIX.length) : raw.trim();
+    const prefix = [TICKET_QR_PREFIX, LEGACY_TICKET_QR_PREFIX].find((p) => raw.startsWith(p));
+    const code = prefix ? raw.slice(prefix.length) : raw.trim();
     const now = Date.now();
     if (busy.current || (last.current?.code === code && now - last.current.at < SAME_CODE_COOLDOWN_MS)) return;
     busy.current = true;
@@ -60,20 +62,20 @@ export default function Scan() {
       ) : (
         <View style={styles.permission}>
           <Icon name="camera-outline" size={48} color="#fff" />
-          <Text style={styles.permissionText}>Allow camera access to scan attendees' QR tickets.</Text>
-          {permission && <Button title="Allow camera" onPress={requestPermission} />}
+          <Text style={styles.permissionText}>{t('Allow camera access to scan attendees’ QR tickets.')}</Text>
+          {permission && <Button title={t('Allow camera')} onPress={requestPermission} />}
         </View>
       )}
 
       <View style={[styles.top, { paddingTop: insets.top + space.sm }]}>
-        <Pressable onPress={close} hitSlop={12} accessibilityLabel="Close scanner" style={styles.close}>
+        <Pressable onPress={close} hitSlop={12} accessibilityLabel={t('Close scanner')} style={styles.close}>
           <Icon name="close" size={22} color="#fff" />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.topTitle} numberOfLines={1}>
-            {title ?? 'Check-in'}
+            {title ?? t('Check-in')}
           </Text>
-          <Text style={styles.topSub}>{count} checked in this session</Text>
+          <Text style={styles.topSub}>{t('{n} checked in this session', { n: count })}</Text>
         </View>
       </View>
 
@@ -93,7 +95,7 @@ export default function Scan() {
           <TextInput
             value={manual}
             onChangeText={setManual}
-            placeholder="Or type ticket code"
+            placeholder={t('Or type the 8-character code')}
             placeholderTextColor="rgba(255,255,255,0.6)"
             autoCapitalize="none"
             autoCorrect={false}
@@ -101,7 +103,7 @@ export default function Scan() {
             onSubmitEditing={() => manual && handle(manual)}
             returnKeyType="done"
           />
-          <Button small title="Check in" disabled={!manual} onPress={() => handle(manual)} />
+          <Button small title={t('Check in')} disabled={!manual} onPress={() => handle(manual)} />
         </View>
       </View>
     </View>

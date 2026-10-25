@@ -1,0 +1,12 @@
+{
+  "ios": {
+    "CFBundleDisplayName": "Campus Social",
+    "NSCameraUsageDescription": "Society committee members use the camera to scan attendees' QR tickets at the door.",
+    "NSPhotoLibraryUsageDescription": "Choose photos for your society logo, event covers and promotional banners.",
+    "NSCalendarsUsageDescription": "Add events you sign up for to your calendar.",
+    "NSCalendarsWriteOnlyAccessUsageDescription": "Add events you sign up for to your calendar."
+  },
+  "android": {
+    "app_name": "Campus Social"
+  }
+}

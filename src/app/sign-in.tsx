@@ -1,12 +1,22 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 
 import { Button, Field, Icon } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { isCuhkEmail } from '@/lib/backend';
 import { DEMO_CODE } from '@/lib/demo';
+import { showAlert } from '@/lib/dialog';
+import { needsOnboarding } from '@/lib/onboarding';
 import { space, useColors } from '@/lib/theme';
+import { t } from '@/lib/i18n';
+
+/** Leave the sign-in sheet: first-timers go to the welcome screen, everyone else back to where they were. */
+async function done() {
+  if (await needsOnboarding().catch(() => false)) router.replace('/welcome');
+  else if (router.canGoBack()) router.back();
+  else router.replace('/discover');
+}
 
 export default function SignIn() {
   const c = useColors();
@@ -18,7 +28,7 @@ export default function SignIn() {
 
   const sendCode = async () => {
     if (!isCuhkEmail(email)) {
-      Alert.alert('Use your CUHK email', 'Sign in with your @link.cuhk.edu.hk (students) or @cuhk.edu.hk (staff) address.');
+      showAlert(t('Use your CUHK email'), t('Sign in with your @link.cuhk.edu.hk (students) or @cuhk.edu.hk (staff) address.'));
       return;
     }
     setBusy(true);
@@ -26,7 +36,7 @@ export default function SignIn() {
       await api.sendCode(email);
       setStep('code');
     } catch (e) {
-      Alert.alert('Could not send code', errorMessage(e));
+      showAlert(t('Could not send code'), errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -36,9 +46,9 @@ export default function SignIn() {
     setBusy(true);
     try {
       await api.verifyCode(email, code);
-      router.back();
+      await done();
     } catch (e) {
-      Alert.alert('Could not sign in', errorMessage(e));
+      showAlert(t('Could not sign in'), errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -48,9 +58,9 @@ export default function SignIn() {
     setBusy(true);
     try {
       await api.signInWithPassword(email, password);
-      router.back();
+      await done();
     } catch (e) {
-      Alert.alert('Could not sign in', errorMessage(e));
+      showAlert(t('Could not sign in'), errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -62,19 +72,19 @@ export default function SignIn() {
         <View style={{ alignItems: 'center', gap: space.sm, marginVertical: space.lg }}>
           <Icon name={step === 'code' ? 'mail-open' : 'school'} size={48} color={c.tint} />
           <Text style={{ color: c.text, fontSize: 24, fontWeight: '800', textAlign: 'center' }}>
-            {step === 'code' ? 'Check your inbox' : 'Sign in with your CUHK email'}
+            {step === 'code' ? t('Check your inbox') : t('Sign in with your CUHK email')}
           </Text>
           <Text style={{ color: c.textSecondary, fontSize: 15, textAlign: 'center', lineHeight: 21 }}>
             {step !== 'code'
-              ? "We'll email you a one-time code. No password needed, and only CUHK students and staff can join."
-              : `We sent a code to ${email.trim()}. It may take a minute to arrive.`}
+              ? t("We'll email you a one-time code. No password needed, and only CUHK students and staff can join.")
+              : t('We sent a code to {email}. It may take a minute to arrive.', { email: email.trim() })}
           </Text>
         </View>
 
         {step === 'email' ? (
           <>
             <Field
-              label="CUHK email"
+              label={t('CUHK email')}
               placeholder="1155xxxxxx@link.cuhk.edu.hk"
               value={email}
               onChangeText={setEmail}
@@ -87,14 +97,14 @@ export default function SignIn() {
               onSubmitEditing={sendCode}
               autoFocus
             />
-            <Button title="Send code" loading={busy} disabled={!email.includes('@')} onPress={sendCode} />
-            <Button title="Sign in with a password instead" variant="plain" small onPress={() => setStep('password')} />
+            <Button title={t('Send code')} loading={busy} disabled={!email.includes('@')} onPress={sendCode} />
+            <Button title={t('Sign in with a password instead')} variant="plain" small onPress={() => setStep('password')} />
           </>
         ) : step === 'password' ? (
           // Only for accounts an admin created with a password, e.g. the App Store review account.
           <>
             <Field
-              label="Email"
+              label={t('Email')}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -102,14 +112,14 @@ export default function SignIn() {
               keyboardType="email-address"
               textContentType="username"
             />
-            <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" />
-            <Button title="Sign in" loading={busy} disabled={!email.includes('@') || !password} onPress={passwordSignIn} />
-            <Button title="Use an email code instead" variant="plain" onPress={() => setStep('email')} />
+            <Field label={t('Password')} value={password} onChangeText={setPassword} secureTextEntry textContentType="password" />
+            <Button title={t('Sign in')} loading={busy} disabled={!email.includes('@') || !password} onPress={passwordSignIn} />
+            <Button title={t('Use an email code instead')} variant="plain" onPress={() => setStep('email')} />
           </>
         ) : (
           <>
             <Field
-              label="Code"
+              label={t('Code')}
               placeholder="123456"
               value={code}
               onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 8))}
@@ -117,16 +127,16 @@ export default function SignIn() {
               textContentType="oneTimeCode"
               autoComplete="one-time-code"
               style={{ fontSize: 28, letterSpacing: 8, textAlign: 'center' }}
-              hint={api.isDemo ? `Demo mode: use ${DEMO_CODE}` : undefined}
+              hint={api.isDemo ? t('Demo mode: use {code}', { code: DEMO_CODE }) : undefined}
               autoFocus
             />
-            <Button title="Sign in" loading={busy} disabled={code.length < 6} onPress={verify} />
-            <Button title="Use a different email" variant="plain" onPress={() => setStep('email')} />
+            <Button title={t('Sign in')} loading={busy} disabled={code.length < 6} onPress={verify} />
+            <Button title={t('Use a different email')} variant="plain" onPress={() => setStep('email')} />
           </>
         )}
 
         <Text style={{ color: c.textSecondary, fontSize: 12, textAlign: 'center', lineHeight: 17 }}>
-          By continuing you agree to the Terms of Use and Privacy Policy. Your email is only used to verify you are a CUHK member.
+          {t('By continuing you agree to the Terms of Use and Privacy Policy. Your email is only used to verify you are a CUHK member.')}
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

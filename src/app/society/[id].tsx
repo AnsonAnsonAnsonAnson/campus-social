@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { compactNumber } from '@/lib/format';
 import { radius, space, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
+import { t } from '@/lib/i18n';
 
 export default function SocietyScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -38,7 +39,7 @@ export default function SocietyScreen() {
   if (q.loading) return <Loading />;
   if (q.error) return <ErrorView message={q.error} onRetry={q.refresh} />;
   const s = q.data?.society;
-  if (!s) return <ErrorView message="This society could not be found." />;
+  if (!s) return <ErrorView message={t('This society could not be found.')} />;
 
   const instagram = s.instagram?.replace(/^@/, '');
 
@@ -53,7 +54,7 @@ export default function SocietyScreen() {
           headerRight: () => (
             <Pressable
               hitSlop={12}
-              accessibilityLabel="Report society"
+              accessibilityLabel={t('Report society')}
               onPress={() => requireSignIn() && router.push({ pathname: '/report', params: { type: 'society', id: s.id, name: s.name } })}>
               <Icon name="flag-outline" size={20} color={c.tint} />
             </Pressable>
@@ -70,22 +71,23 @@ export default function SocietyScreen() {
           {s.verified && <Icon name="checkmark-circle" size={20} color={c.tint} />}
         </View>
         <Text style={{ color: c.textSecondary }}>
-          {s.category}
-          {s.college ? ` · ${s.college} College` : ''} · {compactNumber(s.follower_count)} followers
+          {t(s.category)}
+          {s.college ? ` · ${t('{college} College', { college: t(s.college) })}` : ''} ·{' '}
+          {t('{n} followers', { n: compactNumber(s.follower_count) })}
         </Text>
-        {s.status !== 'approved' && <Pill label="Pending review: only your committee can see this" tone="warning" />}
+        {s.status !== 'approved' && <Pill label={t('Pending review: only your committee can see this')} tone="warning" />}
         <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
           <View style={{ flex: 1 }}>
             <FollowButton societyId={s.id} small={false} />
           </View>
           {q.data?.isCommittee && (
-            <Button title="Manage" icon="settings-outline" variant="secondary" onPress={() => router.push(`/manage/${s.id}`)} />
+            <Button title={t('Manage')} icon="settings-outline" variant="secondary" onPress={() => router.push(`/manage/${s.id}`)} />
           )}
         </View>
       </View>
 
       <View style={[styles.about, { backgroundColor: c.card }]}>
-        <Text style={{ color: c.text, fontSize: 15, lineHeight: 22 }}>{s.description || 'No description yet.'}</Text>
+        <Text style={{ color: c.text, fontSize: 15, lineHeight: 22 }}>{s.description || t('No description yet.')}</Text>
         <View style={{ flexDirection: 'row', gap: space.lg, flexWrap: 'wrap' }}>
           {instagram && (
             <Pressable onPress={() => Linking.openURL(`https://instagram.com/${instagram}`)} style={styles.link}>
@@ -96,30 +98,30 @@ export default function SocietyScreen() {
           {s.website && (
             <Pressable onPress={() => WebBrowser.openBrowserAsync(s.website!)} style={styles.link}>
               <Icon name="globe-outline" color={c.tint} />
-              <Text style={{ color: c.tint }}>Website</Text>
+              <Text style={{ color: c.tint }}>{t('Website')}</Text>
             </Pressable>
           )}
           {s.contact_email && (
             <Pressable onPress={() => Linking.openURL(`mailto:${s.contact_email}`)} style={styles.link}>
               <Icon name="mail-outline" color={c.tint} />
-              <Text style={{ color: c.tint }}>Email</Text>
+              <Text style={{ color: c.tint }}>{t('Email')}</Text>
             </Pressable>
           )}
         </View>
       </View>
 
-      <SectionHeader title="Upcoming events" />
+      <SectionHeader title={t('Upcoming events')} />
       <View style={{ gap: space.sm }}>
         {q.data?.upcoming.length ? (
           q.data.upcoming.map((e) => <EventRow key={e.id} event={e} />)
         ) : (
-          <EmptyState icon="calendar-outline" title="No upcoming events" body="Follow this society to see new events first." />
+          <EmptyState icon="calendar-outline" title={t('No upcoming events')} body={t('Follow this society to see new events first.')} />
         )}
       </View>
 
       {!!q.data?.past.length && (
         <>
-          <SectionHeader title="Past events" />
+          <SectionHeader title={t('Past events')} />
           <View style={{ gap: space.sm, opacity: 0.7 }}>
             {q.data.past.map((e) => (
               <EventRow key={e.id} event={e} />

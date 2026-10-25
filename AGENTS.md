@@ -17,11 +17,13 @@ npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — re
 npx expo start              # start the dev server
 npx expo lint               # lint
 npx tsc --noEmit            # typecheck
+npm test                    # unit tests (jest-expo)
+npm run test:db             # database tests against a local Postgres (PGHOST/PGUSER/PGPASSWORD)
 npx expo-doctor             # diagnose dependency and config issues
 npx expo install --fix      # fix incompatible package versions
 ```
 
-Run lint and typecheck before declaring any task done.
+Run lint, typecheck and tests before declaring any task done. Database changes go in a new file in `supabase/migrations/` with tests in `supabase/tests/`, then run `bash scripts/make-setup-sql.sh` to refresh `supabase/setup.sql`; keep `src/lib/demo.ts` behaving like the SQL.
 
 ## Navigation & Routing
 
@@ -35,6 +37,8 @@ Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submi
 Docs: https://docs.expo.dev/eas/index.md
 
 ## Rules
+
+- The app is bilingual, Traditional Chinese (Hong Kong) first. Write UI text in English inside `t()` from `@/lib/i18n` (`t('{n} going', { n })`) and add the Chinese to `src/i18n/zh-Hant.ts`; `npm test` fails on a missing translation. Call `t()` at render time, never in module-level constants. Stored values (categories, colleges, roles) stay English in the database and are shown with `t(value)`. Server error messages and notification text need Chinese too (see the v0.3 migration).
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.

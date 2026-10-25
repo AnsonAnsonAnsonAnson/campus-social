@@ -3,7 +3,22 @@
 import type { AuthUser, Backend } from './backend';
 import { isCuhkEmail } from './backend';
 import { makeDemoBanners, makeDemoCampusDates, makeDemoEvents, demoSocieties } from './demoData';
-import type { Attendee, Banner, CampusEvent, EventWithSociety, MySociety, Profile, Registration, Society, SocietyRole } from './types';
+import { t } from './i18n';
+import type {
+  AppNotification,
+  Attendee,
+  Banner,
+  CampusEvent,
+  EventWithSociety,
+  MySociety,
+  NotificationKind,
+  OpenReport,
+  Profile,
+  Registration,
+  Society,
+  SocietyMember,
+  SocietyRole,
+} from './types';
 
 export const DEMO_CODE = '123456';
 
@@ -22,6 +37,14 @@ const FAKE_NAMES = [
   'Lau Ying Ying',
 ];
 
+const FAKE_ANSWERS = [
+  'A timetable planner for CUHK courses',
+  'Something with the campus bus routes',
+  'Not sure yet, happy to join any team',
+  'A canteen menu app',
+  'Game! Anything with physics',
+];
+
 const delay = (ms = 150) => new Promise((r) => setTimeout(r, ms));
 const uid = () => 'demo-' + Math.random().toString(36).slice(2, 10);
 
@@ -36,8 +59,69 @@ const state = {
   registrations: [] as Registration[],
   // In demo mode you help run CU Coding Society, so committee tools are visible.
   members: [{ society_id: demoSocieties[1].id, role: 'owner' as SocietyRole }],
+  // Other (simulated) committee members, by society.
+  committee: {
+    [demoSocieties[1].id]: [
+      {
+        user_id: 'demo-m1',
+        display_name: 'Wong Ka Yan',
+        email: 'kayan.wong@link.cuhk.edu.hk',
+        role: 'admin',
+        created_at: '2026-09-01T02:00:00Z',
+      },
+      {
+        user_id: 'demo-m2',
+        display_name: 'Ng Pak Hei',
+        email: 'pakhei.ng@link.cuhk.edu.hk',
+        role: 'editor',
+        created_at: '2026-09-08T02:00:00Z',
+      },
+    ],
+  } as Record<string, SocietyMember[]>,
   checkedInFake: new Map<string, Set<number>>(),
+  notifications: [] as AppNotification[],
+  reports: [] as (OpenReport & { resolved: boolean })[],
 };
+
+function seedDemoInbox() {
+  const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+  const followed = state.events
+    .filter((e) => state.follows.has(e.society_id) && e.status === 'published' && e.starts_at > new Date().toISOString())
+    .slice(0, 2);
+  state.notifications = followed.map((e, i) => {
+    const s = state.societies.find((x) => x.id === e.society_id)!;
+    return {
+      id: uid(),
+      kind: 'new_event' as const,
+      title: t('New from {society}', { society: s.short_name ?? s.name }),
+      body: e.title,
+      event_id: e.id,
+      society_id: s.id,
+      read_at: i === 0 ? null : ago(60),
+      created_at: ago(i === 0 ? 25 : 60 * 26),
+    };
+  });
+  const reported = state.events.find((e) => e.id.endsWith('11')) ?? state.events[state.events.length - 1];
+  state.reports = ['Looks like an advert, not a society event', 'Spam'].map((reason, i) => ({
+    id: uid(),
+    target_type: 'event' as const,
+    target_id: reported.id,
+    target_name: reported.title,
+    reason,
+    report_count: 2,
+    created_at: ago(90 - i * 30),
+    resolved: false,
+  }));
+}
+
+function notify(kind: NotificationKind, title: string, body: string, event_id: string | null = null, society_id: string | null = null) {
+  if (!state.user) return;
+  state.notifications.unshift({ id: uid(), kind, title, body, event_id, society_id, read_at: null, created_at: new Date().toISOString() });
+}
+
+function isAdminOf(societyId: string) {
+  return !!state.user && state.members.some((m) => m.society_id === societyId && m.role !== 'editor');
+}
 
 const listeners = new Set<(u: AuthUser | null) => void>();
 
@@ -61,7 +145,7 @@ function isMember(societyId: string) {
 
 function visibleEvent(e: CampusEvent) {
   const s = state.societies.find((x) => x.id === e.society_id);
-  return (e.status !== 'draft' && s?.status === 'approved') || isMember(e.society_id);
+  return (e.status !== 'draft' && !e.removed_at && s?.status === 'approved') || isMember(e.society_id);
 }
 
 function fillFromWaitlist(e: CampusEvent) {
@@ -81,6 +165,12 @@ function fillFromWaitlist(e: CampusEvent) {
     next.status = 'confirmed';
     e.confirmed_count++;
     e.waitlist_count = Math.max(0, e.waitlist_count - 1);
+    notify(
+      'waitlist_promoted',
+      t('You got a spot!'),
+      t('A place opened up for {title}. Your QR ticket is ready.', { title: e.title }),
+      e.id,
+    );
   }
 }
 
@@ -113,6 +203,7 @@ export const demoBackend: Backend = {
       avatar_url: null,
       is_platform_admin: true,
     };
+    seedDemoInbox();
     listeners.forEach((l) => l(state.user));
   },
   async signInWithPassword(email) {
@@ -126,6 +217,7 @@ export const demoBackend: Backend = {
   async deleteAccount() {
     for (const r of state.registrations) await this.cancelRegistration(r.event_id);
     state.registrations = [];
+    state.notifications = [];
     await this.signOut();
   },
   async getProfile() {
@@ -153,7 +245,7 @@ export const demoBackend: Backend = {
     const search = q.search?.trim().toLowerCase();
     return state.events
       .filter(visibleEvent)
-      .filter((e) => q.includeDrafts || e.status !== 'draft')
+      .filter((e) => q.includeDrafts || (e.status !== 'draft' && !e.removed_at))
       .filter((e) => !q.from || e.ends_at >= q.from)
       .filter((e) => !q.to || e.starts_at <= q.to)
       .filter((e) => !q.societyIds || q.societyIds.includes(e.society_id))
@@ -217,12 +309,12 @@ export const demoBackend: Backend = {
     const simulated = e.waitlist_count - state.registrations.filter((r) => r.event_id === eventId && r.status === 'waitlisted').length;
     return simulated + 1;
   },
-  async register(eventId) {
+  async register(eventId, answer) {
     await delay(300);
     const user = requireUser();
     const e = state.events.find((x) => x.id === eventId);
     const now = new Date().toISOString();
-    if (!e || e.status !== 'published') throw new Error('This event is not open for registration');
+    if (!e || e.status !== 'published' || e.removed_at) throw new Error('This event is not open for registration');
     if (!e.registration_required) throw new Error('No sign-up needed for this event, just turn up!');
     if (e.registration_opens_at && now < e.registration_opens_at) throw new Error('Registration has not opened yet');
     if (now > (e.registration_closes_at ?? e.starts_at)) throw new Error('Registration has closed');
@@ -236,7 +328,7 @@ export const demoBackend: Backend = {
     else throw new Error('Sorry, this event is full');
 
     if (reg) {
-      Object.assign(reg, { status, checked_in_at: null, created_at: now });
+      Object.assign(reg, { status, answer: answer?.trim() || null, checked_in_at: null, created_at: now });
     } else {
       reg = {
         id: uid(),
@@ -244,6 +336,7 @@ export const demoBackend: Backend = {
         user_id: user.id,
         status,
         ticket_code: uid().slice(5) + uid().slice(5),
+        answer: answer?.trim() || null,
         checked_in_at: null,
         created_at: now,
       };
@@ -267,10 +360,45 @@ export const demoBackend: Backend = {
       e.waitlist_count = Math.max(0, e.waitlist_count - 1);
     }
   },
-  async report() {
+  async report(targetType, targetId, reason) {
     requireUser();
     await delay(300);
+    const name =
+      targetType === 'event'
+        ? state.events.find((e) => e.id === targetId)?.title
+        : targetType === 'society'
+          ? state.societies.find((s) => s.id === targetId)?.name
+          : state.banners.find((b) => b.id === targetId)?.title;
+    state.reports.push({
+      id: uid(),
+      target_type: targetType,
+      target_id: targetId,
+      target_name: name ?? 'Unknown',
+      reason,
+      report_count: 1,
+      created_at: new Date().toISOString(),
+      resolved: false,
+    });
   },
+
+  async listNotifications() {
+    await delay();
+    return state.user ? state.notifications.map((n) => ({ ...n })) : [];
+  },
+  async unreadNotificationCount() {
+    return state.user ? state.notifications.filter((n) => !n.read_at).length : 0;
+  },
+  async markAllNotificationsRead() {
+    const now = new Date().toISOString();
+    state.notifications.forEach((n) => (n.read_at ??= now));
+  },
+  async deleteNotification(id) {
+    state.notifications = state.notifications.filter((n) => n.id !== id);
+  },
+  async registerPushToken() {
+    // Demo mode has no server to send pushes from.
+  },
+  async unregisterPushToken() {},
 
   async mySocieties() {
     if (!state.user) return [];
@@ -310,13 +438,40 @@ export const demoBackend: Backend = {
     if (!isMember(input.society_id)) throw new Error('Not allowed');
     if (input.id) {
       const e = state.events.find((x) => x.id === input.id)!;
+      const before = { ...e };
       const capacityChanged = e.capacity !== input.capacity;
       Object.assign(e, input);
       if (capacityChanged) fillFromWaitlist(e);
+      // Mirrors notify_event_change() in SQL, which skips the person making the edit;
+      // in demo mode there is only one person, so these are shown for illustration.
+      const registered = state.registrations.some((r) => r.event_id === e.id && r.status !== 'cancelled');
+      if (before.status === 'published' && e.status === 'cancelled' && registered) {
+        const s = state.societies.find((x) => x.id === e.society_id)!;
+        const society = s.short_name ?? s.name;
+        notify(
+          'event_cancelled',
+          t('Event cancelled'),
+          t('{title} by {society} has been cancelled.', { title: e.title, society }),
+          e.id,
+          e.society_id,
+        );
+      } else if (before.status === 'published' && e.status === 'published' && registered) {
+        const time = before.starts_at !== e.starts_at;
+        const place = before.location !== e.location;
+        if (time || place) {
+          const body =
+            time && place
+              ? t('{title} has a new time and place. Check the details.', { title: e.title })
+              : time
+                ? t('{title} has a new time. Check the details.', { title: e.title })
+                : t('{title} has a new place. Check the details.', { title: e.title });
+          notify('event_updated', t('Event details changed'), body, e.id, e.society_id);
+        }
+      }
       return e.id;
     }
     const id = uid();
-    state.events.push({ ...input, id, confirmed_count: 0, waitlist_count: 0 });
+    state.events.push({ ...input, id, confirmed_count: 0, waitlist_count: 0, removed_at: null });
     return id;
   },
   async deleteEvent(id) {
@@ -334,6 +489,7 @@ export const demoBackend: Backend = {
         email: state.user?.email ?? '',
         college: state.profile?.college ?? null,
         status: r.status,
+        answer: r.answer,
         checked_in_at: r.checked_in_at,
         created_at: r.created_at,
       }));
@@ -345,6 +501,7 @@ export const demoBackend: Backend = {
       email: `student${1155000000 + i}@link.cuhk.edu.hk`,
       college: null,
       status: 'confirmed',
+      answer: e.signup_question && i % 3 !== 2 ? FAKE_ANSWERS[i % FAKE_ANSWERS.length] : null,
       checked_in_at: checked.has(i) ? new Date().toISOString() : null,
       created_at: e.starts_at,
     }));
@@ -354,7 +511,10 @@ export const demoBackend: Backend = {
     await delay(200);
     const e = state.events.find((x) => x.id === eventId)!;
     if (!isMember(e.society_id)) throw new Error('Only society committee members can check people in');
-    const reg = state.registrations.find((r) => r.ticket_code === code);
+    const typed = code.trim().toLowerCase();
+    const reg =
+      state.registrations.find((r) => r.ticket_code === typed) ??
+      (typed.length === 8 ? state.registrations.find((r) => r.event_id === eventId && r.ticket_code.startsWith(typed)) : undefined);
     if (!reg) return { ok: false, message: 'Ticket not found' };
     const name = state.profile?.display_name ?? 'Student';
     if (reg.event_id !== eventId) return { ok: false, name, message: 'This ticket is for a different event' };
@@ -362,6 +522,76 @@ export const demoBackend: Backend = {
     if (reg.checked_in_at) return { ok: false, name, message: 'Already checked in' };
     reg.checked_in_at = new Date().toISOString();
     return { ok: true, name, message: 'Checked in' };
+  },
+  async setCheckedIn(registrationId, checked) {
+    await delay();
+    const fake = registrationId.match(/^(.*)-fake-(\d+)$/);
+    if (fake) {
+      const set = state.checkedInFake.get(fake[1]) ?? new Set<number>();
+      if (checked) set.add(Number(fake[2]));
+      else set.delete(Number(fake[2]));
+      state.checkedInFake.set(fake[1], set);
+      return;
+    }
+    const reg = state.registrations.find((r) => r.id === registrationId);
+    if (!reg) throw new Error('Registration not found');
+    if (checked && reg.status !== 'confirmed') throw new Error('Only confirmed attendees can be checked in');
+    reg.checked_in_at = checked ? (reg.checked_in_at ?? new Date().toISOString()) : null;
+  },
+  async listMembers(societyId) {
+    await delay();
+    const me = state.members.find((m) => m.society_id === societyId);
+    if (!state.user || !me) throw new Error('Only committee members can see the committee');
+    const self: SocietyMember = {
+      user_id: state.user.id,
+      display_name: state.profile?.display_name ?? 'You',
+      email: state.user.email,
+      role: me.role,
+      created_at: '2026-08-20T02:00:00Z',
+    };
+    const order = { owner: 0, admin: 1, editor: 2 };
+    return [self, ...(state.committee[societyId] ?? [])].sort((a, b) => order[a.role] - order[b.role]);
+  },
+  async addMember(societyId, email, role) {
+    await delay(300);
+    if (!isAdminOf(societyId)) throw new Error('Only society admins can add committee members');
+    const e = email.trim().toLowerCase();
+    if (!isCuhkEmail(e)) throw new Error('No account for that email yet. Ask them to sign in to the app once, then try again.');
+    const list = (state.committee[societyId] ??= []);
+    const existing = list.find((m) => m.email === e);
+    if (existing) {
+      if (existing.role !== 'owner') existing.role = role;
+      return;
+    }
+    const name = e
+      .split('@')[0]
+      .split(/[._-]/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+    list.push({ user_id: uid(), display_name: name, email: e, role, created_at: new Date().toISOString() });
+  },
+  async setMemberRole(societyId, userId, role) {
+    if (!isAdminOf(societyId)) throw new Error('Only society admins can change roles');
+    const m = state.committee[societyId]?.find((x) => x.user_id === userId);
+    if (m && m.role !== 'owner') m.role = role;
+  },
+  async removeMember(societyId, userId) {
+    if (userId === state.user?.id) {
+      const me = state.members.find((m) => m.society_id === societyId);
+      if (me?.role === 'owner') throw new Error('Transfer ownership before leaving');
+      state.members = state.members.filter((m) => m.society_id !== societyId);
+      return;
+    }
+    if (!isAdminOf(societyId)) throw new Error('Only society admins can remove members');
+    state.committee[societyId] = (state.committee[societyId] ?? []).filter((m) => m.user_id !== userId || m.role === 'owner');
+  },
+  async transferOwnership(societyId, userId) {
+    const me = state.members.find((m) => m.society_id === societyId);
+    if (me?.role !== 'owner') throw new Error('Only the owner can transfer ownership');
+    const heir = state.committee[societyId]?.find((m) => m.user_id === userId);
+    if (!heir) throw new Error('The new owner must already be on the committee');
+    heir.role = 'owner';
+    me.role = 'admin';
   },
   async societyBanners(societyId) {
     return state.banners.filter((b) => b.society_id === societyId);
@@ -391,15 +621,45 @@ export const demoBackend: Backend = {
       }));
   },
   async reviewSociety(id, status, verified) {
-    Object.assign(
-      state.societies.find((s) => s.id === id)!,
-      { status, verified },
-    );
+    const s = state.societies.find((x) => x.id === id)!;
+    const wasApproved = s.status === 'approved';
+    Object.assign(s, { status, verified });
+    if (status === 'approved' && !wasApproved && isMember(id)) {
+      notify('society_approved', t('Your society is live'), t('{name} is now visible to every student.', { name: s.name }), null, id);
+    }
   },
   async reviewBanner(id, status, priority) {
     Object.assign(
       state.banners.find((b) => b.id === id)!,
       { status, priority },
     );
+  },
+  async openReports() {
+    await delay();
+    const open = state.reports.filter((r) => !r.resolved);
+    return open.map(({ resolved: _, ...r }) => ({
+      ...r,
+      report_count: open.filter((x) => x.target_type === r.target_type && x.target_id === r.target_id).length,
+    }));
+  },
+  async resolveReport(id, action) {
+    await delay();
+    const report = state.reports.find((r) => r.id === id);
+    if (!report) return;
+    if (action === 'removed') {
+      if (report.target_type === 'event') {
+        const e = state.events.find((x) => x.id === report.target_id);
+        if (e) e.removed_at = new Date().toISOString();
+      } else if (report.target_type === 'society') {
+        const s = state.societies.find((x) => x.id === report.target_id);
+        if (s) s.status = 'rejected';
+      } else {
+        const b = state.banners.find((x) => x.id === report.target_id);
+        if (b) b.status = 'rejected';
+      }
+    }
+    state.reports
+      .filter((r) => r.target_type === report.target_type && r.target_id === report.target_id)
+      .forEach((r) => (r.resolved = true));
   },
 };

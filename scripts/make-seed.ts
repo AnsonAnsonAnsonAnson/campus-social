@@ -41,7 +41,7 @@ for (const s of demoSocieties) {
 }
 for (const e of makeDemoEvents(now)) {
   out.push(
-    `insert into public.events (id, society_id, title, description, category, location, starts_at, ends_at, status, registration_required, capacity, waitlist_enabled, registration_opens_at, price_text) values (${[
+    `insert into public.events (id, society_id, title, description, category, location, starts_at, ends_at, status, registration_required, capacity, waitlist_enabled, registration_opens_at, price_text, signup_question) values (${[
       q(e.id),
       q(e.society_id),
       q(e.title),
@@ -56,6 +56,7 @@ for (const e of makeDemoEvents(now)) {
       q(e.waitlist_enabled),
       ts(e.registration_opens_at),
       q(e.price_text),
+      q(e.signup_question),
     ].join(', ')}) on conflict (id) do nothing;`,
   );
 }
@@ -76,9 +77,10 @@ for (const b of makeDemoBanners(now)) {
 }
 for (const d of makeDemoCampusDates(now)) {
   out.push(
-    `insert into public.campus_dates (id, title, kind, college, starts_on, ends_on) values (${[
+    `insert into public.campus_dates (id, title, title_zh, kind, college, starts_on, ends_on) values (${[
       q(d.id),
       q(d.title),
+      q(d.title_zh ?? null),
       q(d.kind),
       q(d.college),
       day(d.starts_on),

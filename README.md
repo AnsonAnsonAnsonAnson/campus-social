@@ -1,4 +1,4 @@
-# CUHK Campus
+# Campus Social
 
 A student app for CUHK: follow societies, discover events, sign up Eventbrite-style with QR tickets and waitlists, and see university and college dates in one calendar. Built with Expo (React Native) and Supabase, iOS first, Android supported.
 
@@ -6,17 +6,23 @@ A student app for CUHK: follow societies, discover events, sign up Eventbrite-st
 
 | Tab | What students get |
 | --- | --- |
-| **Discover** | Promoted-event banner carousel, events from societies you follow, this week, upcoming by category, search across events and societies |
+| **Discover** | Promoted-event banner carousel, events from societies you follow, this week, upcoming by category, search across events and societies, notification inbox (bell) |
 | **Calendar** | Month view with dots for events, your tickets and campus dates (term, exams, holidays, your college's dates); filter All / Following / Going |
 | **Societies** | Directory with categories, verified badges, follower counts and one-tap follow |
 | **Tickets** | Upcoming and past registrations, QR ticket for the next event, waitlist status |
-| **Profile** | College, major, societies you run, review queue (admins), privacy/terms/support, sign out, delete account |
+| **Profile** | Photo, college, major, societies you run, notification settings, language, review queue (admins), privacy/terms/support, sign out, delete account |
 
-Society committees get: a dashboard per society, create/edit/cancel events (cover image, capacity, waitlist, price note, drafts), attendee list with CSV export, a QR scanner for check-in at the door, and banner requests to promote an event on Discover.
+New students get a short welcome screen after their first sign-in (name, college, interests, suggested societies to follow).
+
+Society committees get: a dashboard per society; editing the society's details, logo and cover; a committee screen (add people by CUHK email as editor or admin, change roles, transfer ownership); create/edit/cancel/duplicate events (cover image, capacity, waitlist, sign-up window, an optional question for attendees, price note, drafts); an attendee list with search, tap-to-check-in, answers and CSV export; a QR scanner for check-in at the door; and banner requests to promote an event on Discover.
 
 How sign-ups work: registration goes through Postgres functions that lock the event row, so capacity can't be oversold. When a confirmed person cancels or the committee raises capacity, the first person on the waitlist is promoted automatically.
 
-Trust and safety: only `@link.cuhk.edu.hk` / `@cuhk.edu.hk` emails can create accounts; new societies and banners wait for admin approval (stops impersonation and spam); events and societies can be reported; in-app account deletion.
+Notifications: the database writes an inbox row when someone gets off a waitlist, an event they joined is cancelled or moves, a society they follow publishes an event, their society is approved, or they're added to a committee. The app shows these in the inbox, schedules a local reminder an hour before each event you're going to, and (once push is set up, below) the `send-push` Edge Function delivers each inbox row as a push notification.
+
+Languages: the app opens in Traditional Chinese (Hong Kong wording) with English as the second language, switchable in Profile (or on the welcome screen). Dates and times follow the language (下午6:30 / 6:30pm), notifications and pushes are written in each person's chosen language, and the App Store name, permission prompts and listing (`store/app-store-listing.md`) come in both. Events and societies are shown as their committees wrote them.
+
+Trust and safety: only `@link.cuhk.edu.hk` / `@cuhk.edu.hk` emails can create accounts; new societies and banners wait for admin approval (stops impersonation and spam); events, societies and banners can be reported, and admins see grouped reports in the review queue where they can dismiss them or take the item down; in-app account deletion (society ownership passes to another committee member).
 
 ## Run it now (demo mode, no backend needed)
 
@@ -30,34 +36,41 @@ Scan the QR code with the Camera app on your iPhone (install **Expo Go** from th
 ## Connect Supabase (real data)
 
 1. Create a project at [supabase.com](https://supabase.com). Pick the **Singapore** region (closest to Hong Kong).
-2. Apply the schema. Either paste `supabase/migrations/20261022000000_init.sql` into the SQL editor and run it, or with the Supabase CLI: `supabase link --project-ref <ref>` then `supabase db push`.
-3. Optional sample content: run `supabase/seed.sql` in the SQL editor (regenerate with `npm run seed`).
+2. Apply the schema. On a new project, open **SQL Editor**, paste all of `supabase/setup.sql` and press **Run** (it is every migration in one transaction; regenerate it with `bash scripts/make-setup-sql.sh` after adding a migration). Later migrations: paste just the new file, or use the Supabase CLI (`supabase link --project-ref <ref>` then `supabase db push`).
+3. Optional sample content for a test project: run `supabase/seed.sql` in the SQL editor (regenerate with `npm run seed`). Don't run it on the project students will use.
 4. **Auth → Emails → Magic link template**: make sure it includes `{{ .Token }}` so students receive a 6-digit code instead of only a link.
 5. **Auth → SMTP**: set up your own SMTP (e.g. Resend, Postmark). Supabase's built-in mailer is rate-limited and not meant for production.
-6. Copy `.env.example` to `.env` and fill in `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Project Settings → API). Restart `npx expo start`.
+6. Copy `.env.example` to `.env` and fill in `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Project Settings → API). Restart `npx expo start`. EAS builds take the same two values from `env` in `eas.json`. Both are safe to ship inside the app (row level security protects the data); never put the secret or `service_role` key in the app or the repo.
 7. Make yourself an admin after signing in once:
    ```sql
    update public.profiles set is_platform_admin = true where email = 'you@link.cuhk.edu.hk';
    ```
 8. Replace the sample `campus_dates` with the official CUHK calendar (admins can insert rows in the SQL editor; an `.ics` importer is a good next step).
 
+### Push notifications
+
+The in-app inbox and local event reminders work without this. To also send pushes:
+
+1. `app.json` has `extra.eas.projectId` (the app only registers for push when it has one; `npx eas-cli@latest init` sets it for a new Expo project). Upload your APNs key / FCM credentials with `npx eas-cli@latest credentials`.
+2. Deploy the sender: `supabase functions deploy send-push --no-verify-jwt`, then set a random secret: `supabase secrets set PUSH_WEBHOOK_SECRET=<long random string>` (optionally `EXPO_ACCESS_TOKEN` if you turn on enhanced push security in Expo).
+3. In the dashboard, **Database → Webhooks → Create a new hook**: table `notifications`, event `Insert`, type **Supabase Edge Functions**, function `send-push`, and add an HTTP header `x-webhook-secret` with the same secret.
+
+Devices that uninstall the app are removed from `push_tokens` automatically.
+
 ## Launching on the App Store
 
 You need an Apple Developer account (US$99/year) and an Expo account. No Mac is required; EAS builds in the cloud.
 
-1. **Identity.** Change `ios.bundleIdentifier` and `android.package` in `app.json` (currently `com.ansonchow.cuhkcampus`). Replace the placeholder icon in `assets/`.
-2. **Name.** Apple may reject an app that uses a university's name or logo without permission (guideline 5.2). Either get written permission from CUHK (Office of Student Affairs is a good start) or choose a neutral name.
+1. **Identity.** Check `ios.bundleIdentifier` and `android.package` in `app.json` (currently `com.ansonchow.campussocial`); they can't change after the first upload. The icons in `assets/` are drawn by `python3 scripts/make-icons.py`.
+2. **Name.** The app is called Campus Social. Apple may reject an app that presents itself as a university's official app or uses its logo without permission (guideline 5.2), so keep "CUHK" to descriptive text (for example "for CUHK students") unless the university gives written permission.
 3. **EAS setup.**
    ```bash
-   npx eas-cli@latest login
-   npx eas-cli@latest init            # links the project, fills extra.eas.projectId
-   npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_URL --value ... --environment production
-   npx eas-cli@latest env:create --name EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY --value ... --environment production
+   npx eas-cli@latest login            # the Expo account that owns the project in app.json
    npx eas-cli@latest build -p ios --profile production
    npx eas-cli@latest submit -p ios --latest
    ```
    Use the `preview` profile to install test builds on your own phone, or TestFlight via `submit`.
-4. **App Store Connect listing.** You need a privacy policy URL and support URL (update `PRIVACY_URL`, `TERMS_URL`, `SUPPORT_EMAIL` in `src/lib/constants.ts`), screenshots (6.9" iPhone), description and keywords, and age rating.
+4. **App Store Connect listing.** You need a privacy policy URL and support URL (update `PRIVACY_URL`, `TERMS_URL`, `SUPPORT_EMAIL` in `src/lib/constants.ts`), screenshots (6.9" iPhone), description and keywords (both languages are ready in `store/app-store-listing.md`; set the primary language to Chinese (Traditional)), and age rating.
 5. **App Privacy answers.** Data collected and linked to the user: email address, name, user ID, photos (society uploads only), other user content (event sign-ups). Not used for tracking. No third-party analytics are included.
 6. **Review account.** Reviewers can't receive a CUHK email code. Create a user in Supabase **Auth → Users → Add user** with a password, add the address to `public.allowed_emails` first, make it a committee member of a test society, and give the credentials in App Review notes. They sign in via "Sign in with a password instead".
 7. **Things App Review checks that are already handled:** account deletion in-app, report button on user-generated content plus a moderation queue, purpose strings for camera/photos/calendar, encryption export answer (`usesNonExemptEncryption: false`), privacy manifest for UserDefaults.
@@ -67,25 +80,36 @@ You need an Apple Developer account (US$99/year) and an Expo account. No Mac is 
 ```
 src/app/            Expo Router screens (file = route)
   (tabs)/           Discover, Calendar, Societies, Tickets, Profile
-  event/[id].tsx    Event page with register / waitlist / QR ticket
+  event/[id].tsx    Event page with register / waitlist / sign-up question / QR ticket
   society/[id].tsx  Society profile
-  manage/           Committee tools: dashboard, event form, attendees, scanner, promote
-  admin/            Review queue for societies and banners
+  notifications.tsx Inbox
+  welcome.tsx       First-run setup
+  manage/           Committee tools: dashboard, society details, committee, event form, attendees, scanner, promote
+  admin/            Review queue: reports, societies, banners
+src/components/     Shared UI (ui.tsx kit, cards, toasts, skeleton loaders)
 src/lib/
   backend.ts        The Backend interface the UI uses
   remote.ts         Supabase implementation
   demo.ts           In-memory demo implementation
   demoData.ts       Sample societies, events, banners, campus dates
+  notifications.ts  Local reminders and push registration
+  i18n.ts           t('English text') lookups, language setting
+src/i18n/zh-Hant.ts Traditional Chinese for every English string
+locales/            Localized app name and permission prompts (iOS/Android)
+store/              App Store listing text in both languages
+  __tests__/        Unit tests (jest)
 supabase/
-  migrations/       Schema, RLS policies, RPCs (register, cancel, check-in, ...)
+  migrations/       Schema, RLS policies, RPCs (register, cancel, check-in, committee, moderation, ...)
+  functions/        send-push Edge Function
+  tests/            Database tests (run against plain Postgres)
   seed.sql          Generated sample data
+  setup.sql         All migrations in one file, for a new project's SQL Editor
 ```
 
-Useful scripts: `npm run typecheck`, `npm run format`, `npm run seed`.
+Useful scripts: `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:db` (needs a local Postgres; set `PGHOST`, `PGUSER`, `PGPASSWORD`), `npm run format`, `npm run seed`. GitHub Actions runs all of them on every pull request.
 
 ## Suggested next steps
 
-- Push notifications (expo-notifications) for waitlist promotions, event reminders and new events from followed societies
 - Import the official CUHK and college calendars from `.ics` feeds
 - Traditional Chinese localisation
 - A web dashboard for committees (bulk edits, analytics) sharing the same Supabase backend

@@ -1,13 +1,16 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { toast } from '@/components/Toast';
 import { DateTimeField } from '@/components/DateTimeField';
 import { Artwork, Button, Card, Field, Icon, Loading } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { pickAndUploadImage } from '@/lib/pickImage';
 import { radius, space, useColors } from '@/lib/theme';
 import type { EventWithSociety } from '@/lib/types';
+import { showAlert } from '@/lib/dialog';
+import { t } from '@/lib/i18n';
 
 export default function Promote() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -46,9 +49,9 @@ export default function Promote() {
       });
       invalidate();
       router.back();
-      Alert.alert('Banner requested', 'The app team will review it shortly. You can see its status on your society dashboard.');
+      toast(t('Banner requested. The app team will review it shortly.'));
     } catch (e) {
-      Alert.alert('Could not request banner', errorMessage(e));
+      showAlert(t('Could not request banner'), errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -59,8 +62,9 @@ export default function Promote() {
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <Card>
           <Text style={{ color: c.textSecondary, lineHeight: 20 }}>
-            Banners appear at the top of Discover for every student. Requests are reviewed so the space stays useful. A wide image (3:2)
-            works best.
+            {t(
+              'Banners appear at the top of Discover for every student. Requests are reviewed so the space stays useful. A wide image (3:2) works best.',
+            )}
           </Text>
         </Card>
 
@@ -70,7 +74,7 @@ export default function Promote() {
               const url = await pickAndUploadImage([3, 2]);
               if (url) setImage(url);
             } catch (e) {
-              Alert.alert('Could not upload image', errorMessage(e));
+              showAlert(t('Could not upload image'), errorMessage(e));
             }
           }}>
           <Artwork seed={event.id} uri={image} style={styles.preview}>
@@ -78,7 +82,7 @@ export default function Promote() {
             <View style={{ padding: space.lg }}>
               <Text style={styles.kicker}>{event.society.short_name ?? event.society.name}</Text>
               <Text style={styles.title} numberOfLines={2}>
-                {title || 'Banner title'}
+                {title || t('Banner title')}
               </Text>
               {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
             </View>
@@ -88,14 +92,20 @@ export default function Promote() {
           </Artwork>
         </Pressable>
 
-        <Field label="Headline" value={title} onChangeText={setTitle} maxLength={80} />
-        <Field label="Subtitle" value={subtitle} onChangeText={setSubtitle} maxLength={80} placeholder="Free tickets · Lee Hysan Hall" />
+        <Field label={t('Headline')} value={title} onChangeText={setTitle} maxLength={80} />
+        <Field
+          label={t('Subtitle')}
+          value={subtitle}
+          onChangeText={setSubtitle}
+          maxLength={80}
+          placeholder={t('Free tickets · Lee Hysan Hall')}
+        />
         <View style={{ backgroundColor: c.card, borderRadius: radius.lg, padding: space.lg, gap: space.lg }}>
-          <DateTimeField label="Show from" value={startsAt} onChange={setStartsAt} />
-          <DateTimeField label="Until" value={endsAt} onChange={setEndsAt} minimumDate={startsAt} />
+          <DateTimeField label={t('Show from')} value={startsAt} onChange={setStartsAt} />
+          <DateTimeField label={t('Until')} value={endsAt} onChange={setEndsAt} minimumDate={startsAt} />
         </View>
         <Button
-          title="Request banner"
+          title={t('Request banner')}
           icon="megaphone-outline"
           loading={busy}
           disabled={title.trim().length < 3 || endsAt <= startsAt}

@@ -1,0 +1,92 @@
+// The demo backend mirrors the SQL rules, so these double as a spec for them.
+import { beforeAll, expect, it } from '@jest/globals';
+
+import { demoBackend as api, DEMO_CODE } from '../demo';
+
+const eid = (n: number) => `20000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const CODING_SOCIETY = '10000000-0000-4000-8000-000000000002';
+
+beforeAll(async () => {
+  await api.verifyCode('tester@link.cuhk.edu.hk', DEMO_CODE);
+});
+
+it('rejects the wrong sign-in code and non-CUHK emails', async () => {
+  await expect(api.verifyCode('tester@link.cuhk.edu.hk', '000000')).rejects.toThrow(DEMO_CODE);
+  await expect(api.sendCode('tester@gmail.com')).rejects.toThrow('CUHK');
+});
+
+it('waitlists when full and promotes with a notification when seats open', async () => {
+  const id = eid(9); // a Coding Society event, which the demo user runs
+  const event = (await api.getEvent(id))!;
+  await api.saveEvent({ ...event, capacity: event.confirmed_count, registration_opens_at: null });
+  const reg = await api.register(id);
+  expect(reg.status).toBe('waitlisted');
+  expect(await api.waitlistPosition(id)).toBe(1);
+
+  await api.saveEvent({ ...(await api.getEvent(id))!, capacity: event.confirmed_count + 5 });
+  expect((await api.myRegistration(id))?.status).toBe('confirmed');
+  const inbox = await api.listNotifications();
+  expect(inbox[0]).toMatchObject({ kind: 'waitlist_promoted', event_id: id, read_at: null });
+});
+
+it('waitlists behind people already queueing', async () => {
+  const full = eid(1); // capacity 30, 30 going, 4 already waiting
+  expect((await api.register(full)).status).toBe('waitlisted');
+  expect(await api.waitlistPosition(full)).toBe(5);
+});
+
+it('stores the answer to the sign-up question and shows it to the committee', async () => {
+  const hackNight = eid(2);
+  const event = (await api.getEvent(hackNight))!;
+  expect(event.signup_question).toBeTruthy();
+  await api.register(hackNight, '  A bus app  ');
+  const me = (await api.listAttendees(hackNight)).find((a) => !a.registration_id.includes('fake'));
+  expect(me?.answer).toBe('A bus app');
+});
+
+it('lets the committee check people in by hand and undo it', async () => {
+  const hackNight = eid(2);
+  const [first] = await api.listAttendees(hackNight);
+  await api.setCheckedIn(first.registration_id, true);
+  expect((await api.listAttendees(hackNight))[0].checked_in_at).not.toBeNull();
+  await api.setCheckedIn(first.registration_id, false);
+  expect((await api.listAttendees(hackNight))[0].checked_in_at).toBeNull();
+});
+
+it('tells registrants when an event moves or is cancelled', async () => {
+  const hackNight = eid(2);
+  const event = (await api.getEvent(hackNight))!;
+  await api.saveEvent({ ...event, location: 'LT2' });
+  expect((await api.listNotifications())[0]).toMatchObject({ kind: 'event_updated', body: expect.stringContaining('地點有變') });
+  await api.saveEvent({ ...event, location: 'LT2', status: 'cancelled' });
+  expect((await api.listNotifications())[0].kind).toBe('event_cancelled');
+  await api.markAllNotificationsRead();
+  expect(await api.unreadNotificationCount()).toBe(0);
+});
+
+it('manages the committee', async () => {
+  await api.addMember(CODING_SOCIETY, 'New.Person@link.cuhk.edu.hk', 'editor');
+  let members = await api.listMembers(CODING_SOCIETY);
+  const added = members.find((m) => m.email === 'new.person@link.cuhk.edu.hk')!;
+  expect(added).toMatchObject({ role: 'editor', display_name: 'New Person' });
+
+  await api.setMemberRole(CODING_SOCIETY, added.user_id, 'admin');
+  await api.transferOwnership(CODING_SOCIETY, added.user_id);
+  members = await api.listMembers(CODING_SOCIETY);
+  expect(members[0]).toMatchObject({ user_id: added.user_id, role: 'owner' });
+  expect(members.find((m) => m.user_id === 'demo-user')?.role).toBe('admin');
+  await expect(api.transferOwnership(CODING_SOCIETY, 'demo-m1')).rejects.toThrow('owner');
+});
+
+it('hides an event once moderators remove it', async () => {
+  const target = eid(4);
+  await api.report('event', target, 'Spam');
+  const reports = await api.openReports();
+  const mine = reports.find((r) => r.target_id === target)!;
+  expect(mine.report_count).toBe(1);
+  await api.resolveReport(mine.id, 'removed');
+  expect(await api.getEvent(target)).toBeNull();
+  expect((await api.listEvents({})).some((e) => e.id === target)).toBe(false);
+  expect((await api.openReports()).some((r) => r.target_id === target)).toBe(false);
+  await expect(api.register(target)).rejects.toThrow();
+});

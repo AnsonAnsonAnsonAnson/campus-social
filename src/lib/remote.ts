@@ -4,6 +4,7 @@ import { AppState, Platform } from 'react-native';
 
 import type { AuthUser, Backend } from './backend';
 import type {
+  AppNotification,
   Attendee,
   Banner,
   BannerWithLinks,
@@ -11,9 +12,11 @@ import type {
   CheckInResult,
   EventWithSociety,
   MySociety,
+  OpenReport,
   Profile,
   Registration,
   Society,
+  SocietyMember,
   Ticket,
 } from './types';
 
@@ -127,7 +130,7 @@ export const remoteBackend: Backend = {
   },
   async listEvents(q) {
     let query = db().from('events').select(EVENT_WITH_SOCIETY);
-    if (!q.includeDrafts) query = query.in('status', ['published', 'cancelled']);
+    if (!q.includeDrafts) query = query.in('status', ['published', 'cancelled']).is('removed_at', null);
     if (q.from) query = query.gte('ends_at', q.from);
     if (q.to) query = query.lte('starts_at', q.to);
     if (q.societyIds) query = query.in('society_id', q.societyIds);
@@ -182,8 +185,8 @@ export const remoteBackend: Backend = {
   async waitlistPosition(eventId) {
     return check(await db().rpc('waitlist_position', { p_event_id: eventId })) as number;
   },
-  async register(eventId) {
-    return check(await db().rpc('register_for_event', { p_event_id: eventId })) as Registration;
+  async register(eventId, answer) {
+    return check(await db().rpc('register_for_event', { p_event_id: eventId, p_answer: answer ?? null })) as Registration;
   },
   async cancelRegistration(eventId) {
     check(await db().rpc('cancel_registration', { p_event_id: eventId }));
@@ -191,6 +194,29 @@ export const remoteBackend: Backend = {
   async report(targetType, targetId, reason) {
     await requireUserId();
     check(await db().from('reports').insert({ target_type: targetType, target_id: targetId, reason }));
+  },
+
+  async listNotifications() {
+    if (!(await currentUser())) return [];
+    return check(await db().from('notifications').select('*').order('created_at', { ascending: false }).limit(100)) as AppNotification[];
+  },
+  async unreadNotificationCount() {
+    if (!(await currentUser())) return 0;
+    const { count, error } = await db().from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  },
+  async markAllNotificationsRead() {
+    check(await db().rpc('mark_all_notifications_read'));
+  },
+  async deleteNotification(id) {
+    check(await db().from('notifications').delete().eq('id', id));
+  },
+  async registerPushToken(token, platform) {
+    check(await db().rpc('register_push_token', { p_token: token, p_platform: platform }));
+  },
+  async unregisterPushToken(token) {
+    check(await db().from('push_tokens').delete().eq('token', token));
   },
 
   async mySocieties() {
@@ -241,6 +267,24 @@ export const remoteBackend: Backend = {
   async checkIn(eventId, ticketCode) {
     return check(await db().rpc('check_in', { p_event_id: eventId, p_ticket_code: ticketCode })) as CheckInResult;
   },
+  async setCheckedIn(registrationId, checked) {
+    check(await db().rpc('set_checked_in', { p_registration_id: registrationId, p_checked: checked }));
+  },
+  async listMembers(societyId) {
+    return check(await db().rpc('list_society_members', { p_society_id: societyId })) as SocietyMember[];
+  },
+  async addMember(societyId, email, role) {
+    check(await db().rpc('add_society_member', { p_society_id: societyId, p_email: email, p_role: role }));
+  },
+  async setMemberRole(societyId, userId, role) {
+    check(await db().from('society_members').update({ role }).eq('society_id', societyId).eq('user_id', userId));
+  },
+  async removeMember(societyId, userId) {
+    check(await db().from('society_members').delete().eq('society_id', societyId).eq('user_id', userId));
+  },
+  async transferOwnership(societyId, userId) {
+    check(await db().rpc('transfer_society_ownership', { p_society_id: societyId, p_new_owner: userId }));
+  },
   async societyBanners(societyId) {
     return check(await db().from('banners').select('*').eq('society_id', societyId).order('created_at', { ascending: false })) as Banner[];
   },
@@ -279,5 +323,11 @@ export const remoteBackend: Backend = {
   },
   async reviewBanner(id, status, priority) {
     check(await db().rpc('review_banner', { p_id: id, p_status: status, p_priority: priority }));
+  },
+  async openReports() {
+    return check(await db().rpc('list_open_reports')) as OpenReport[];
+  },
+  async resolveReport(id, action) {
+    check(await db().rpc('resolve_report', { p_report_id: id, p_action: action }));
   },
 };

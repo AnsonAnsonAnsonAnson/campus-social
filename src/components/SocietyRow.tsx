@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { compactNumber } from '@/lib/format';
 import { space, useColors } from '@/lib/theme';
 import type { Society } from '@/lib/types';
+import { showAlert } from '@/lib/dialog';
+import { t } from '@/lib/i18n';
 
 import { Button, Icon, SocietyAvatar } from './ui';
 
@@ -15,10 +17,10 @@ export function FollowButton({ societyId, small = true }: { societyId: string; s
   return (
     <Button
       small={small}
-      title={following ? 'Following' : 'Follow'}
+      title={following ? t('Following') : t('Follow')}
       icon={following ? 'checkmark' : 'add'}
       variant={following ? 'secondary' : 'primary'}
-      onPress={() => toggleFollow(societyId).catch((e) => Alert.alert('Could not update', errorMessage(e)))}
+      onPress={() => toggleFollow(societyId).catch((e) => showAlert(t('Could not update'), errorMessage(e)))}
     />
   );
 }
@@ -38,8 +40,8 @@ export function SocietyRow({ society }: { society: Society }) {
           {society.verified && <Icon name="checkmark-circle" size={15} color={c.tint} />}
         </View>
         <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
-          {society.category}
-          {society.college ? ` · ${society.college}` : ''} · {compactNumber(society.follower_count)} followers
+          {t(society.category)}
+          {society.college ? ` · ${t(society.college)}` : ''} · {t('{n} followers', { n: compactNumber(society.follower_count) })}
         </Text>
       </View>
       <FollowButton societyId={society.id} />

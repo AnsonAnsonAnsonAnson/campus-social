@@ -1,5 +1,6 @@
 import type { Backend } from './backend';
 import { demoBackend } from './demo';
+import { t } from './i18n';
 import { hasSupabaseConfig, remoteBackend } from './remote';
 
 /**
@@ -22,6 +23,11 @@ export function onInvalidate(fn: () => void) {
   };
 }
 
+/**
+ * Error text for the person. Server and demo errors are written in English and
+ * listed in the Chinese dictionary, so they're shown in the app's language;
+ * anything unknown (network errors, Supabase Auth) falls back to English.
+ */
 export function errorMessage(e: unknown) {
-  return e instanceof Error ? e.message : String(e);
+  return t(e instanceof Error ? e.message : String(e));
 }
