@@ -92,6 +92,8 @@ const zhHant: Record<string, string> = {
   'Hidden by moderators': '已被管理員隱藏',
   'Hosted by': '主辦',
   'Location TBC': '地點待定',
+  'Open in Maps': '在地圖開啟',
+  'Offline. Showing tickets saved {when}. QR codes still work at the door.': '離線中，顯示 {when} 儲存的門票。二維碼在入場時仍可使用。',
   Free: '免費',
   '{n}/{capacity} going': '{n}/{capacity} 人出席',
   '{n} on waitlist': '{n} 人候補',
