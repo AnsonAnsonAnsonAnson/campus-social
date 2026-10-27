@@ -150,7 +150,7 @@ export default function EventForm() {
       <Stack.Screen options={{ title: eventId ? t('Edit event') : copyFrom ? t('Copy of event') : t('New event') }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <Pressable onPress={pickCover} accessibilityLabel={t('Choose cover image')}>
-          <Artwork seed={eventId ?? title ?? 'new'} uri={coverUrl} style={styles.cover}>
+          <Artwork seed={eventId ?? title ?? 'new'} uri={coverUrl} category={category} style={styles.cover}>
             <View style={styles.coverHint}>
               <Icon name="image-outline" color="#fff" />
               <Text style={{ color: '#fff', fontWeight: '600' }}>{coverUrl ? t('Change cover') : t('Add cover image')}</Text>

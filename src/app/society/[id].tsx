@@ -61,10 +61,10 @@ export default function SocietyScreen() {
           ),
         }}
       />
-      <Artwork seed={s.id} uri={s.cover_url} style={styles.cover} />
+      <Artwork seed={s.id} uri={s.cover_url} category={s.category} style={styles.cover} />
       <View style={styles.headerBody}>
         <View style={[styles.avatarRing, { backgroundColor: c.background }]}>
-          <SocietyAvatar name={s.name} uri={s.logo_url} size={84} />
+          <SocietyAvatar name={s.name} uri={s.logo_url} size={84} category={s.category} />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={[styles.name, { color: c.text }]}>{s.name}</Text>

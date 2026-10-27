@@ -72,7 +72,7 @@ export default function ManageSociety() {
 
       <Card style={styles.header}>
         <Pressable onPress={changeLogo} disabled={!isAdmin} accessibilityLabel={t('Change logo')}>
-          <SocietyAvatar name={s.name} uri={s.logo_url} size={64} />
+          <SocietyAvatar name={s.name} uri={s.logo_url} size={64} category={s.category} />
         </Pressable>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={{ color: c.text, fontSize: 18, fontWeight: '700' }}>{s.name}</Text>

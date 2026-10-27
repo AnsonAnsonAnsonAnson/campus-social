@@ -77,7 +77,7 @@ export default function Promote() {
               showAlert(t('Could not upload image'), errorMessage(e));
             }
           }}>
-          <Artwork seed={event.id} uri={image} style={styles.preview}>
+          <Artwork seed={event.id} uri={image} category={event.category} style={styles.preview}>
             <View style={styles.scrim} />
             <View style={{ padding: space.lg }}>
               <Text style={styles.kicker}>{event.society.short_name ?? event.society.name}</Text>

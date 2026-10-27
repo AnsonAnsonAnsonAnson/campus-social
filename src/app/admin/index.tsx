@@ -114,7 +114,7 @@ export default function Admin() {
       {societies.map((s) => (
         <View key={s.id} style={[styles.card, { backgroundColor: c.card }]}>
           <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
-            <SocietyAvatar name={s.name} uri={s.logo_url} />
+            <SocietyAvatar name={s.name} uri={s.logo_url} category={s.category} />
             <View style={{ flex: 1 }}>
               <Text style={{ color: c.text, fontWeight: '700', fontSize: 16 }}>{s.name}</Text>
               <Text style={{ color: c.textSecondary }}>

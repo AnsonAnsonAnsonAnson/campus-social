@@ -57,7 +57,7 @@ export function BannerCarousel({ banners }: { banners: BannerWithLinks[] }) {
             accessibilityRole="button"
             accessibilityLabel={t('Promoted: {title}', { title: item.title })}
             onPress={() => router.push(item.event_id ? `/event/${item.event_id}` : `/society/${item.society_id}`)}>
-            <Artwork seed={item.id} uri={item.image_url} style={[styles.banner, { width: cardWidth }]}>
+            <Artwork seed={item.id} uri={item.image_url} category={item.event?.category} style={[styles.banner, { width: cardWidth }]}>
               <View style={styles.scrim} />
               <View style={styles.content}>
                 <Text style={styles.kicker}>{item.society.short_name ?? item.society.name}</Text>
