@@ -1068,6 +1068,7 @@ const zhHant: Record<string, string> = {
   'Saved events': '已收藏',
   'Saved event': '已收藏',
   'Save event': '收藏',
+  'Open Settings': '打開設定',
 };
 
 export default zhHant;

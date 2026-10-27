@@ -21,27 +21,61 @@
       },
       "infoPlist": {
         "CFBundleAllowMixedLocalizations": true,
-        "CFBundleLocalizations": ["zh-Hant", "zh-HK", "en"]
+        "CFBundleLocalizations": [
+          "zh-Hant",
+          "zh-HK",
+          "en"
+        ]
       },
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": [
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1",
+              "0A2A.1",
+              "3B52.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "35F9.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "E174.1",
+              "85F4.1"
+            ]
           }
         ]
+      },
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png",
+        "tinted": "./assets/icon-tinted.png"
       }
     },
     "android": {
       "package": "com.ansonchow.campussocial",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#6E2A8C",
+        "backgroundColor": "#2450F0",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "blockedPermissions": ["android.permission.RECORD_AUDIO"],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -58,13 +92,15 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 160,
           "backgroundColor": "#FFFFFF",
-          "dark": { "backgroundColor": "#000000" }
+          "dark": {
+            "backgroundColor": "#000000"
+          }
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Society committee members use the camera to scan attendees' QR tickets at the door.",
+          "cameraPermission": "Campus Social uses the camera to scan QR tickets, member cards and order pickups when you help run a society. Nothing is recorded or saved.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -72,7 +108,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Choose photos for your society logo, event covers and promotional banners.",
+          "photosPermission": "Choose a photo for your profile, society logo, event cover or banner, or a screenshot of your payment for the society treasurer.",
           "cameraPermission": false,
           "microphonePermission": false
         }
@@ -80,8 +116,8 @@
       [
         "expo-calendar",
         {
-          "calendarPermission": "Add events you sign up for to your calendar.",
-          "writeOnlyCalendarPermission": "Add events you sign up for to your calendar.",
+          "calendarPermission": "Campus Social adds the events you sign up for to your calendar. It never reads your other events.",
+          "writeOnlyCalendarPermission": "Campus Social adds the events you sign up for to your calendar. It never reads your other events.",
           "remindersPermission": false,
           "writeOnlyAccess": true
         }
@@ -90,7 +126,7 @@
       [
         "expo-notifications",
         {
-          "color": "#6E2A8C"
+          "color": "#2450F0"
         }
       ]
     ],

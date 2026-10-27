@@ -1,10 +1,12 @@
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 
 import { Button, Field } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { isCuhkEmail } from '@/lib/backend';
+import { PRIVACY_URL, TERMS_URL } from '@/lib/constants';
 import { DEMO_CODE } from '@/lib/demo';
 import { showAlert } from '@/lib/dialog';
 import { needsOnboarding } from '@/lib/onboarding';
@@ -144,6 +146,11 @@ export default function SignIn() {
         <Text style={{ color: c.textSecondary, fontSize: 12, textAlign: 'center', lineHeight: 17, marginTop: space.xl }}>
           {t('By continuing you agree to the Terms of Use and Privacy Policy. Your email is only used to verify you are a CUHK member.')}
         </Text>
+        {/* App Review (1.2) wants the terms, which ban abusive content, one tap away from sign-up. */}
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: space.lg }}>
+          <Button small variant="plain" title={t('Terms of use')} onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)} />
+          <Button small variant="plain" title={t('Privacy policy')} onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} />
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );

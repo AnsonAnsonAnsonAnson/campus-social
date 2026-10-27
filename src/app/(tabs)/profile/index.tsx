@@ -8,7 +8,7 @@ import { toast } from '@/components/Toast';
 import { Button, Card, EmptyState, Icon, ListGroup, ListRow, Pill, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/lib/constants';
+import { PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '@/lib/constants';
 import { showAlert } from '@/lib/dialog';
 import {
   notificationsSupported,
@@ -205,7 +205,7 @@ export default function Profile() {
       <ListGroup title={t('About')}>
         <ListRow icon="lock-closed-outline" title={t('Privacy policy')} onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} />
         <ListRow icon="document-text-outline" title={t('Terms of use')} onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)} />
-        <ListRow icon="mail-outline" title={t('Contact support')} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
+        <ListRow icon="mail-outline" title={t('Contact support')} onPress={() => WebBrowser.openBrowserAsync(SUPPORT_URL)} />
         <ListRow icon="information-circle-outline" title={t('Version')} value={Constants.expoConfig?.version ?? '1.0.0'} />
       </ListGroup>
 

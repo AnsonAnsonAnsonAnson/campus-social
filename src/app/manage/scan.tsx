@@ -2,7 +2,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Icon } from '@/components/ui';
@@ -122,7 +122,13 @@ export default function Scan() {
                 ? t('Allow camera access to scan pickup QR codes.')
                 : t('Allow camera access to scan attendees’ QR tickets.')}
           </Text>
-          {permission && <Button title={t('Allow camera')} onPress={requestPermission} />}
+          {permission &&
+            (permission.canAskAgain ? (
+              <Button title={t('Allow camera')} onPress={requestPermission} />
+            ) : (
+              // iOS only asks once; after a "Don't Allow" the switch is in Settings.
+              <Button title={t('Open Settings')} icon="settings-outline" onPress={() => Linking.openSettings()} />
+            ))}
         </View>
       )}
 

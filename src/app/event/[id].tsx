@@ -1,6 +1,7 @@
 import * as Calendar from 'expo-calendar/legacy';
 import * as Linking from 'expo-linking';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
 import { ActionSheetIOS, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
@@ -42,6 +43,7 @@ export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const c = useColors();
   const insets = useSafeAreaInsets();
+  const focused = useIsFocused();
   const { user, requireSignIn } = useAuth();
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -273,6 +275,8 @@ export default function EventScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.backgroundPlain }}>
+      {/* White clock and battery over the coloured cover, only while this screen is on top. */}
+      {focused && <StatusBar style="light" />}
       <Stack.Screen
         options={{
           headerRight: () => (

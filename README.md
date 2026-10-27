@@ -88,10 +88,19 @@ You need an Apple Developer account (US$99/year) and an Expo account. No Mac is 
    npx eas-cli@latest submit -p ios --latest
    ```
    Use the `preview` profile to install test builds on your own phone, or TestFlight via `submit`.
-4. **App Store Connect listing.** You need a privacy policy URL and support URL (update `PRIVACY_URL`, `TERMS_URL`, `SUPPORT_EMAIL` in `src/lib/constants.ts`), screenshots (6.9" iPhone), description and keywords (both languages are ready in `store/app-store-listing.md`; set the primary language to Chinese (Traditional)), and age rating.
-5. **App Privacy answers.** Data collected and linked to the user: email address, name, user ID, photos (society uploads only), other user content (event sign-ups). Not used for tracking. No third-party analytics are included.
-6. **Review account.** Reviewers can't receive a CUHK email code. Create a user in Supabase **Auth → Users → Add user** with a password, add the address to `public.allowed_emails` first, make it a committee member of a test society, and give the credentials in App Review notes. They sign in via "Sign in with a password instead".
-7. **Things App Review checks that are already handled:** account deletion in-app, report button on user-generated content plus a moderation queue, purpose strings for camera/photos/calendar, encryption export answer (`usesNonExemptEncryption: false`), privacy manifest for UserDefaults.
+4. **Public pages.** The privacy policy, terms and support page live in `docs/` (Chinese and English). Turn on GitHub Pages (repo **Settings › Pages › Deploy from a branch › main / docs**) and they appear at `https://ansonansonansonanson.github.io/campus-social/` (`privacy.html`, `terms.html`). Replace `REPLACE_WITH_SUPPORT_EMAIL` in `docs/*.html` with a real address first. The app links to them from sign-in and Profile (`src/lib/constants.ts`).
+5. **App Store Connect listing.** Privacy policy URL and support URL from step 4, screenshots (6.9" iPhone), description and keywords (both languages are in `store/app-store-listing.md`; set the primary language to Chinese (Traditional)), age rating and review notes (also in that file).
+6. **App Privacy answers.** See `store/app-store-listing.md`. Nothing is used for tracking and there are no third-party analytics.
+7. **Review account.** Reviewers can't receive a CUHK email code. Follow `supabase/review-account.sql`: allow the address, create the user with a password in Supabase **Auth › Users › Add user**, then run part 2 to give it a test society. Put the credentials in the review notes. They sign in via "Sign in with a password instead".
+8. **Things App Review checks that are already handled:**
+   - account deletion in the app
+   - a report button on events and societies, hiding a society, a moderation queue, and terms with a zero-tolerance rule that are one tap from sign-in (guideline 1.2)
+   - browsing without an account (5.1.1)
+   - purpose strings for camera, photos and calendar in both languages, with the photo picker needing no permission
+   - the encryption export answer (`usesNonExemptEncryption: false`)
+   - a privacy manifest for UserDefaults, file timestamps, boot time and disk space
+   - payments go straight to societies for real-world events, merch and memberships, so in-app purchase doesn't apply (3.1.3(e))
+   - light, dark and tinted app icons
 
 ## Project layout
 
