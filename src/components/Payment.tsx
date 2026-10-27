@@ -92,7 +92,13 @@ export function PaymentPanel({
               />
             )}
             {settings.payme_link && (
-              <Button small variant="secondary" icon="open-outline" title={t('Open PayMe')} onPress={() => Linking.openURL(settings.payme_link!)} />
+              <Button
+                small
+                variant="secondary"
+                icon="open-outline"
+                title={t('Open PayMe')}
+                onPress={() => Linking.openURL(settings.payme_link!)}
+              />
             )}
           </View>
         </>

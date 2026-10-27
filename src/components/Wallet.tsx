@@ -12,7 +12,15 @@ import { t } from '@/lib/i18n';
 import { Icon, Pill, SocietyAvatar } from './ui';
 
 /** Digital member card: replaces paper cards and stickers. Works offline from the saved copy. */
-export function MemberCard({ membership: m, showQR = true, onPress }: { membership: MyMembership; showQR?: boolean; onPress?: () => void }) {
+export function MemberCard({
+  membership: m,
+  showQR = true,
+  onPress,
+}: {
+  membership: MyMembership;
+  showQR?: boolean;
+  onPress?: () => void;
+}) {
   const state = membershipState(m, m.plan);
   const live = state.key === 'active';
   return (
@@ -45,7 +53,9 @@ export function MemberCard({ membership: m, showQR = true, onPress }: { membersh
           <View style={styles.qr} accessible accessibilityLabel={t('Member card QR code. Show this at events and the shop.')}>
             <QRCode value={MEMBER_QR_PREFIX + m.card_code} size={112} backgroundColor="#fff" color="#0A0A0B" />
           </View>
-          <Text style={[styles.cardMeta, { flex: 1 }]}>{t('Show this at events and the society shop for member prices and member-only entry.')}</Text>
+          <Text style={[styles.cardMeta, { flex: 1 }]}>
+            {t('Show this at events and the society shop for member prices and member-only entry.')}
+          </Text>
         </View>
       )}
     </Pressable>
@@ -87,6 +97,13 @@ const styles = StyleSheet.create({
   cardMeta: { color: palette.neutral[400], fontSize: 13, lineHeight: 18 },
   cardQrRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   qr: { padding: 8, backgroundColor: '#fff', borderRadius: radius.md },
-  order: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.lg, marginHorizontal: space.lg },
+  order: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.md,
+    borderRadius: radius.lg,
+    marginHorizontal: space.lg,
+  },
   orderIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 });

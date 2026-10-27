@@ -25,7 +25,10 @@ export default function PlanForm() {
   const c = useColors();
 
   const q = useQuery(async () => {
-    const [plans, memberships] = await Promise.all([api.listPlans(societyId), planId ? api.listMemberships(societyId) : Promise.resolve([])]);
+    const [plans, memberships] = await Promise.all([
+      api.listPlans(societyId),
+      planId ? api.listMemberships(societyId) : Promise.resolve([]),
+    ]);
     return { plan: plans.find((p) => p.id === planId) ?? null, members: memberships.filter((m) => m.plan_id === planId).length };
   }, [societyId, planId]);
 
@@ -57,7 +60,8 @@ export default function PlanForm() {
   if (q.error && !q.data) return <ErrorView message={q.error} onRetry={q.refresh} />;
 
   const amount = price.trim() ? Number(price) : 0;
-  const priceError = price.trim() && (!Number.isFinite(amount) || amount < 0 || amount > 5000) ? t('Enter an amount in HK$, like 50') : null;
+  const priceError =
+    price.trim() && (!Number.isFinite(amount) || amount < 0 || amount > 5000) ? t('Enter an amount in HK$, like 50') : null;
   const fromError = !DATE.test(from) ? t('Use the format YYYY-MM-DD') : null;
   const untilError = !DATE.test(until) ? t('Use the format YYYY-MM-DD') : until < from ? t('Must be after the start date') : null;
   const valid = name.trim().length >= 2 && !priceError && !fromError && !untilError;
@@ -116,10 +120,24 @@ export default function PlanForm() {
         />
         <View style={{ flexDirection: 'row', gap: space.md }}>
           <View style={{ flex: 1 }}>
-            <Field label={t('Valid from')} value={from} onChangeText={setFrom} placeholder="2026-09-01" autoCapitalize="none" error={fromError} />
+            <Field
+              label={t('Valid from')}
+              value={from}
+              onChangeText={setFrom}
+              placeholder="2026-09-01"
+              autoCapitalize="none"
+              error={fromError}
+            />
           </View>
           <View style={{ flex: 1 }}>
-            <Field label={t('Valid until')} value={until} onChangeText={setUntil} placeholder="2027-08-31" autoCapitalize="none" error={untilError} />
+            <Field
+              label={t('Valid until')}
+              value={until}
+              onChangeText={setUntil}
+              placeholder="2027-08-31"
+              autoCapitalize="none"
+              error={untilError}
+            />
           </View>
         </View>
 
@@ -141,9 +159,7 @@ export default function PlanForm() {
         </View>
 
         <View style={{ gap: space.md }}>
-          {amount === 0 && (
-            <Toggle label={t('Approve new members automatically')} value={autoApprove} onChange={setAutoApprove} />
-          )}
+          {amount === 0 && <Toggle label={t('Approve new members automatically')} value={autoApprove} onChange={setAutoApprove} />}
           <Toggle label={t('Open for sign-ups')} value={open} onChange={setOpen} />
         </View>
 

@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 
 import { EventRow } from '@/components/EventCard';
-import { Chip, ChipRow, EmptyState, Icon } from '@/components/ui';
+import { EmptyState, Icon, SegmentedControl } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { addDays, formatDayRange, formatLongDay, hkDate, todayHK } from '@/lib/format';
@@ -89,14 +89,19 @@ export default function CalendarScreen() {
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
-      style={{ backgroundColor: c.background }}
+      style={{ backgroundColor: c.backgroundPlain }}
       contentContainerStyle={{ paddingBottom: 40 }}
       refreshControl={<RefreshControl refreshing={data.refreshing} onRefresh={data.refresh} />}>
-      <ChipRow>
-        <Chip label={t('All events')} selected={filter === 'all'} onPress={() => setFilter('all')} />
-        <Chip label={t('Following')} icon="heart" selected={filter === 'following'} onPress={() => setFilter('following')} />
-        <Chip label={t('Going')} icon="ticket" selected={filter === 'going'} onPress={() => setFilter('going')} />
-      </ChipRow>
+      <SegmentedControl
+        style={{ marginHorizontal: space.lg }}
+        value={filter}
+        onChange={setFilter}
+        options={[
+          { value: 'all', label: t('All events') },
+          { value: 'following', label: t('Following') },
+          { value: 'going', label: t('Going') },
+        ]}
+      />
 
       <View style={[styles.calendarCard, { backgroundColor: c.card }]}>
         <Calendar

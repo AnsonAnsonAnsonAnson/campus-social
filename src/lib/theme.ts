@@ -5,9 +5,48 @@ import { useColorScheme } from 'react-native';
  * primary action per screen, tangerine for dates, vivid flat colours for event covers.
  */
 export const palette = {
-  cobalt: { 50: '#EEF2FF', 100: '#E6ECFF', 200: '#B9C8FF', 300: '#8FA6FF', 400: '#6283FF', 500: '#3D63FF', 600: '#2450F0', 700: '#1A3CC4', 800: '#152F96', 900: '#0E1A4D', 950: '#0A1033' },
-  tangerine: { 50: '#FFF4EC', 100: '#FFE4D1', 200: '#FFC8A3', 300: '#FFA66B', 400: '#FF8A3D', 500: '#FF6F0F', 600: '#E05A00', 700: '#B34700', 800: '#853500', 900: '#3A1A04' },
-  neutral: { 0: '#FFFFFF', 50: '#F5F5F7', 100: '#EDEDF0', 200: '#E0E0E5', 300: '#C7C7CC', 400: '#A1A1A6', 450: '#8E8E93', 500: '#76767C', 600: '#6E6E73', 700: '#48484A', 750: '#38383A', 800: '#2C2C2E', 850: '#1C1C1E', 900: '#0A0A0B', 1000: '#000000' },
+  cobalt: {
+    50: '#EEF2FF',
+    100: '#E6ECFF',
+    200: '#B9C8FF',
+    300: '#8FA6FF',
+    400: '#6283FF',
+    500: '#3D63FF',
+    600: '#2450F0',
+    700: '#1A3CC4',
+    800: '#152F96',
+    900: '#0E1A4D',
+    950: '#0A1033',
+  },
+  tangerine: {
+    50: '#FFF4EC',
+    100: '#FFE4D1',
+    200: '#FFC8A3',
+    300: '#FFA66B',
+    400: '#FF8A3D',
+    500: '#FF6F0F',
+    600: '#E05A00',
+    700: '#B34700',
+    800: '#853500',
+    900: '#3A1A04',
+  },
+  neutral: {
+    0: '#FFFFFF',
+    50: '#F5F5F7',
+    100: '#EDEDF0',
+    200: '#E0E0E5',
+    300: '#C7C7CC',
+    400: '#A1A1A6',
+    450: '#8E8E93',
+    500: '#76767C',
+    600: '#6E6E73',
+    700: '#48484A',
+    750: '#38383A',
+    800: '#2C2C2E',
+    850: '#1C1C1E',
+    900: '#0A0A0B',
+    1000: '#000000',
+  },
 } as const;
 
 const light = {
@@ -191,7 +230,22 @@ export function textStyle(key: keyof typeof type, lang: string) {
   return lang.startsWith('zh') ? { ...type[key], ...typeZh[key] } : type[key];
 }
 
-type IconName = 'people-outline' | 'mic-outline' | 'construct-outline' | 'basketball-outline' | 'musical-notes-outline' | 'briefcase-outline' | 'heart-outline' | 'compass-outline' | 'sparkles-outline' | 'book-outline' | 'code-slash-outline' | 'color-palette-outline' | 'globe-outline' | 'leaf-outline' | 'school-outline';
+type IconName =
+  | 'people-outline'
+  | 'mic-outline'
+  | 'construct-outline'
+  | 'basketball-outline'
+  | 'musical-notes-outline'
+  | 'briefcase-outline'
+  | 'heart-outline'
+  | 'compass-outline'
+  | 'sparkles-outline'
+  | 'book-outline'
+  | 'code-slash-outline'
+  | 'color-palette-outline'
+  | 'globe-outline'
+  | 'leaf-outline'
+  | 'school-outline';
 
 /** Event category → flat cover colour (white text and icon, at least 4.5:1) and icon. */
 export const categoryArt: Record<string, { cover: string; coverDark: string; icon: IconName }> = {
@@ -281,7 +335,10 @@ const CJK = /[\u3400-\u9fff\uf900-\ufaff]/;
 
 /** "CUHK Debate Society" → "DS"; "中大合唱團" → "合". */
 export function initialsFor(name: string) {
-  const trimmed = name.trim().replace(/^(CUHK|CU)\s+/i, '').replace(/^中大/, '');
+  const trimmed = name
+    .trim()
+    .replace(/^(CUHK|CU)\s+/i, '')
+    .replace(/^中大/, '');
   if (CJK.test(trimmed[0] ?? '')) return trimmed[0];
   return trimmed
     .split(/\s+/)

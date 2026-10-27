@@ -82,7 +82,9 @@ export default function ProductForm() {
         ? t('Should be less than the normal price')
         : null;
   const cleanVariants = sized
-    ? variants.filter((v) => v.name.trim()).map((v) => ({ name: v.name.trim(), stock: v.stock.trim() ? Math.max(0, Math.floor(Number(v.stock))) : null }))
+    ? variants
+        .filter((v) => v.name.trim())
+        .map((v) => ({ name: v.name.trim(), stock: v.stock.trim() ? Math.max(0, Math.floor(Number(v.stock))) : null }))
     : [{ name: '', stock: oneStock.trim() ? Math.max(0, Math.floor(Number(oneStock))) : null }];
   const variantError =
     sized && !cleanVariants.length
@@ -166,7 +168,11 @@ export default function ProductForm() {
       <Stack.Screen options={{ title: productId ? t('Edit product') : t('Add a product') }} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         {!q.data!.hasPayment && (
-          <Banner tone="warning" icon="alert-circle-outline" text={t('Add your FPS or PayMe details before you start selling, so buyers can pay you.')} />
+          <Banner
+            tone="warning"
+            icon="alert-circle-outline"
+            text={t('Add your FPS or PayMe details before you start selling, so buyers can pay you.')}
+          />
         )}
         <Pressable
           onPress={pickImage}
@@ -254,7 +260,13 @@ export default function ProductForm() {
               )}
             </View>
           ) : (
-            <Field label={t('Stock')} hint={t('Leave empty for pre-orders with no limit')} value={oneStock} onChangeText={setOneStock} keyboardType="number-pad" />
+            <Field
+              label={t('Stock')}
+              hint={t('Leave empty for pre-orders with no limit')}
+              value={oneStock}
+              onChangeText={setOneStock}
+              keyboardType="number-pad"
+            />
           )}
           {variantError && <Text style={{ color: c.dangerText, fontSize: 13 }}>{variantError}</Text>}
           {sized && !variantError && (
@@ -320,7 +332,15 @@ export default function ProductForm() {
 }
 
 const styles = StyleSheet.create({
-  image: { width: 160, height: 160, borderRadius: radius.lg, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  image: {
+    width: 160,
+    height: 160,
+    borderRadius: radius.lg,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   variants: { borderRadius: radius.lg, overflow: 'hidden' },
   variantRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg, minHeight: 48 },

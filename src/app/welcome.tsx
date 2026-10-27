@@ -106,7 +106,9 @@ export default function Welcome() {
               />
             </View>
 
-            <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg, marginBottom: -8 }]}>{t('Your college')}</Text>
+            <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg, marginBottom: -8 }]}>
+              {t('Your college')}
+            </Text>
             <ChipRow>
               {COLLEGES.map((col) => (
                 <Chip key={col} label={t(col)} selected={college === col} onPress={() => setCollege(col === college ? null : col)} />

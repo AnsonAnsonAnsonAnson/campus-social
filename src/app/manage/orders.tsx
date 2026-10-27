@@ -87,7 +87,11 @@ export default function Orders() {
 
   const bulkReady = async () => {
     const ids = visible.filter((o) => o.status === 'paid').map((o) => o.id);
-    const ok = await confirmAsync(t('Tell {n} buyers their order is ready?', { n: ids.length }), t('Each buyer gets a notification to come and collect.'), t('Ready for pickup'));
+    const ok = await confirmAsync(
+      t('Tell {n} buyers their order is ready?', { n: ids.length }),
+      t('Each buyer gets a notification to come and collect.'),
+      t('Ready for pickup'),
+    );
     if (ok) change(ids, 'ready', t('{n} buyers told', { n: ids.length }));
   };
 
@@ -123,7 +127,13 @@ export default function Orders() {
     filter === 'check' && isAdmin && visible.length > 1 ? (
       <Button variant="ink" icon="checkmark-done" loading={busy} title={t('Mark all {n} paid', { n: visible.length })} onPress={bulkPaid} />
     ) : filter === 'handout' && readyable > 1 ? (
-      <Button variant="ink" icon="notifications-outline" loading={busy} title={t('Tell {n} buyers it’s ready', { n: readyable })} onPress={bulkReady} />
+      <Button
+        variant="ink"
+        icon="notifications-outline"
+        loading={busy}
+        title={t('Tell {n} buyers it’s ready', { n: readyable })}
+        onPress={bulkReady}
+      />
     ) : null;
 
   const chip = (f: Filter, label: string, n?: number) => (
@@ -136,7 +146,12 @@ export default function Orders() {
         options={{
           title: t('Orders'),
           headerRight: () => (
-            <Pressable onPress={exportCsv} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('Export orders')} style={styles.headerButton}>
+            <Pressable
+              onPress={exportCsv}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={t('Export orders')}
+              style={styles.headerButton}>
               <Icon name="download-outline" size={22} color={c.tint} />
             </Pressable>
           ),
@@ -209,7 +224,9 @@ export default function Orders() {
             <EmptyState
               icon={filter === 'check' ? 'checkmark-done-outline' : 'receipt-outline'}
               title={search ? t('No orders match “{q}”', { q: search }) : filter === 'check' ? t('All caught up') : t('No orders here')}
-              body={filter === 'check' && !search ? t('When a buyer taps “I’ve paid”, their order shows up here for you to check.') : undefined}
+              body={
+                filter === 'check' && !search ? t('When a buyer taps “I’ve paid”, their order shows up here for you to check.') : undefined
+              }
             />
           )
         }
@@ -260,7 +277,12 @@ function OrderSheet({
   onChange: (ids: string[], status: Change, done: string) => void;
 }) {
   const c = useColors();
-  if (!o) return <Sheet visible={false} onClose={onClose}>{null}</Sheet>;
+  if (!o)
+    return (
+      <Sheet visible={false} onClose={onClose}>
+        {null}
+      </Sheet>
+    );
   const st = orderStatus(o);
   const expired = isExpired(o);
   const confirmThen = async (title: string, body: string, action: string, status: Change, done: string) => {
@@ -287,7 +309,10 @@ function OrderSheet({
               o.paid_at
                 ? t('Paid {date}', { date: `${formatDay(o.paid_at)} ${formatTime(o.paid_at)}` })
                 : o.claimed_at
-                  ? t('Buyer says they paid {date}. Look for {ref} in your account.', { date: `${formatDay(o.claimed_at)} ${formatTime(o.claimed_at)}`, ref: o.ref })
+                  ? t('Buyer says they paid {date}. Look for {ref} in your account.', {
+                      date: `${formatDay(o.claimed_at)} ${formatTime(o.claimed_at)}`,
+                      ref: o.ref,
+                    })
                   : o.expires_at && !expired
                     ? t('Pay by {date}', { date: `${formatDay(o.expires_at)} ${formatTime(o.expires_at)}` })
                     : undefined
@@ -299,7 +324,13 @@ function OrderSheet({
 
         <View style={{ gap: space.sm }}>
           {isAdmin && (o.status === 'payment_claimed' || (o.status === 'awaiting_payment' && !expired)) && (
-            <Button variant="ink" icon="checkmark" loading={busy} title={t('Mark paid')} onPress={() => onChange([o.id], 'paid', t('{ref} marked paid', { ref: o.ref }))} />
+            <Button
+              variant="ink"
+              icon="checkmark"
+              loading={busy}
+              title={t('Mark paid')}
+              onPress={() => onChange([o.id], 'paid', t('{ref} marked paid', { ref: o.ref }))}
+            />
           )}
           {isAdmin && o.status === 'payment_claimed' && (
             <Button
@@ -310,10 +341,22 @@ function OrderSheet({
             />
           )}
           {o.status === 'paid' && (
-            <Button variant="secondary" icon="notifications-outline" title={t('Ready for pickup')} disabled={busy} onPress={() => onChange([o.id], 'ready', t('Buyer told'))} />
+            <Button
+              variant="secondary"
+              icon="notifications-outline"
+              title={t('Ready for pickup')}
+              disabled={busy}
+              onPress={() => onChange([o.id], 'ready', t('Buyer told'))}
+            />
           )}
           {(o.status === 'paid' || o.status === 'ready') && (
-            <Button variant="secondary" icon="hand-left-outline" title={t('Mark collected')} disabled={busy} onPress={() => onChange([o.id], 'collected', t('Collected'))} />
+            <Button
+              variant="secondary"
+              icon="hand-left-outline"
+              title={t('Mark collected')}
+              disabled={busy}
+              onPress={() => onChange([o.id], 'collected', t('Collected'))}
+            />
           )}
           {isAdmin && ['awaiting_payment', 'payment_claimed', 'paid', 'ready'].includes(o.status) && !expired && (
             <Button
@@ -323,7 +366,9 @@ function OrderSheet({
               onPress={() =>
                 confirmThen(
                   t('Cancel {ref}?', { ref: o.ref }),
-                  o.paid_at ? t('This order was paid. Refund the buyer yourself, then mark it refunded.') : t('The buyer is told and the stock goes back on sale.'),
+                  o.paid_at
+                    ? t('This order was paid. Refund the buyer yourself, then mark it refunded.')
+                    : t('The buyer is told and the stock goes back on sale.'),
                   t('Cancel order'),
                   'cancelled',
                   t('Order cancelled'),
@@ -358,10 +403,26 @@ function OrderSheet({
 
 const styles = StyleSheet.create({
   headerButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  search: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, paddingHorizontal: 12, height: 40, borderRadius: radius.md },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    paddingHorizontal: 12,
+    height: 40,
+    borderRadius: radius.md,
+  },
   searchInput: { flex: 1, fontSize: 16, height: 40 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: 12 },
   sep: { height: StyleSheet.hairlineWidth, marginLeft: space.lg },
-  bulk: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.lg, paddingBottom: 32, borderTopWidth: StyleSheet.hairlineWidth },
+  bulk: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: space.lg,
+    paddingBottom: 32,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   summaryCard: { borderRadius: radius.lg, padding: space.lg, gap: 6 },
 });

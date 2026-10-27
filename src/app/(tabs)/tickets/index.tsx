@@ -64,7 +64,10 @@ export default function Tickets() {
 
   if (!user) {
     return (
-      <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: c.backgroundPlain }} contentContainerStyle={{ flexGrow: 1 }}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        style={{ backgroundColor: c.backgroundPlain }}
+        contentContainerStyle={{ flexGrow: 1 }}>
         <EmptyState
           icon="ticket-outline"
           title={t('Your tickets live here')}

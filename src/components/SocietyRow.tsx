@@ -33,14 +33,15 @@ export function SocietyRow({ society }: { society: Society }) {
   return (
     <Pressable
       onPress={() => router.push(`/society/${society.id}`)}
-      style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.card }]}>
-      <SocietyAvatar name={society.name} uri={society.logo_url} category={society.category} />
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.backgroundPlain }]}>
+      <SocietyAvatar name={society.name} uri={society.logo_url} category={society.category} size={48} />
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Text style={{ color: c.text, fontSize: 16, lineHeight: 21, fontWeight: '600', flexShrink: 1 }} numberOfLines={2}>
             {society.name}
           </Text>
-          {society.verified && <Icon name="checkmark-circle" size={15} color={c.tintText} />}
+          {society.verified && <Icon name="checkmark-circle" size={14} color={c.tintText} />}
         </View>
         <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
           {t(society.category)}

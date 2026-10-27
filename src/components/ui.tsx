@@ -114,11 +114,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
         },
         hint && disabled ? undefined : style,
       ]}>
-      {loading ? (
-        <ActivityIndicator color={fg} />
-      ) : (
-        icon && <Ionicons name={icon} size={small ? 15 : 18} color={fg} />
-      )}
+      {loading ? <ActivityIndicator color={fg} /> : icon && <Ionicons name={icon} size={small ? 15 : 18} color={fg} />}
       <Text style={[styles.buttonText, small && styles.buttonTextSmall, { color: fg }]}>{title}</Text>
     </Pressable>
   );
@@ -339,7 +335,8 @@ export function StatTile({
   style?: StyleProp<ViewStyle>;
 }) {
   const c = useColors();
-  const [bg, fg] = tone === 'success' ? [c.successSoft, c.successText] : tone === 'warning' ? [c.warningSoft, c.warningText] : [c.card, c.text];
+  const [bg, fg] =
+    tone === 'success' ? [c.successSoft, c.successText] : tone === 'warning' ? [c.warningSoft, c.warningText] : [c.card, c.text];
   return (
     <Pressable
       onPress={onPress}
@@ -400,7 +397,14 @@ export function ProgressBar({ value, tone = 'success' }: { value: number; tone?:
   const c = useColors();
   return (
     <View style={[styles.progress, { backgroundColor: c.fillStrong }]}>
-      <View style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%`, height: '100%', borderRadius: 3, backgroundColor: tone === 'warning' ? c.warning : c.success }} />
+      <View
+        style={{
+          width: `${Math.max(0, Math.min(1, value)) * 100}%`,
+          height: '100%',
+          borderRadius: 3,
+          backgroundColor: tone === 'warning' ? c.warning : c.success,
+        }}
+      />
     </View>
   );
 }
@@ -411,7 +415,9 @@ export function Sheet({ visible, onClose, children }: { visible: boolean; onClos
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.sheetBackdrop, { backgroundColor: c.scrim }]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[styles.sheetBackdrop, { backgroundColor: c.scrim }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel={t('Close')} />
         <View style={[styles.sheet, elevation.e3, { backgroundColor: c.elevated, paddingBottom: Math.max(insets.bottom, space.lg) }]}>
           <View style={[styles.grabber, { backgroundColor: c.border }]} />
@@ -476,7 +482,10 @@ export function SocietyAvatar({
   if (uri) return <Image source={{ uri }} style={shape} contentFit="cover" accessibilityIgnoresInvertColors />;
   const [bg, ink] = avatarArt[familyFor(category, name)][dark ? 'dark' : 'light'];
   return (
-    <View style={[shape, styles.avatarCenter, { backgroundColor: bg }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <View
+      style={[shape, styles.avatarCenter, { backgroundColor: bg }]}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants">
       <Text style={{ color: ink, fontWeight: '700', fontSize: size * 0.36 }} allowFontScaling={false}>
         {initialsFor(name)}
       </Text>
@@ -739,14 +748,27 @@ const styles = StyleSheet.create({
   sheetBackdrop: { flex: 1, justifyContent: 'flex-end' },
   sheet: { padding: space.lg, paddingTop: space.sm, gap: space.md, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   grabber: { width: 36, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: space.xs },
-  banner: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md, marginHorizontal: space.lg },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    padding: space.md,
+    borderRadius: radius.md,
+    marginHorizontal: space.lg,
+  },
   badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 48 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   avatarCenter: { alignItems: 'center', justifyContent: 'center' },
   inputRing: { borderWidth: 3, borderRadius: radius.md + 3, margin: -3 },
   // The focus ring is drawn by inputRing; turn off the browser's own outline on web.
-  input: { minHeight: 48, borderRadius: radius.md, paddingVertical: 12, fontSize: 16, ...(Platform.OS === 'web' ? { outlineStyle: 'none' as never } : null) },
+  input: {
+    minHeight: 48,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    fontSize: 16,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' as never } : null),
+  },
   validIcon: { position: 'absolute', right: 14, top: 14 },
   listRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, minHeight: 50 },
   listGroup: { borderRadius: radius.md, overflow: 'hidden', marginHorizontal: space.lg },

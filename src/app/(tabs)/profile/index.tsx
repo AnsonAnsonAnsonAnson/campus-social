@@ -1,10 +1,10 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { toast } from '@/components/Toast';
-import { Button, Card, EmptyState, Icon, ListGroup, ListRow, Pill, SocietyAvatar } from '@/components/ui';
+import { Button, Card, EmptyState, Icon, ListGroup, ListRow, Pill, SocietyAvatar, StatTile } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/lib/constants';
@@ -24,8 +24,14 @@ import { changeLanguage, LANGUAGES, t, useLang } from '@/lib/i18n';
 
 export default function Profile() {
   const c = useColors();
-  const { user, profile } = useAuth();
+  const { user, profile, followIds } = useAuth();
   const societies = useQuery(() => api.mySocieties(), [user?.id]);
+  const stats = useQuery(async () => {
+    if (!user) return null;
+    const now = new Date().toISOString();
+    const [tickets, memberships] = await Promise.all([api.myTickets(), api.myMemberships()]);
+    return { tickets: tickets.filter((tk) => tk.event.ends_at >= now).length, cards: memberships.length };
+  }, [user?.id]);
   const unread = useQuery(() => api.unreadNotificationCount(), [user?.id]);
   const notif = useQuery(async () => ({ permission: await permissionState(), reminders: await remindersEnabled() }));
   const lang = useLang();
@@ -88,21 +94,45 @@ export default function Profile() {
       )}
 
       {user ? (
-        <Card style={[styles.header]}>
-          <SocietyAvatar name={profile?.display_name || user.email} uri={profile?.avatar_url} size={64} />
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ color: c.text, fontSize: 20, fontWeight: '700' }} numberOfLines={1}>
-              {profile?.display_name || t('Add your name')}
-            </Text>
-            <Text style={{ color: c.textSecondary }} numberOfLines={1}>
-              {user.email}
-            </Text>
-            {!!profile?.college && (
-              <Text style={{ color: c.tint, fontWeight: '600' }}>{t('{college} College', { college: t(profile.college) })}</Text>
+        <View style={styles.header}>
+          <View style={[styles.avatar, { backgroundColor: c.tint }]}>
+            {profile?.avatar_url ? (
+              <SocietyAvatar name={profile.display_name || user.email} uri={profile.avatar_url} size={88} />
+            ) : (
+              <Text style={styles.avatarText}>{(profile?.display_name || user.email).slice(0, 1).toUpperCase()}</Text>
             )}
           </View>
-          <Button small variant="secondary" title={t('Edit')} onPress={() => router.push('/edit-profile')} />
-        </Card>
+          <Pressable onPress={() => router.push('/edit-profile')} accessibilityRole="button" style={styles.nameRow}>
+            <Text style={{ color: profile?.display_name ? c.text : c.tintText, fontSize: 22, fontWeight: '700' }} numberOfLines={1}>
+              {profile?.display_name || t('Add your name')}
+            </Text>
+            <Icon name="pencil" size={15} color={c.textSecondary} />
+          </Pressable>
+          <Text style={{ color: c.textSecondary, fontSize: 15 }} numberOfLines={1}>
+            {user.email}
+          </Text>
+          {!!profile?.college && <Pill label={t('{college} College', { college: t(profile.college) })} tone="brand" icon={null} />}
+          <View style={styles.stats}>
+            <StatTile
+              style={{ flex: 1 }}
+              value={String(stats.data?.tickets ?? '–')}
+              label={t('Tickets')}
+              onPress={() => router.navigate('/tickets')}
+            />
+            <StatTile
+              style={{ flex: 1 }}
+              value={String(stats.data?.cards ?? '–')}
+              label={t('Member cards')}
+              onPress={() => router.navigate({ pathname: '/tickets', params: { tab: 'cards' } })}
+            />
+            <StatTile
+              style={{ flex: 1 }}
+              value={String(followIds.size)}
+              label={t('Following')}
+              onPress={() => router.navigate('/societies')}
+            />
+          </View>
+        </View>
       ) : (
         <EmptyState
           icon="person-circle-outline"
@@ -129,15 +159,10 @@ export default function Profile() {
 
       {user && (
         <ListGroup title={t('Notifications')}>
-          <ListRow
-            icon="notifications-outline"
-            title={t('Inbox')}
-            value={unread.data ? t('{n} new', { n: unread.data }) : undefined}
-            onPress={() => router.push('/notifications')}
-          />
+          <ListRow icon="notifications-outline" title={t('Inbox')} badge={unread.data ?? 0} onPress={() => router.push('/notifications')} />
           {notificationsSupported && notif.data && (
             <View style={[styles.switchRow, { backgroundColor: c.card }]}>
-              <Icon name="alarm-outline" size={20} color={c.tint} />
+              <Icon name="alarm-outline" size={20} color={c.textSecondary} />
               <View style={{ flex: 1 }}>
                 <Text style={[type.body, { color: c.text }]}>{t('Event reminders')}</Text>
                 <Text style={[type.footnote, { color: c.textSecondary }]}>{t('An hour before events you’re going to')}</Text>
@@ -146,7 +171,7 @@ export default function Profile() {
                 value={notif.data.reminders && notif.data.permission === 'granted'}
                 disabled={notif.data.permission === 'denied'}
                 onValueChange={toggleReminders}
-                trackColor={{ true: c.tint }}
+                trackColor={{ true: c.success }}
               />
             </View>
           )}
@@ -189,6 +214,18 @@ export default function Profile() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginHorizontal: space.lg },
+  header: { alignItems: 'center', gap: 6, marginHorizontal: space.lg },
+  avatar: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginBottom: space.sm,
+  },
+  avatarText: { color: '#fff', fontSize: 36, fontWeight: '700' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32 },
+  stats: { flexDirection: 'row', gap: space.sm, alignSelf: 'stretch', marginTop: space.md },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, minHeight: 58 },
 });

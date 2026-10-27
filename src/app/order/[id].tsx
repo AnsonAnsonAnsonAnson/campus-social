@@ -66,7 +66,10 @@ export default function OrderScreen() {
   };
 
   const cancel = async () => {
-    if (!(await confirmAsync(t('Cancel this order?'), t('If you already paid, contact the society for a refund.'), t('Cancel order'), true))) return;
+    if (
+      !(await confirmAsync(t('Cancel this order?'), t('If you already paid, contact the society for a refund.'), t('Cancel order'), true))
+    )
+      return;
     try {
       await api.cancelMyOrder(o.id);
       invalidate();
@@ -109,8 +112,19 @@ export default function OrderScreen() {
       )}
 
       {q.data?.offline && <Banner icon="cloud-done-outline" text={t('Offline. Showing the copy saved on this phone.')} />}
-      {expired && <Banner tone="warning" icon="time-outline" text={t('This order expired before it was paid, so the items were released. Order again if you still want them.')} />}
-      {o.status === 'payment_claimed' && <Banner icon="hourglass-outline" text={t('Thanks! The treasurer will check your payment against the reference {ref}.', { ref: o.ref })} />}
+      {expired && (
+        <Banner
+          tone="warning"
+          icon="time-outline"
+          text={t('This order expired before it was paid, so the items were released. Order again if you still want them.')}
+        />
+      )}
+      {o.status === 'payment_claimed' && (
+        <Banner
+          icon="hourglass-outline"
+          text={t('Thanks! The treasurer will check your payment against the reference {ref}.', { ref: o.ref })}
+        />
+      )}
 
       {(o.status === 'paid' || o.status === 'ready') && (
         <View style={[styles.pickup, { backgroundColor: c.card }]}>

@@ -485,7 +485,8 @@ export function makeDemoProducts(now = new Date()): Product[] {
       title: 'Club hoodie 2026',
       price_hkd: 220,
       member_price_hkd: 180,
-      description: 'Heavyweight hoodie with the club logo on the back. Pre-order closes in 10 days; pickup at the Sunday hike meeting point.',
+      description:
+        'Heavyweight hoodie with the club logo on the back. Pre-order closes in 10 days; pickup at the Sunday hike meeting point.',
       variants: [
         { name: 'S', stock: 10 },
         { name: 'M', stock: 3 },

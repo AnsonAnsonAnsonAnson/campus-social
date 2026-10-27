@@ -4,7 +4,7 @@ import { FlatList, Pressable, RefreshControl, Share, StyleSheet, Text, TextInput
 
 import { ListSkeleton } from '@/components/Skeleton';
 import { toast } from '@/components/Toast';
-import { Button, Chip, ChipRow, EmptyState, ErrorView, Icon, Pill, tap } from '@/components/ui';
+import { Button, Chip, ChipRow, EmptyState, ErrorView, Icon, Pill, StatTile, tap } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { confirmAsync } from '@/lib/dialog';
 import { formatTime, formatWhen } from '@/lib/format';
@@ -113,16 +113,16 @@ export default function Attendees() {
           <View style={{ gap: space.md, paddingVertical: space.lg }}>
             <Text style={{ color: c.textSecondary, marginHorizontal: space.lg }}>{formatWhen(e.starts_at, e.ends_at)}</Text>
             <View style={styles.stats}>
-              <Stat value={`${confirmed}${e.capacity ? `/${e.capacity}` : ''}`} label={t('Going')} />
-              <Stat value={String(checkedIn)} label={t('Checked in')} />
-              <Stat value={String(waitlisted)} label={t('Waitlist')} />
+              <StatTile style={{ flex: 1 }} value={`${confirmed}${e.capacity ? `/${e.capacity}` : ''}`} label={t('Going')} />
+              <StatTile style={{ flex: 1 }} value={String(checkedIn)} label={t('Checked in')} tone="success" />
+              <StatTile style={{ flex: 1 }} value={String(waitlisted)} label={t('Waitlist')} />
             </View>
             <View style={{ flexDirection: 'row', gap: space.sm, marginHorizontal: space.lg }}>
               <Button
                 style={{ flex: 1 }}
                 title={t('Scan tickets')}
                 icon="qr-code-outline"
-                onPress={() => router.push({ pathname: '/manage/scan', params: { eventId: e.id, title: e.title } })}
+                onPress={() => router.push({ pathname: '/manage/scan', params: { mode: 'event', eventId: e.id, title: e.title } })}
               />
               <Button
                 title={t('Edit')}
@@ -215,19 +215,8 @@ export default function Attendees() {
   );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
-  const c = useColors();
-  return (
-    <View style={[styles.stat, { backgroundColor: c.card }]}>
-      <Text style={{ color: c.text, fontSize: 22, fontWeight: '800' }}>{value}</Text>
-      <Text style={{ color: c.textSecondary, fontSize: 13 }}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   stats: { flexDirection: 'row', gap: space.sm, marginHorizontal: space.lg },
-  stat: { flex: 1, padding: space.md, borderRadius: radius.md, alignItems: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md },
   search: {
     flexDirection: 'row',

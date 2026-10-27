@@ -3,14 +3,14 @@ import * as Linking from 'expo-linking';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
-import { ActionSheetIOS, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActionSheetIOS, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Skeleton } from '@/components/Skeleton';
 import { FollowButton } from '@/components/SocietyRow';
 import { TicketQR } from '@/components/TicketCard';
 import { toast } from '@/components/Toast';
-import { Artwork, Button, ErrorView, Field, Icon, Pill, SocietyAvatar, type IconName } from '@/components/ui';
+import { Artwork, Button, ErrorView, Field, Icon, InfoRow, Pill, ProgressBar, Sheet, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { showAlert } from '@/lib/dialog';
@@ -155,7 +155,7 @@ export default function EventScreen() {
     primary = (
       <Button
         title={reg.status === 'waitlisted' ? t('Leave waitlist') : t('Cancel my spot')}
-        variant="secondary"
+        variant="dangerText"
         loading={busy}
         onPress={cancel}
       />
@@ -168,7 +168,7 @@ export default function EventScreen() {
   else primary = <Button title={avail.label} disabled onPress={() => {}} />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.background }}>
+    <View style={{ flex: 1, backgroundColor: c.backgroundPlain }}>
       <Stack.Screen
         options={{
           headerRight: () => (
@@ -179,7 +179,7 @@ export default function EventScreen() {
         }}
       />
       <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
-        <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={{ height: 240 + insets.top * 0.5 }}>
+        <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={{ height: 236 + insets.top * 0.4 }}>
           <View style={styles.heroScrim} />
         </Artwork>
 
@@ -194,7 +194,7 @@ export default function EventScreen() {
             {event.title}
           </Text>
 
-          <Pressable onPress={() => router.push(`/society/${event.society_id}`)} style={[styles.societyRow, { backgroundColor: c.card }]}>
+          <Pressable onPress={() => router.push(`/society/${event.society_id}`)} accessibilityRole="button" style={styles.societyRow}>
             <SocietyAvatar name={event.society.name} uri={event.society.logo_url} size={40} />
             <View style={{ flex: 1 }}>
               <Text style={{ color: c.textSecondary, fontSize: 12 }}>{t('Hosted by')}</Text>
@@ -205,36 +205,47 @@ export default function EventScreen() {
             <FollowButton societyId={event.society_id} />
           </Pressable>
 
-          <View style={[styles.infoCard, { backgroundColor: c.card }]}>
-            <Info
-              icon="time-outline"
+          <View style={{ gap: space.md, marginTop: space.xs }}>
+            <InfoRow
+              icon="calendar-outline"
               title={formatWhen(event.starts_at, event.ends_at)}
-              onPress={addToCalendar}
-              hint={t('Add to calendar')}
+              action={past ? undefined : t('Add to calendar')}
+              onAction={addToCalendar}
             />
-            <Info
+            <InfoRow
               icon="location-outline"
               title={event.location || t('Location TBC')}
-              onPress={event.location ? openMap : undefined}
-              hint={event.location ? t('Open in Maps') : undefined}
+              action={event.location ? t('Map') : undefined}
+              onAction={openMap}
             />
-            <Info icon="cash-outline" title={event.price_text || t('Free')} />
+            <InfoRow icon="cash-outline" title={event.price_text || t('Free')} />
             {event.registration_required && (
-              <Info
+              <InfoRow
                 icon="people-outline"
                 title={
                   event.capacity
-                    ? t('{n}/{capacity} going', { n: event.confirmed_count, capacity: event.capacity }) +
-                      (event.waitlist_count ? ` · ${t('{n} on waitlist', { n: event.waitlist_count })}` : '')
+                    ? t('{n}/{capacity} going', { n: event.confirmed_count, capacity: event.capacity })
                     : t('{n} going', { n: event.confirmed_count })
                 }
-                hint={avail.label}
-              />
+                sub={event.waitlist_count ? `${avail.label} · ${t('{n} on waitlist', { n: event.waitlist_count })}` : avail.label}
+                subColor={
+                  avail.kind === 'few' || avail.kind === 'waitlist'
+                    ? c.warningText
+                    : avail.kind === 'full' || avail.kind === 'closed'
+                      ? c.dangerText
+                      : undefined
+                }>
+                {!!event.capacity && (
+                  <View style={{ marginTop: 6 }}>
+                    <ProgressBar value={event.confirmed_count / event.capacity} tone={avail.kind === 'open' ? 'success' : 'warning'} />
+                  </View>
+                )}
+              </InfoRow>
             )}
           </View>
 
           {active && (
-            <View style={[styles.ticket, { backgroundColor: c.card }]}>
+            <View style={[styles.ticket, { backgroundColor: c.background }]}>
               {reg.status === 'confirmed' ? (
                 <>
                   <Text style={{ color: c.success, fontWeight: '700', fontSize: 17 }}>
@@ -264,7 +275,10 @@ export default function EventScreen() {
       </ScrollView>
 
       <View
-        style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: c.card, borderTopColor: c.border }]}>
+        style={[
+          styles.bottomBar,
+          { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: c.backgroundPlain, borderTopColor: c.border },
+        ]}>
         {q.data?.isCommittee && (
           <Button
             small
@@ -277,35 +291,33 @@ export default function EventScreen() {
         <View style={{ flex: 1 }}>{primary}</View>
       </View>
 
-      <Modal visible={asking} transparent animationType="slide" onRequestClose={() => setAsking(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAsking(false)} accessibilityLabel={t('Close')} />
-          <View style={[styles.sheet, { backgroundColor: c.background, paddingBottom: Math.max(insets.bottom, space.lg) }]}>
-            <Text style={[type.title, { color: c.text }]}>{t('One quick question')}</Text>
-            <Text style={[type.subhead, { color: c.textSecondary }]}>
-              {t('{society} asks everyone who signs up:', { society: event.society.name })}
-            </Text>
-            <Text style={[type.headline, { color: c.text }]}>{event.signup_question}</Text>
-            <Field
-              label={t('Your answer')}
-              value={answer}
-              onChangeText={setAnswer}
-              maxLength={500}
-              multiline
-              autoFocus
-              placeholder={t('Your answer (optional)')}
-              style={{ minHeight: 90 }}
-            />
-            <Button
-              title={avail.kind === 'waitlist' ? t('Join waitlist') : t('Confirm registration')}
-              icon="ticket-outline"
-              loading={busy}
-              onPress={register}
-            />
-            <Button title={t('Not now')} variant="plain" onPress={() => setAsking(false)} />
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <Sheet visible={asking} onClose={() => setAsking(false)}>
+        <View style={{ gap: space.md, paddingHorizontal: space.lg }}>
+          <Text style={[type.title, { color: c.text }]}>{t('One quick question')}</Text>
+          <Text style={[type.subhead, { color: c.textSecondary }]}>
+            {t('{society} asks everyone who signs up:', { society: event.society.name })}
+          </Text>
+          <Text style={[type.headline, { color: c.text }]}>{event.signup_question}</Text>
+          <Field
+            label={t('Your answer')}
+            value={answer}
+            onChangeText={setAnswer}
+            maxLength={500}
+            multiline
+            autoFocus
+            placeholder={t('Your answer (optional)')}
+            hint={t('Only the committee sees your answer.')}
+            style={{ minHeight: 90 }}
+          />
+          <Button
+            title={avail.kind === 'waitlist' ? t('Join waitlist') : t('Confirm registration')}
+            icon="ticket-outline"
+            loading={busy}
+            onPress={register}
+          />
+          <Button title={t('Not now')} variant="plain" onPress={() => setAsking(false)} />
+        </View>
+      </Sheet>
     </View>
   );
 }
@@ -337,19 +349,6 @@ function EventSkeleton() {
   );
 }
 
-function Info({ icon, title, hint, onPress }: { icon: IconName; title: string; hint?: string; onPress?: () => void }) {
-  const c = useColors();
-  return (
-    <Pressable onPress={onPress} disabled={!onPress} style={styles.info}>
-      <Icon name={icon} size={20} color={c.tint} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: c.text, fontSize: 15, fontWeight: '500' }}>{title}</Text>
-        {hint && <Text style={{ color: onPress ? c.tint : c.textSecondary, fontSize: 13 }}>{hint}</Text>}
-      </View>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   heroScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.15)' },
   headerButton: {
@@ -363,11 +362,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '800', lineHeight: 34 },
   h2: { fontSize: 20, fontWeight: '700', marginTop: space.sm },
   societyRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.lg },
-  infoCard: { borderRadius: radius.lg, paddingVertical: space.xs },
-  info: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md },
   ticket: { alignItems: 'center', gap: space.md, padding: space.lg, borderRadius: radius.lg },
-  sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
-  sheet: { padding: space.lg, gap: space.md, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
   bottomBar: {
     position: 'absolute',
     left: 0,

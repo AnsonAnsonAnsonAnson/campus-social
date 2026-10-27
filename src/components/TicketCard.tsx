@@ -97,7 +97,10 @@ export function TicketStub({ ticket }: { ticket: Ticket }) {
     <Pressable
       onPress={() => router.push(`/event/${e.id}`)}
       accessibilityRole="button"
-      style={({ pressed }) => [styles.stub, { backgroundColor: c.background === c.backgroundPlain ? c.card : c.background, opacity: pressed ? 0.85 : 1 }]}>
+      style={({ pressed }) => [
+        styles.stub,
+        { backgroundColor: c.background === c.backgroundPlain ? c.card : c.background, opacity: pressed ? 0.85 : 1 },
+      ]}>
       <View style={{ flex: 1, padding: space.md, gap: 4 }}>
         <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }} numberOfLines={2}>
           {e.title}

@@ -26,7 +26,9 @@ describe('membershipState', () => {
     expect(membershipState({ status: 'active', paid_at: 'x', claimed_paid_at: null }, plan).key).toBe('active');
   });
   it('expires with the plan', () => {
-    expect(membershipState({ status: 'active', paid_at: 'x', claimed_paid_at: null }, { ...plan, valid_until: '2000-08-31' }).key).toBe('expired');
+    expect(membershipState({ status: 'active', paid_at: 'x', claimed_paid_at: null }, { ...plan, valid_until: '2000-08-31' }).key).toBe(
+      'expired',
+    );
   });
 });
 
@@ -49,22 +51,42 @@ describe('orders', () => {
   const o = (status: Order['status'], items: Order['items'], expires_at: string | null = null) =>
     ({ product_title: 'Hoodie', status, items, expires_at }) as Order;
   it('summarises items', () => {
-    expect(itemsSummary([{ variant: 'M', qty: 2, unit_price: 1 }, { variant: '', qty: 1, unit_price: 1 }])).toBe('M ×2, ×1');
+    expect(
+      itemsSummary([
+        { variant: 'M', qty: 2, unit_price: 1 },
+        { variant: '', qty: 1, unit_price: 1 },
+      ]),
+    ).toBe('M ×2, ×1');
   });
   it('totals production, skipping cancelled and expired orders', () => {
     const summary = productionSummary([
       o('paid', [{ variant: 'M', qty: 2, unit_price: 1 }]),
-      o('payment_claimed', [{ variant: 'M', qty: 1, unit_price: 1 }, { variant: 'L', qty: 1, unit_price: 1 }]),
+      o('payment_claimed', [
+        { variant: 'M', qty: 1, unit_price: 1 },
+        { variant: 'L', qty: 1, unit_price: 1 },
+      ]),
       o('cancelled', [{ variant: 'L', qty: 5, unit_price: 1 }]),
       o('awaiting_payment', [{ variant: 'L', qty: 5, unit_price: 1 }], '2000-01-01T00:00:00Z'),
     ]);
-    expect(summary).toEqual([{ title: 'Hoodie', total: 4, variants: [{ name: 'M', qty: 3 }, { name: 'L', qty: 1 }] }]);
+    expect(summary).toEqual([
+      {
+        title: 'Hoodie',
+        total: 4,
+        variants: [
+          { name: 'M', qty: 3 },
+          { name: 'L', qty: 1 },
+        ],
+      },
+    ]);
   });
 });
 
 describe('spreadsheets', () => {
   it('round-trips quotes, commas and Chinese', () => {
-    const csv = toCsv([['姓名', 'Note'], ['陳大文', 'says "hi", ok']]);
+    const csv = toCsv([
+      ['姓名', 'Note'],
+      ['陳大文', 'says "hi", ok'],
+    ]);
     expect(parseCsv(csv)).toEqual([
       ['姓名', 'Note'],
       ['陳大文', 'says "hi", ok'],

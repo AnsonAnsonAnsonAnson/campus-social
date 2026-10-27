@@ -41,7 +41,12 @@ export default function Import() {
       i in override ? override[i] : col,
     ) as (ImportColumn | null)[];
     const body = hasHeader ? all.slice(1) : all;
-    return { header: hasHeader ? header : header.map((_, i) => t('Column {n}', { n: i + 1 })), columns, body, rows: rowsToImport(body, columns) };
+    return {
+      header: hasHeader ? header : header.map((_, i) => t('Column {n}', { n: i + 1 })),
+      columns,
+      body,
+      rows: rowsToImport(body, columns),
+    };
   }, [text, override]);
 
   const cycle = (i: number) => {
@@ -116,7 +121,9 @@ export default function Import() {
                         {h || t('Column {n}', { n: i + 1 })}
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ color: col ? c.tintText : c.textTertiary, fontSize: 15, fontWeight: '600' }}>{columnLabel(col)}</Text>
+                        <Text style={{ color: col ? c.tintText : c.textTertiary, fontSize: 15, fontWeight: '600' }}>
+                          {columnLabel(col)}
+                        </Text>
                         <Icon name="swap-vertical" size={13} color={col ? c.tintText : c.textTertiary} />
                       </View>
                     </Pressable>
@@ -128,11 +135,17 @@ export default function Import() {
             {!hasName ? (
               <Banner tone="warning" icon="alert-circle-outline" text={t('Pick which column has each member’s name.')} />
             ) : !hasContact ? (
-              <Banner tone="warning" icon="alert-circle-outline" text={t('Pick a student ID or email column, so members can be matched to their accounts.')} />
+              <Banner
+                tone="warning"
+                icon="alert-circle-outline"
+                text={t('Pick a student ID or email column, so members can be matched to their accounts.')}
+              />
             ) : (
               <View style={[styles.preview, { backgroundColor: c.card }]}>
                 {parsed.rows.slice(0, 5).map((r, i) => (
-                  <View key={i} style={[styles.previewRow, i > 0 && { borderTopColor: c.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
+                  <View
+                    key={i}
+                    style={[styles.previewRow, i > 0 && { borderTopColor: c.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
                     <Text style={{ color: c.text, fontSize: 15, fontWeight: '600' }} numberOfLines={1}>
                       {r.full_name}
                     </Text>
@@ -164,7 +177,9 @@ export default function Import() {
           onPress={run}
         />
         <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19 }}>
-          {t('Imported members are linked to their account when they sign in with the same CUHK email, and their member card appears in Tickets.')}
+          {t(
+            'Imported members are linked to their account when they sign in with the same CUHK email, and their member card appears in Tickets.',
+          )}
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

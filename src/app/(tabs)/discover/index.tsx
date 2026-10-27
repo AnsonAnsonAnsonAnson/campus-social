@@ -3,8 +3,9 @@ import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, ScrollView, Text, View } from 'react-native';
 
 import { BannerCarousel } from '@/components/BannerCarousel';
-import { EventCardLarge, EventRow } from '@/components/EventCard';
+import { EventCardLarge, EventRow, NextEventCard } from '@/components/EventCard';
 import { NotificationBell } from '@/components/NotificationBell';
+import { ProductRow } from '@/components/ProductCard';
 import { FeedSkeleton, ListSkeleton } from '@/components/Skeleton';
 import { SocietyRow } from '@/components/SocietyRow';
 import { Chip, ChipRow, EmptyState, ErrorView, SectionHeader } from '@/components/ui';
@@ -20,18 +21,24 @@ const DAY = 86400_000;
 
 export default function Discover() {
   const c = useColors();
-  const { followIds } = useAuth();
+  const { followIds, user } = useAuth();
   const [category, setCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   const feed = useQuery(async () => {
     const now = Date.now();
-    const [banners, events] = await Promise.all([
+    const nowIso = new Date(now).toISOString();
+    const [banners, events, products, tickets] = await Promise.all([
       api.listBanners(),
-      api.listEvents({ from: new Date(now).toISOString(), to: new Date(now + 60 * DAY).toISOString(), limit: 150 }),
+      api.listEvents({ from: nowIso, to: new Date(now + 60 * DAY).toISOString(), limit: 150 }),
+      api.listProducts(null).catch(() => []),
+      user ? api.myTickets().catch(() => []) : Promise.resolve([]),
     ]);
-    return { banners, events, weekEnd: new Date(now + 7 * DAY).toISOString() };
-  });
+    const next = tickets
+      .filter((tk) => tk.status === 'confirmed' && tk.event.status !== 'cancelled' && tk.event.ends_at >= nowIso)
+      .sort((a, b) => a.event.starts_at.localeCompare(b.event.starts_at))[0];
+    return { banners, events, products, next, weekEnd: new Date(now + 7 * DAY).toISOString() };
+  }, [user?.id]);
 
   const sections = useMemo(() => {
     const events = feed.data?.events ?? [];
@@ -68,9 +75,14 @@ export default function Discover() {
       ) : (
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
-          style={{ backgroundColor: c.background }}
+          style={{ backgroundColor: c.backgroundPlain }}
           contentContainerStyle={{ paddingBottom: 40, paddingTop: space.sm }}
           refreshControl={<RefreshControl refreshing={feed.refreshing} onRefresh={feed.refresh} />}>
+          {feed.data?.next && (
+            <View style={{ marginHorizontal: space.lg, marginBottom: space.md }}>
+              <NextEventCard ticket={feed.data.next} />
+            </View>
+          )}
           <BannerCarousel banners={feed.data?.banners ?? []} />
 
           {sections.following.length > 0 && (
@@ -84,6 +96,13 @@ export default function Discover() {
             <>
               <SectionHeader title={t('This week')} />
               <HorizontalEvents events={sections.thisWeek} />
+            </>
+          )}
+
+          {!!feed.data?.products.length && (
+            <>
+              <SectionHeader title={t('Society merch')} />
+              <ProductRow products={feed.data.products.slice(0, 10)} showSociety />
             </>
           )}
 
@@ -135,7 +154,7 @@ function SearchResults({ query }: { query: string }) {
   }, [query]);
   const empty = results.data && !results.data.events.length && !results.data.societies.length;
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: c.background }} keyboardDismissMode="on-drag">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: c.backgroundPlain }} keyboardDismissMode="on-drag">
       {results.loading && !results.data ? (
         <ListSkeleton rows={4} />
       ) : empty ? (

@@ -137,7 +137,12 @@ export default function Roster() {
         options={{
           title: t('Members'),
           headerRight: () => (
-            <Pressable onPress={doExport} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('Export member list')} style={styles.headerButton}>
+            <Pressable
+              onPress={doExport}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={t('Export member list')}
+              style={styles.headerButton}>
               <Icon name="download-outline" size={22} color={c.tint} />
             </Pressable>
           ),
@@ -166,9 +171,21 @@ export default function Roster() {
               />
             </View>
             <ChipRow>
-              <Chip label={`${t('To check')} ${counts.check || ''}`.trim()} selected={filter === 'check'} onPress={() => setFilter('check')} />
-              <Chip label={`${t('Not paid')} ${counts.unpaid || ''}`.trim()} selected={filter === 'unpaid'} onPress={() => setFilter('unpaid')} />
-              <Chip label={`${t('Active')} ${counts.active || ''}`.trim()} selected={filter === 'active'} onPress={() => setFilter('active')} />
+              <Chip
+                label={`${t('To check')} ${counts.check || ''}`.trim()}
+                selected={filter === 'check'}
+                onPress={() => setFilter('check')}
+              />
+              <Chip
+                label={`${t('Not paid')} ${counts.unpaid || ''}`.trim()}
+                selected={filter === 'unpaid'}
+                onPress={() => setFilter('unpaid')}
+              />
+              <Chip
+                label={`${t('Active')} ${counts.active || ''}`.trim()}
+                selected={filter === 'active'}
+                onPress={() => setFilter('active')}
+              />
               <Chip label={t('Past')} selected={filter === 'past'} onPress={() => setFilter('past')} />
               <Chip label={t('All')} selected={filter === 'all'} onPress={() => setFilter('all')} />
             </ChipRow>
@@ -190,7 +207,12 @@ export default function Roster() {
                 {r.m.full_name}
               </Text>
               <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
-                {[r.m.student_id, membershipRef(r.m), r.m.payment_method ? methodLabel(r.m.payment_method) : null, r.m.imported ? t('Imported') : null]
+                {[
+                  r.m.student_id,
+                  membershipRef(r.m),
+                  r.m.payment_method ? methodLabel(r.m.payment_method) : null,
+                  r.m.imported ? t('Imported') : null,
+                ]
                   .filter(Boolean)
                   .join(' · ')}
               </Text>
@@ -208,7 +230,13 @@ export default function Roster() {
       />
       {bulk && (
         <View style={[styles.bulk, { backgroundColor: c.backgroundPlain, borderTopColor: c.border }]}>
-          <Button variant="ink" icon="checkmark-done" title={t('Approve all {n}', { n: visible.length })} loading={busy} onPress={approveAll} />
+          <Button
+            variant="ink"
+            icon="checkmark-done"
+            title={t('Approve all {n}', { n: visible.length })}
+            loading={busy}
+            onPress={approveAll}
+          />
         </View>
       )}
       <MemberSheet
@@ -239,7 +267,12 @@ function MemberSheet({
   onStatus: (ids: string[], status: 'active' | 'rejected' | 'pending', done: string) => void;
 }) {
   const c = useColors();
-  if (!m) return <Sheet visible={false} onClose={onClose}>{null}</Sheet>;
+  if (!m)
+    return (
+      <Sheet visible={false} onClose={onClose}>
+        {null}
+      </Sheet>
+    );
   const state = membershipState(m, plan ?? { valid_until: todayHK(), price_hkd: 0 });
   const paid = (plan?.price_hkd ?? 0) > 0;
   return (
@@ -253,7 +286,9 @@ function MemberSheet({
         </View>
         <View style={{ gap: space.sm }}>
           <InfoRow icon="mail-outline" title={m.email} sub={[m.student_id, m.phone].filter(Boolean).join(' · ') || undefined} />
-          {(m.college || m.major) && <InfoRow icon="school-outline" title={m.major || t('No major given')} sub={m.college ? t(m.college) : undefined} />}
+          {(m.college || m.major) && (
+            <InfoRow icon="school-outline" title={m.major || t('No major given')} sub={m.college ? t(m.college) : undefined} />
+          )}
           {plan && (
             <InfoRow
               icon="card-outline"
@@ -301,7 +336,12 @@ function MemberSheet({
               />
             )}
             {state.key === 'rejected' && (
-              <Button variant="secondary" title={t('Approve after all')} disabled={busy} onPress={() => onStatus([m.id], 'active', t('Approved'))} />
+              <Button
+                variant="secondary"
+                title={t('Approve after all')}
+                disabled={busy}
+                onPress={() => onStatus([m.id], 'active', t('Approved'))}
+              />
             )}
             {state.key !== 'rejected' && state.key !== 'cancelled' && state.key !== 'expired' && (
               <Button
@@ -330,10 +370,26 @@ function MemberSheet({
 
 const styles = StyleSheet.create({
   headerButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  search: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, paddingHorizontal: 12, height: 40, borderRadius: radius.md },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    paddingHorizontal: 12,
+    height: 40,
+    borderRadius: radius.md,
+  },
   searchInput: { flex: 1, fontSize: 16, height: 40 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: 12 },
   no: { minWidth: 44, height: 32, paddingHorizontal: 6, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   sep: { height: StyleSheet.hairlineWidth, marginLeft: space.lg + 44 + space.md },
-  bulk: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.lg, paddingBottom: 32, borderTopWidth: StyleSheet.hairlineWidth },
+  bulk: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: space.lg,
+    paddingBottom: 32,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
 });

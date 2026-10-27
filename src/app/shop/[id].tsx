@@ -119,7 +119,9 @@ export default function ProductScreen() {
             {memberPrice ? (
               <Pill label={t('Member price')} tone="success" icon="card-outline" />
             ) : (
-              p.member_price_hkd != null && <Pill label={t('Members {price}', { price: formatHkd(p.member_price_hkd) })} tone="brand" icon="card-outline" />
+              p.member_price_hkd != null && (
+                <Pill label={t('Members {price}', { price: formatHkd(p.member_price_hkd) })} tone="brand" icon="card-outline" />
+              )
             )}
           </View>
           {!!p.description && <Text style={{ color: c.text, fontSize: 16, lineHeight: 24 }}>{p.description}</Text>}
@@ -138,7 +140,12 @@ export default function ProductScreen() {
                       {out ? t('Sold out') : l == null ? t('Pre-order') : t('{n} left', { n: l })}
                     </Text>
                   </View>
-                  <Stepper value={n} disabled={out || closed || notOpen} onChange={(d) => change(v.name, d)} label={v.name || t('One size')} />
+                  <Stepper
+                    value={n}
+                    disabled={out || closed || notOpen}
+                    onChange={(d) => change(v.name, d)}
+                    label={v.name || t('One size')}
+                  />
                 </View>
               );
             })}
@@ -164,27 +171,31 @@ export default function ProductScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: c.elevated, borderTopColor: c.border }]}>
+      <View
+        style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: c.elevated, borderTopColor: c.border }]}>
         <View style={{ flex: 1 }}>
           <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>{formatHkd(count * unit)}</Text>
           <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={2}>
             {hint ?? t('{n} items', { n: count })}
           </Text>
         </View>
-        <Button
-          title={t('Order')}
-          icon="bag-handle-outline"
-          loading={busy}
-          disabled={!!hint}
-          onPress={order}
-          style={{ minWidth: 150 }}
-        />
+        <Button title={t('Order')} icon="bag-handle-outline" loading={busy} disabled={!!hint} onPress={order} style={{ minWidth: 150 }} />
       </View>
     </View>
   );
 }
 
-function Stepper({ value, onChange, disabled, label }: { value: number; onChange: (delta: number) => void; disabled?: boolean; label: string }) {
+function Stepper({
+  value,
+  onChange,
+  disabled,
+  label,
+}: {
+  value: number;
+  onChange: (delta: number) => void;
+  disabled?: boolean;
+  label: string;
+}) {
   const c = useColors();
   const btn = (delta: number, icon: 'remove' | 'add') => (
     <Pressable
@@ -193,14 +204,19 @@ function Stepper({ value, onChange, disabled, label }: { value: number; onChange
       hitSlop={6}
       accessibilityRole="button"
       accessibilityLabel={`${delta > 0 ? t('Add') : t('Remove')} ${label}`}
-      style={({ pressed }) => [styles.stepBtn, { backgroundColor: c.card, opacity: disabled || (delta < 0 && value === 0) ? 0.4 : pressed ? 0.7 : 1 }]}>
+      style={({ pressed }) => [
+        styles.stepBtn,
+        { backgroundColor: c.card, opacity: disabled || (delta < 0 && value === 0) ? 0.4 : pressed ? 0.7 : 1 },
+      ]}>
       <Icon name={icon} size={18} color={c.text} />
     </Pressable>
   );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
       {btn(-1, 'remove')}
-      <Text style={{ color: c.text, fontSize: 17, fontWeight: '600', minWidth: 22, textAlign: 'center', fontVariant: ['tabular-nums'] }}>{value}</Text>
+      <Text style={{ color: c.text, fontSize: 17, fontWeight: '600', minWidth: 22, textAlign: 'center', fontVariant: ['tabular-nums'] }}>
+        {value}
+      </Text>
       {btn(1, 'add')}
     </View>
   );

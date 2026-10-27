@@ -9,7 +9,7 @@ import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { confirmAsync } from '@/lib/dialog';
 import { formatAgo, hkDate, todayHK } from '@/lib/format';
-import { radius, space, type, useColors } from '@/lib/theme';
+import { space, type, useColors } from '@/lib/theme';
 import type { AppNotification, NotificationKind } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
 import { t } from '@/lib/i18n';
@@ -79,7 +79,7 @@ export default function Notifications() {
         <ErrorView message={q.error} onRetry={q.refresh} />
       ) : (
         <SectionList
-          style={{ backgroundColor: c.background }}
+          style={{ backgroundColor: c.backgroundPlain }}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
           sections={sections}
@@ -96,7 +96,7 @@ export default function Notifications() {
             />
           }
           renderSectionHeader={({ section }) => <Text style={[styles.section, { color: c.textSecondary }]}>{section.title}</Text>}
-          ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
+          ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: c.border }]} />}
           renderItem={({ item }) => {
             const unread = unreadOnOpen.current?.has(item.id) ?? !item.read_at;
             const tappable = !!(item.event_id || item.society_id);
@@ -107,13 +107,13 @@ export default function Notifications() {
                 accessibilityRole={tappable ? 'button' : undefined}
                 accessibilityLabel={`${unread ? t('Unread. ') : ''}${item.title}. ${item.body}. ${formatAgo(item.created_at)}`}
                 accessibilityHint={t('Long press to delete')}
-                style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.card }]}>
-                <View style={[styles.icon, { backgroundColor: item.kind === 'event_cancelled' ? c.danger : c.tint }]}>
-                  <Icon name={ICONS[item.kind]} size={18} color="#fff" />
+                style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : 'transparent' }]}>
+                <View style={[styles.icon, { backgroundColor: item.kind === 'event_cancelled' ? c.dangerSoft : c.tintSoft }]}>
+                  <Icon name={ICONS[item.kind]} size={20} color={item.kind === 'event_cancelled' ? c.dangerText : c.tintText} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <View style={styles.titleRow}>
-                    <Text style={[type.headline, { color: c.text, flex: 1 }]} numberOfLines={1}>
+                    <Text style={[type.headline, { color: c.text, flex: 1, fontWeight: unread ? '700' : '500' }]} numberOfLines={1}>
                       {item.title}
                     </Text>
                     <Text style={[type.footnote, { color: c.textSecondary }]}>{formatAgo(item.created_at)}</Text>
@@ -138,11 +138,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: space.md,
-    marginHorizontal: space.lg,
-    padding: space.md,
-    borderRadius: radius.lg,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
   },
-  icon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  sep: { height: StyleSheet.hairlineWidth, marginLeft: space.lg + 40 + space.md },
+  icon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
   dot: { width: 9, height: 9, borderRadius: 5, marginTop: 6 },
 });

@@ -24,7 +24,11 @@ export default function JoinSociety() {
   const c = useColors();
   const { user, profile, refreshProfile } = useAuth();
   const q = useQuery(async () => {
-    const [society, plans, settings] = await Promise.all([api.getSociety(societyId), api.listPlans(societyId), api.getPaymentSettings(societyId)]);
+    const [society, plans, settings] = await Promise.all([
+      api.getSociety(societyId),
+      api.listPlans(societyId),
+      api.getPaymentSettings(societyId),
+    ]);
     return { society, plan: plans.find((p) => p.id === planId) ?? null, settings };
   }, [planId, societyId]);
 
@@ -93,7 +97,14 @@ export default function JoinSociety() {
           </View>
         </View>
 
-        <Field label={t('Full name')} value={name} onChangeText={setName} maxLength={80} autoComplete="name" hint={t('As on your student card.')} />
+        <Field
+          label={t('Full name')}
+          value={name}
+          onChangeText={setName}
+          maxLength={80}
+          autoComplete="name"
+          hint={t('As on your student card.')}
+        />
         <Field
           label={t('Student ID (optional)')}
           value={sid}

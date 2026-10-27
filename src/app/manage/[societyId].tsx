@@ -25,7 +25,15 @@ import { formatHkd } from '@/lib/fps';
 import { compactNumber, formatLongDay, formatWhen, todayHK } from '@/lib/format';
 import { pickAndUploadImage } from '@/lib/pickImage';
 import { radius, space, textStyle, useColors } from '@/lib/theme';
-import type { EventWithSociety, Membership, MembershipPlan, PaymentSettings, ProductWithStock, ReviewStatus, SocietyOrder } from '@/lib/types';
+import type {
+  EventWithSociety,
+  Membership,
+  MembershipPlan,
+  PaymentSettings,
+  ProductWithStock,
+  ReviewStatus,
+  SocietyOrder,
+} from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
 import { t, useLang } from '@/lib/i18n';
 
@@ -93,7 +101,9 @@ export default function ManageSociety() {
           </Text>
           <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
             <Pill label={t(d.role)} tone={d.role === 'owner' ? 'ink' : d.role === 'admin' ? 'brand' : 'neutral'} icon={null} />
-            {s.status !== 'approved' && <Pill label={s.status === 'pending' ? t('Pending review') : t('Rejected')} tone={REVIEW_TONE[s.status]} />}
+            {s.status !== 'approved' && (
+              <Pill label={s.status === 'pending' ? t('Pending review') : t('Rejected')} tone={REVIEW_TONE[s.status]} />
+            )}
           </View>
         </View>
       </View>
@@ -102,7 +112,9 @@ export default function ManageSociety() {
           <Banner
             icon="hourglass-outline"
             tone="warning"
-            text={t('The Student Affairs team is reviewing your society. You can prepare events now; students will see them once you’re approved.')}
+            text={t(
+              'The Student Affairs team is reviewing your society. You can prepare events now; students will see them once you’re approved.',
+            )}
           />
         </View>
       )}
@@ -202,7 +214,11 @@ function EventsSection({
               onPress={() => router.push({ pathname: '/manage/edit-society', params: { societyId } })}
             />
           )}
-          <ListRow icon="people-outline" title={t('Committee')} onPress={() => router.push({ pathname: '/manage/members', params: { societyId } })} />
+          <ListRow
+            icon="people-outline"
+            title={t('Committee')}
+            onPress={() => router.push({ pathname: '/manage/members', params: { societyId } })}
+          />
           <ListRow icon="eye-outline" title={t('View public page')} onPress={() => router.push(`/society/${societyId}`)} />
         </ListGroup>
       </View>
@@ -278,7 +294,9 @@ function ManageEventRow({ event: e }: { event: EventWithSociety }) {
           </Text>
         ) : (
           e.registration_required &&
-          e.capacity != null && <ProgressBar value={e.confirmed_count / e.capacity} tone={e.confirmed_count >= e.capacity ? 'warning' : 'success'} />
+          e.capacity != null && (
+            <ProgressBar value={e.confirmed_count / e.capacity} tone={e.confirmed_count >= e.capacity ? 'warning' : 'success'} />
+          )
         )}
       </View>
       <View style={{ alignItems: 'flex-end', gap: 4 }}>
@@ -293,7 +311,9 @@ function ManageEventRow({ event: e }: { event: EventWithSociety }) {
         )}
         {e.registration_required && e.status !== 'draft' && (
           <Text style={{ color: c.textSecondary, fontSize: 13 }}>
-            {e.capacity ? t('{n}/{capacity} going', { n: e.confirmed_count, capacity: e.capacity }) : t('{n} going', { n: e.confirmed_count })}
+            {e.capacity
+              ? t('{n}/{capacity} going', { n: e.confirmed_count, capacity: e.capacity })
+              : t('{n} going', { n: e.confirmed_count })}
           </Text>
         )}
       </View>
@@ -343,7 +363,11 @@ function MembersSection({ societyId, data, isAdmin }: { societyId: string; data:
             />
           ))}
           {isAdmin && (
-            <ListRow icon="add-circle-outline" title={t('New membership plan')} onPress={() => router.push({ pathname: '/manage/plan-form', params: { societyId } })} />
+            <ListRow
+              icon="add-circle-outline"
+              title={t('New membership plan')}
+              onPress={() => router.push({ pathname: '/manage/plan-form', params: { societyId } })}
+            />
           )}
         </ListGroup>
         <ListGroup title={t('Tools')}>
@@ -409,7 +433,11 @@ function ShopSection({ societyId, data, isAdmin }: { societyId: string; data: Da
               onPress={() => router.push({ pathname: '/manage/product-form', params: { societyId, productId: p.id } })}
             />
           ))}
-          <ListRow icon="add-circle-outline" title={t('Add a product')} onPress={() => router.push({ pathname: '/manage/product-form', params: { societyId } })} />
+          <ListRow
+            icon="add-circle-outline"
+            title={t('Add a product')}
+            onPress={() => router.push({ pathname: '/manage/product-form', params: { societyId } })}
+          />
         </ListGroup>
         <ListGroup title={t('Payments and pickup')}>
           {isAdmin && (

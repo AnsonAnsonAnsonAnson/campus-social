@@ -11,14 +11,18 @@ export const ORDER_QR_PREFIX = 'campussocial:order:';
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'brand' | 'info' | 'ink';
 
 /** What a membership means right now. Expiry comes from the plan's dates, not a stored status. */
-export function membershipState(m: Pick<Membership, 'status' | 'paid_at' | 'claimed_paid_at'>, plan: Pick<MembershipPlan, 'valid_until' | 'price_hkd'>) {
+export function membershipState(
+  m: Pick<Membership, 'status' | 'paid_at' | 'claimed_paid_at'>,
+  plan: Pick<MembershipPlan, 'valid_until' | 'price_hkd'>,
+) {
   if (m.status === 'active') {
     return plan.valid_until < todayHK()
       ? { key: 'expired' as const, label: t('Expired'), tone: 'neutral' as Tone }
       : { key: 'active' as const, label: t('Active'), tone: 'success' as Tone };
   }
   if (m.status === 'pending') {
-    if (plan.price_hkd > 0 && !m.paid_at && !m.claimed_paid_at) return { key: 'unpaid' as const, label: t('Waiting for payment'), tone: 'warning' as Tone };
+    if (plan.price_hkd > 0 && !m.paid_at && !m.claimed_paid_at)
+      return { key: 'unpaid' as const, label: t('Waiting for payment'), tone: 'warning' as Tone };
     if (plan.price_hkd > 0 && m.claimed_paid_at) return { key: 'claimed' as const, label: t('Payment to check'), tone: 'info' as Tone };
     return { key: 'pending' as const, label: t('Waiting for approval'), tone: 'warning' as Tone };
   }

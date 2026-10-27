@@ -167,12 +167,21 @@ function activateMembership(m: Membership) {
   if (m.user_id === state.user?.id && was !== 'active') {
     const s = state.societies.find((x) => x.id === m.society_id)!;
     const society = s.short_name ?? s.name;
-    notify('membership_active', t('Membership confirmed'), t("You're a member of {society}. Your member card is in Tickets.", { society }), null, s.id);
+    notify(
+      'membership_active',
+      t('Membership confirmed'),
+      t("You're a member of {society}. Your member card is in Tickets.", { society }),
+      null,
+      s.id,
+    );
   }
 }
 
 function holdsStock(o: Order) {
-  return !['cancelled', 'refunded'].includes(o.status) && !(o.status === 'awaiting_payment' && o.expires_at && o.expires_at < new Date().toISOString());
+  return (
+    !['cancelled', 'refunded'].includes(o.status) &&
+    !(o.status === 'awaiting_payment' && o.expires_at && o.expires_at < new Date().toISOString())
+  );
 }
 
 function productSold(productId: string) {
@@ -799,7 +808,10 @@ export const demoBackend: Backend = {
     await delay(300);
     if (!isAdminOf(input.society_id)) throw new Error('Only society admins can change memberships');
     if (input.id) {
-      Object.assign(state.plans.find((p) => p.id === input.id)!, input);
+      Object.assign(
+        state.plans.find((p) => p.id === input.id)!,
+        input,
+      );
       return input.id;
     }
     const plan: MembershipPlan = { ...input, id: uid(), created_at: new Date().toISOString() };
@@ -860,7 +872,8 @@ export const demoBackend: Backend = {
       const email = (r.email?.trim().toLowerCase() || (sid ? `${sid}@link.cuhk.edu.hk` : '')).trim();
       if (!email || !r.full_name?.trim()) continue;
       const userId = state.user && email === state.user.email ? state.user.id : null;
-      if (state.memberships.some((m) => m.plan_id === planId && ((userId && m.user_id === userId) || m.email.toLowerCase() === email))) continue;
+      if (state.memberships.some((m) => m.plan_id === planId && ((userId && m.user_id === userId) || m.email.toLowerCase() === email)))
+        continue;
       const m: Membership = {
         id: uid(),
         plan_id: planId,
@@ -905,8 +918,16 @@ export const demoBackend: Backend = {
     const plan = state.plans.find((p) => p.id === m.plan_id)!;
     if (m.society_id !== societyId) return { ok: false, name: m.full_name, message: 'This card is for a different society' };
     if (m.status !== 'active') return { ok: false, name: m.full_name, message: 'This membership is not active' };
-    if (todayHK() > plan.valid_until) return { ok: false, name: m.full_name, message: 'This membership has expired', valid_until: plan.valid_until };
-    return { ok: true, name: m.full_name, message: 'Active member', member_no: m.member_no ?? undefined, valid_until: plan.valid_until, plan: plan.name };
+    if (todayHK() > plan.valid_until)
+      return { ok: false, name: m.full_name, message: 'This membership has expired', valid_until: plan.valid_until };
+    return {
+      ok: true,
+      name: m.full_name,
+      message: 'Active member',
+      member_no: m.member_no ?? undefined,
+      valid_until: plan.valid_until,
+      plan: plan.name,
+    };
   },
 
   async getPaymentSettings(societyId) {
@@ -1016,7 +1037,10 @@ export const demoBackend: Backend = {
     await delay(300);
     if (!isMember(input.society_id)) throw new Error('Not allowed');
     if (input.id) {
-      Object.assign(state.products.find((p) => p.id === input.id)!, input);
+      Object.assign(
+        state.products.find((p) => p.id === input.id)!,
+        input,
+      );
       return input.id;
     }
     const id = uid();

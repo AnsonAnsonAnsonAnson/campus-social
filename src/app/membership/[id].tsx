@@ -79,16 +79,25 @@ export default function MembershipScreen() {
       <Stack.Screen options={{ title: t('Member card') }} />
       <MemberCard membership={m} />
 
-      {q.data?.offline && <Banner icon="cloud-done-outline" text={t('Offline. Your card is saved on this phone and still works at the door.')} />}
+      {q.data?.offline && (
+        <Banner icon="cloud-done-outline" text={t('Offline. Your card is saved on this phone and still works at the door.')} />
+      )}
 
       {state.key === 'unpaid' && (
         <View style={{ marginHorizontal: space.lg, gap: space.md }}>
           <Text style={[type.title2, { color: c.text }]}>{t('Pay your membership fee')}</Text>
-          <PaymentPanel settings={q.data?.settings ?? null} amount={m.plan.price_hkd} reference={membershipRef(m)} method={m.payment_method} />
+          <PaymentPanel
+            settings={q.data?.settings ?? null}
+            amount={m.plan.price_hkd}
+            reference={membershipRef(m)}
+            method={m.payment_method}
+          />
           {m.payment_method !== 'cash' && <Button title={t("I've paid")} icon="checkmark" loading={busy} onPress={claim} />}
         </View>
       )}
-      {state.key === 'claimed' && <Banner icon="hourglass-outline" text={t('Thanks! The treasurer will check your payment and confirm your membership.')} />}
+      {state.key === 'claimed' && (
+        <Banner icon="hourglass-outline" text={t('Thanks! The treasurer will check your payment and confirm your membership.')} />
+      )}
       {state.key === 'pending' && <Banner icon="hourglass-outline" text={t('The committee will review your application soon.')} />}
 
       {!!m.plan.questions.length && (

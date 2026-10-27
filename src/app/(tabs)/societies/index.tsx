@@ -1,6 +1,6 @@
 import { router, Stack } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { Skeleton } from '@/components/Skeleton';
 import { SocietyRow } from '@/components/SocietyRow';
@@ -29,6 +29,15 @@ export default function Societies() {
     <>
       <Stack.Screen
         options={{
+          headerRight: () => (
+            <Button
+              small
+              variant="tinted"
+              icon="add"
+              title={t('Register')}
+              onPress={() => requireSignIn() && router.push('/new-society')}
+            />
+          ),
           headerSearchBarOptions: {
             placeholder: t('Search societies'),
             onChangeText: (e) => setSearch(e.nativeEvent.text),
@@ -38,15 +47,22 @@ export default function Societies() {
       />
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
-        style={{ backgroundColor: c.background }}
+        style={{ backgroundColor: c.backgroundPlain }}
         data={list}
         keyExtractor={(s) => s.id}
         refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}
-        ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: c.border, marginLeft: 72 }} />}
+        ItemSeparatorComponent={() => (
+          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: c.border, marginLeft: space.lg + 48 + space.md }} />
+        )}
         ListHeaderComponent={
           <View style={{ paddingVertical: space.sm }}>
             <ChipRow>
-              <Chip label={t('Following')} icon="heart" selected={showFollowing} onPress={() => setShowFollowing((v) => !v)} />
+              <Chip
+                label={followIds.size ? `${t('Following')} ${followIds.size}` : t('Following')}
+                icon="heart"
+                selected={showFollowing}
+                onPress={() => setShowFollowing((v) => !v)}
+              />
               <Chip label={t('All')} selected={!category} onPress={() => setCategory(null)} />
               {SOCIETY_CATEGORIES.map((cat) => (
                 <Chip key={cat} label={t(cat)} selected={category === cat} onPress={() => setCategory(cat === category ? null : cat)} />

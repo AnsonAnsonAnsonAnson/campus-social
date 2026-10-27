@@ -118,7 +118,11 @@ export default function SocietyScreen() {
           {q.data?.isCommittee && (
             <Button title={t('Manage')} icon="options-outline" variant="secondary" onPress={() => router.push(`/manage/${s.id}`)} />
           )}
-          <Pressable onPress={share} accessibilityRole="button" accessibilityLabel={t('Share')} style={[styles.iconButton, { backgroundColor: c.fill }]}>
+          <Pressable
+            onPress={share}
+            accessibilityRole="button"
+            accessibilityLabel={t('Share')}
+            style={[styles.iconButton, { backgroundColor: c.fill }]}>
             <Icon name="share-outline" size={20} color={c.text} />
           </Pressable>
         </View>
@@ -131,9 +135,13 @@ export default function SocietyScreen() {
           </Text>
         </Pressable>
         <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
-          {instagram && <LinkChip icon="logo-instagram" label={`@${instagram}`} onPress={() => Linking.openURL(`https://instagram.com/${instagram}`)} />}
+          {instagram && (
+            <LinkChip icon="logo-instagram" label={`@${instagram}`} onPress={() => Linking.openURL(`https://instagram.com/${instagram}`)} />
+          )}
           {s.website && <LinkChip icon="globe-outline" label={t('Website')} onPress={() => WebBrowser.openBrowserAsync(s.website!)} />}
-          {s.contact_email && <LinkChip icon="mail-outline" label={t('Email')} onPress={() => Linking.openURL(`mailto:${s.contact_email}`)} />}
+          {s.contact_email && (
+            <LinkChip icon="mail-outline" label={t('Email')} onPress={() => Linking.openURL(`mailto:${s.contact_email}`)} />
+          )}
         </View>
       </View>
 
@@ -146,13 +154,21 @@ export default function SocietyScreen() {
             <>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }}>
-                  {membershipState(membership, membership.plan).key === 'active' ? t("You're a member") : membershipState(membership, membership.plan).label}
+                  {membershipState(membership, membership.plan).key === 'active'
+                    ? t("You're a member")
+                    : membershipState(membership, membership.plan).label}
                 </Text>
                 <Text style={{ color: c.textSecondary, fontSize: 13 }}>
                   {membership.plan.name} · {t('Valid until {date}', { date: formatLongDay(membership.plan.valid_until) })}
                 </Text>
               </View>
-              <Button small variant="ink" title={t('Card')} icon="qr-code-outline" onPress={() => router.push(`/membership/${membership.id}`)} />
+              <Button
+                small
+                variant="ink"
+                title={t('Card')}
+                icon="qr-code-outline"
+                onPress={() => router.push(`/membership/${membership.id}`)}
+              />
             </>
           ) : (
             plan && (
@@ -169,7 +185,9 @@ export default function SocietyScreen() {
                   small
                   variant="tinted"
                   title={t('Join')}
-                  onPress={() => requireSignIn() && router.push({ pathname: '/membership/join', params: { planId: plan.id, societyId: s.id } })}
+                  onPress={() =>
+                    requireSignIn() && router.push({ pathname: '/membership/join', params: { planId: plan.id, societyId: s.id } })
+                  }
                 />
               </>
             )
@@ -219,7 +237,15 @@ function Stat({ value, label }: { value: string; label: string }) {
   );
 }
 
-function LinkChip({ icon, label, onPress }: { icon: 'logo-instagram' | 'globe-outline' | 'mail-outline'; label: string; onPress: () => void }) {
+function LinkChip({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: 'logo-instagram' | 'globe-outline' | 'mail-outline';
+  label: string;
+  onPress: () => void;
+}) {
   const c = useColors();
   return (
     <Pressable
@@ -240,6 +266,14 @@ const styles = StyleSheet.create({
   stats: { flexDirection: 'row', marginVertical: space.md },
   iconButton: { width: 50, height: 50, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   linkChip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: radius.pill },
-  join: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: 18, marginHorizontal: space.lg, marginTop: space.lg },
+  join: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.md,
+    borderRadius: 18,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+  },
   joinIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 });

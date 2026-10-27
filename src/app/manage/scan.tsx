@@ -27,7 +27,13 @@ const TONES = {
 } as const;
 
 // Repeat scans and "not yet" are warnings; wrong event or unknown codes are errors.
-const WARNINGS = ['Already checked in', 'Already collected', 'Not paid yet', 'This membership has expired', 'This membership is not active'];
+const WARNINGS = [
+  'Already checked in',
+  'Already collected',
+  'Not paid yet',
+  'This membership has expired',
+  'This membership is not active',
+];
 
 const PREFIXES: Record<Mode, string[]> = {
   event: [TICKET_QR_PREFIX, LEGACY_TICKET_QR_PREFIX],
@@ -36,7 +42,12 @@ const PREFIXES: Record<Mode, string[]> = {
 };
 
 export default function Scan() {
-  const { mode: modeParam, eventId, societyId, title } = useLocalSearchParams<{ mode?: Mode; eventId?: string; societyId?: string; title?: string }>();
+  const {
+    mode: modeParam,
+    eventId,
+    societyId,
+    title,
+  } = useLocalSearchParams<{ mode?: Mode; eventId?: string; societyId?: string; title?: string }>();
   const mode: Mode = modeParam ?? 'event';
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
@@ -49,7 +60,11 @@ export default function Scan() {
   const last = useRef<{ code: string; at: number } | null>(null);
 
   const check = (code: string): Promise<Result> =>
-    mode === 'member' ? api.checkMemberCard(societyId!, code) : mode === 'pickup' ? api.collectOrder(societyId!, code) : api.checkIn(eventId!, code);
+    mode === 'member'
+      ? api.checkMemberCard(societyId!, code)
+      : mode === 'pickup'
+        ? api.collectOrder(societyId!, code)
+        : api.checkIn(eventId!, code);
 
   const handle = async (raw: string) => {
     const prefix = PREFIXES[mode].find((p) => raw.startsWith(p));
@@ -80,7 +95,11 @@ export default function Scan() {
 
   const tone = result ? (result.ok ? TONES.ok : WARNINGS.includes(result.message) ? TONES.warn : TONES.bad) : null;
   const counter =
-    mode === 'member' ? t('{n} cards checked', { n: count }) : mode === 'pickup' ? t('{n} handed out', { n: count }) : t('{n} checked in this session', { n: count });
+    mode === 'member'
+      ? t('{n} cards checked', { n: count })
+      : mode === 'pickup'
+        ? t('{n} handed out', { n: count })
+        : t('{n} checked in this session', { n: count });
   const meta = result && resultMeta(mode, result);
 
   return (
@@ -156,7 +175,11 @@ export default function Scan() {
               onChangeText={setManual}
               autoFocus
               placeholder={
-                mode === 'member' ? t('Member no., e.g. 12') : mode === 'pickup' ? t('Order ref, e.g. SSM-1234') : t('Or type the 8-character code')
+                mode === 'member'
+                  ? t('Member no., e.g. 12')
+                  : mode === 'pickup'
+                    ? t('Order ref, e.g. SSM-1234')
+                    : t('Or type the 8-character code')
               }
               placeholderTextColor="rgba(255,255,255,0.6)"
               autoCapitalize={mode === 'pickup' ? 'characters' : 'none'}
@@ -192,7 +215,9 @@ function resultMeta(mode: Mode, r: Result) {
       .join(' · ');
   }
   if (mode === 'pickup') {
-    return [r.ref, r.items, r.collected_at ? t('Collected at {time}', { time: formatTime(r.collected_at) }) : null].filter(Boolean).join(' · ');
+    return [r.ref, r.items, r.collected_at ? t('Collected at {time}', { time: formatTime(r.collected_at) }) : null]
+      .filter(Boolean)
+      .join(' · ');
   }
   return null;
 }

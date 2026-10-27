@@ -42,7 +42,10 @@ export default function PaymentSettingsScreen() {
 
   const proxy = fps.trim() ? parseFpsProxy(fps) : null;
   const fpsError = fps.trim() && !proxy ? t('Use a Hong Kong mobile number, an email, or a 7 to 9 digit FPS ID') : null;
-  const paymeError = payme.trim() && !/^https:\/\/(payme\.hsbc\/|payme\.hsbc\.com\.hk\/)\S+$/i.test(payme.trim()) ? t('Paste your PayMe link, starting https://payme.hsbc/') : null;
+  const paymeError =
+    payme.trim() && !/^https:\/\/(payme\.hsbc\/|payme\.hsbc\.com\.hk\/)\S+$/i.test(payme.trim())
+      ? t('Paste your PayMe link, starting https://payme.hsbc/')
+      : null;
   const payeeError = fps.trim() && !payee.trim() ? t('Buyers check this name in their bank app before paying') : null;
   const valid = !fpsError && !paymeError && !payeeError;
   const changed =
@@ -93,7 +96,9 @@ export default function PaymentSettingsScreen() {
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <Banner
           icon="shield-checkmark-outline"
-          text={t('Buyers pay your society account directly. The app never touches the money, and every change here is sent to all your admins.')}
+          text={t(
+            'Buyers pay your society account directly. The app never touches the money, and every change here is sent to all your admins.',
+          )}
         />
         <Field
           label={t('FPS ID, mobile or email')}
@@ -104,7 +109,13 @@ export default function PaymentSettingsScreen() {
           placeholder="9123 4567"
           error={fpsError}
           valid={!!proxy}
-          hint={proxy ? t('Recognised as {kind}', { kind: proxy.kind === 'mobile' ? t('a mobile number') : proxy.kind === 'email' ? t('an email') : t('an FPS ID') }) : undefined}
+          hint={
+            proxy
+              ? t('Recognised as {kind}', {
+                  kind: proxy.kind === 'mobile' ? t('a mobile number') : proxy.kind === 'email' ? t('an email') : t('an FPS ID'),
+                })
+              : undefined
+          }
         />
         <Field
           label={t('Account name')}

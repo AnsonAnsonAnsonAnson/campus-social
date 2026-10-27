@@ -34,11 +34,11 @@ export function ProductCard({ product: p, showSociety }: { product: ProductWithS
         <Text style={{ color: c.text, fontSize: 15, fontWeight: '600' }} numberOfLines={2}>
           {p.title}
         </Text>
-        <Text style={{ color: soldOut ? c.textTertiary : c.text, fontSize: 15 }}>
-          {soldOut ? t('Sold out') : formatHkd(p.price_hkd)}
-        </Text>
+        <Text style={{ color: soldOut ? c.textTertiary : c.text, fontSize: 15 }}>{soldOut ? t('Sold out') : formatHkd(p.price_hkd)}</Text>
         {p.member_price_hkd != null && !soldOut && (
-          <Text style={{ color: c.successText, fontSize: 12, fontWeight: '600' }}>{t('Members {price}', { price: formatHkd(p.member_price_hkd) })}</Text>
+          <Text style={{ color: c.successText, fontSize: 12, fontWeight: '600' }}>
+            {t('Members {price}', { price: formatHkd(p.member_price_hkd) })}
+          </Text>
         )}
       </View>
     </Pressable>
