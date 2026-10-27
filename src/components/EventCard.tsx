@@ -28,7 +28,7 @@ export function EventCardLarge({ event, width = 280 }: { event: EventWithSociety
     <Pressable
       onPress={() => router.push(`/event/${event.id}`)}
       style={({ pressed }) => [styles.large, { width, backgroundColor: c.card, opacity: pressed ? 0.85 : 1 }]}>
-      <Artwork seed={event.id} uri={event.cover_url} style={styles.largeArt}>
+      <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={styles.largeArt}>
         <View style={styles.dateBadge}>
           <Text style={styles.dateBadgeText}>{formatDay(event.starts_at)}</Text>
         </View>
@@ -58,7 +58,7 @@ export function EventRow({ event }: { event: EventWithSociety }) {
     <Pressable
       onPress={() => router.push(`/event/${event.id}`)}
       style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.card }]}>
-      <Artwork seed={event.id} uri={event.cover_url} style={styles.rowArt} />
+      <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={styles.rowArt} />
       <View style={{ flex: 1, gap: 3 }}>
         <Text style={{ color: c.tint, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
           {formatWhen(event.starts_at)}

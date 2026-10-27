@@ -99,7 +99,7 @@ export default function EditSociety() {
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <Pressable onPress={() => upload('cover')} accessibilityLabel={t('Change cover image')} disabled={!!uploading}>
-          <Artwork seed={societyId} uri={form.cover_url || null} style={styles.cover}>
+          <Artwork seed={societyId} uri={form.cover_url || null} category={form.category} style={styles.cover}>
             <View style={styles.hint}>
               <Icon name="image-outline" color="#fff" />
               <Text style={{ color: '#fff', fontWeight: '600' }}>{uploading === 'cover' ? t('Uploading…') : t('Change cover')}</Text>
@@ -107,7 +107,7 @@ export default function EditSociety() {
           </Artwork>
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-          <SocietyAvatar name={form.name || 'Society'} uri={form.logo_url || null} size={64} />
+          <SocietyAvatar name={form.name || 'Society'} uri={form.logo_url || null} category={form.category} size={64} />
           <Button
             small
             variant="secondary"

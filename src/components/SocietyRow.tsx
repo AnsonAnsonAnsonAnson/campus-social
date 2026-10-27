@@ -14,12 +14,15 @@ import { Button, Icon, SocietyAvatar } from './ui';
 export function FollowButton({ societyId, small = true }: { societyId: string; small?: boolean }) {
   const { followIds, toggleFollow } = useAuth();
   const following = followIds.has(societyId);
+  // In lists a tinted pill, so a list of societies isn't a wall of filled buttons;
+  // full size (society page) it is that screen's primary action.
+  const variant = small ? (following ? 'outline' : 'tinted') : following ? 'secondary' : 'primary';
   return (
     <Button
       small={small}
       title={following ? t('Following') : t('Follow')}
       icon={following ? 'checkmark' : 'add'}
-      variant={following ? 'secondary' : 'primary'}
+      variant={variant}
       onPress={() => toggleFollow(societyId).catch((e) => showAlert(t('Could not update'), errorMessage(e)))}
     />
   );
@@ -31,13 +34,13 @@ export function SocietyRow({ society }: { society: Society }) {
     <Pressable
       onPress={() => router.push(`/society/${society.id}`)}
       style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.card }]}>
-      <SocietyAvatar name={society.name} uri={society.logo_url} />
+      <SocietyAvatar name={society.name} uri={society.logo_url} category={society.category} />
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text style={{ color: c.text, fontSize: 16, fontWeight: '600', flexShrink: 1 }} numberOfLines={1}>
+          <Text style={{ color: c.text, fontSize: 16, lineHeight: 21, fontWeight: '600', flexShrink: 1 }} numberOfLines={2}>
             {society.name}
           </Text>
-          {society.verified && <Icon name="checkmark-circle" size={15} color={c.tint} />}
+          {society.verified && <Icon name="checkmark-circle" size={15} color={c.tintText} />}
         </View>
         <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
           {t(society.category)}

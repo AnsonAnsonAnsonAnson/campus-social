@@ -31,7 +31,7 @@ export function TicketCard({ ticket, showQR }: { ticket: Ticket; showQR: boolean
 
   return (
     <Pressable onPress={() => router.push(`/event/${e.id}`)} style={[styles.card, { backgroundColor: c.card }]}>
-      <Artwork seed={e.id} uri={e.cover_url} style={styles.art}>
+      <Artwork seed={e.id} uri={e.cover_url} category={e.category} style={styles.art}>
         <View style={styles.artScrim} />
         <View style={{ padding: space.md, gap: 2 }}>
           <Text style={styles.artSociety}>{e.society.short_name ?? e.society.name}</Text>

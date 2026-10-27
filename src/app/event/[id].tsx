@@ -179,7 +179,7 @@ export default function EventScreen() {
         }}
       />
       <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
-        <Artwork seed={event.id} uri={event.cover_url} style={{ height: 240 + insets.top * 0.5 }}>
+        <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={{ height: 240 + insets.top * 0.5 }}>
           <View style={styles.heroScrim} />
         </Artwork>
 
