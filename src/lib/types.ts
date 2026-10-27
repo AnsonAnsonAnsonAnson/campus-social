@@ -170,6 +170,8 @@ export type EventQuery = {
   from?: string;
   to?: string;
   societyIds?: string[];
+  /** Only these events (e.g. the ones you saved). */
+  ids?: string[];
   category?: string;
   search?: string;
   /** Include drafts (only returned for societies you help run). */

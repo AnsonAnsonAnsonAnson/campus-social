@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { compactNumber } from '@/lib/format';
+import { compactNumber, formatDay } from '@/lib/format';
 import { space, useColors } from '@/lib/theme';
 import type { Society } from '@/lib/types';
 import { showAlert } from '@/lib/dialog';
@@ -28,7 +28,8 @@ export function FollowButton({ societyId, small = true }: { societyId: string; s
   );
 }
 
-export function SocietyRow({ society }: { society: Society }) {
+/** Society list row. `next` adds the "Next: date · title" line from the design. */
+export function SocietyRow({ society, next }: { society: Society; next?: { starts_at: string; title: string } | null }) {
   const c = useColors();
   // Follow is a sibling of the row link, not inside it: nested buttons are invalid
   // on web and VoiceOver can't reach the inner one.
@@ -50,6 +51,11 @@ export function SocietyRow({ society }: { society: Society }) {
             {t(society.category)}
             {society.college ? ` · ${t(society.college)}` : ''} · {t('{n} followers', { n: compactNumber(society.follower_count) })}
           </Text>
+          {next !== undefined && (
+            <Text style={{ color: next ? c.accentText : c.textTertiary, fontSize: 13, marginTop: 1 }} numberOfLines={1}>
+              {next ? t('Next: {when} · {title}', { when: formatDay(next.starts_at), title: next.title }) : t('No upcoming events')}
+            </Text>
+          )}
         </View>
       </Pressable>
       <FollowButton societyId={society.id} />
@@ -60,4 +66,24 @@ export function SocietyRow({ society }: { society: Society }) {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md },
   link: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
+  card: { width: 150, padding: space.md, borderRadius: 18, gap: space.md },
 });
+
+/** Recommendation card for the horizontal "Picked for you" row on Societies. */
+export function SocietyCard({ society }: { society: Society }) {
+  const c = useColors();
+  return (
+    <View style={[styles.card, { backgroundColor: c.fill }]}>
+      <Pressable onPress={() => router.push(`/society/${society.id}`)} accessibilityRole="button" style={{ gap: 6, flex: 1 }}>
+        <SocietyAvatar name={society.name} uri={society.logo_url} category={society.category} size={48} />
+        <Text style={{ color: c.text, fontSize: 15, lineHeight: 20, fontWeight: '600', marginTop: 4 }} numberOfLines={2}>
+          {society.name}
+        </Text>
+        <Text style={{ color: c.textSecondary, fontSize: 12 }} numberOfLines={1}>
+          {t(society.category)} · {compactNumber(society.follower_count)}
+        </Text>
+      </Pressable>
+      <FollowButton societyId={society.id} />
+    </View>
+  );
+}

@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ActionSheetIOS, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SaveButton } from '@/components/EventCard';
 import { Skeleton } from '@/components/Skeleton';
 import { FollowButton } from '@/components/SocietyRow';
 import { TicketQR } from '@/components/TicketCard';
@@ -32,10 +33,10 @@ import { membershipState, ticketPayment } from '@/lib/commerce';
 import { formatHkd } from '@/lib/fps';
 import { availability, formatWhen, todayHK } from '@/lib/format';
 import { offerNotifications, refreshReminders } from '@/lib/notifications';
-import { radius, space, type, useColors } from '@/lib/theme';
+import { palette, radius, space, type, useColors } from '@/lib/theme';
 import type { PaymentMethod } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
-import { t } from '@/lib/i18n';
+import { getLang, t } from '@/lib/i18n';
 
 export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -279,6 +280,11 @@ export default function EventScreen() {
               <Pressable onPress={share} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('Share')} style={styles.headerButton}>
                 <Icon name="share-outline" size={19} color="#0A0A0B" />
               </Pressable>
+              {event.status !== 'draft' && (
+                <View style={styles.headerButton}>
+                  <SaveButton eventId={event.id} size={20} color="#0A0A0B" />
+                </View>
+              )}
               <Pressable
                 onPress={more}
                 hitSlop={8}
@@ -294,11 +300,20 @@ export default function EventScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
         <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={{ height: 236 + insets.top * 0.4 }}>
           <View style={styles.heroScrim} />
+          <View style={styles.heroBottom}>
+            <View style={styles.heroTag}>
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{t(event.category)}</Text>
+            </View>
+            <View style={styles.dateBadge} accessibilityElementsHidden importantForAccessibility="no">
+              <Text style={{ color: palette.tangerine[700], fontSize: 11, fontWeight: '700' }}>{monthShort(event.starts_at)}</Text>
+              <Text style={{ color: '#0A0A0B', fontSize: 24, lineHeight: 26, fontWeight: '700' }}>{dayOfMonth(event.starts_at)}</Text>
+              <Text style={{ color: '#6E6E73', fontSize: 11, fontWeight: '600' }}>{weekdayShort(event.starts_at)}</Text>
+            </View>
+          </View>
         </Artwork>
 
         <View style={{ padding: space.lg, gap: space.md }}>
           <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
-            <Pill label={t(event.category)} tone="brand" />
             {event.members_only && <Pill label={t('Members only')} tone="ink" icon="card-outline" />}
             {event.status === 'draft' && <Pill label={t('Draft')} tone="warning" />}
             {event.status === 'cancelled' && <Pill label={t('Cancelled')} tone="danger" />}
@@ -576,6 +591,17 @@ function EventSkeleton() {
 
 const styles = StyleSheet.create({
   heroScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.15)' },
+  heroBottom: {
+    position: 'absolute',
+    left: space.lg,
+    right: space.lg,
+    bottom: space.md,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  heroTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.32)' },
+  dateBadge: { width: 54, paddingVertical: 6, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center' },
   // Hand-off: 40pt white circles on the cover.
   headerButton: {
     width: 40,
@@ -606,3 +632,9 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
 });
+
+const hkParts = (iso: string, opts: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat(getLang() === 'zh-Hant' ? 'zh-HK' : 'en-GB', { timeZone: 'Asia/Hong_Kong', ...opts }).format(new Date(iso));
+const monthShort = (iso: string) => hkParts(iso, { month: 'short' }).toUpperCase();
+const dayOfMonth = (iso: string) => hkParts(iso, { day: 'numeric' }).replace('日', '');
+const weekdayShort = (iso: string) => hkParts(iso, { weekday: 'short' }).toUpperCase();

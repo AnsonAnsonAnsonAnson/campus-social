@@ -2,12 +2,15 @@ import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
+import { errorMessage } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { availability, formatDay, formatTime, formatWhen } from '@/lib/format';
-import { palette, radius, space, useColors } from '@/lib/theme';
+import { palette, radius, space, useColors, useIsDark } from '@/lib/theme';
 import type { EventWithSociety, Ticket } from '@/lib/types';
 import { t } from '@/lib/i18n';
 
-import { Artwork, Icon, Pill } from './ui';
+import { toast } from './Toast';
+import { Artwork, Icon, Pill, tap } from './ui';
 
 function availabilityTone(event: EventWithSociety) {
   const a = availability(event);
@@ -56,12 +59,56 @@ export function EventCardLarge({ event, width = 280 }: { event: EventWithSociety
   );
 }
 
-/** Compact list row: thumb, date, title, venue, then status and share. */
-export function EventRow({ event }: { event: EventWithSociety }) {
+/** Heart: save an event for later. Lives in Tickets › Saved. */
+export function SaveButton({ eventId, size = 21, color }: { eventId: string; size?: number; color?: string }) {
   const c = useColors();
+  const { savedIds, toggleSave } = useAuth();
+  const saved = savedIds.includes(eventId);
+  const onPress = () => {
+    tap();
+    toggleSave(eventId)
+      .then(() => toast(saved ? t('Removed from saved') : t('Saved. Find it in Tickets.'), { icon: saved ? 'heart-outline' : 'heart' }))
+      .catch((e) => toast(errorMessage(e), { tone: 'error' }));
+  };
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={saved ? t('Saved event') : t('Save event')}
+      accessibilityState={{ selected: saved }}
+      style={styles.rowAction}>
+      <Icon name={saved ? 'heart' : 'heart-outline'} size={size} color={saved ? c.danger : (color ?? c.text)} />
+    </Pressable>
+  );
+}
+
+export function ShareButton({ event, size = 20, color }: { event: EventWithSociety; size?: number; color?: string }) {
+  const c = useColors();
+  return (
+    <Pressable
+      onPress={() => shareEvent(event)}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={t('Share')}
+      style={styles.rowAction}>
+      <Icon name="share-outline" size={size} color={color ?? c.text} />
+    </Pressable>
+  );
+}
+
+/**
+ * List row from the design: square cover, date, title, venue, then the place
+ * count with share and save. `compact` drops the buttons for society pages.
+ */
+export function EventRow({ event, compact }: { event: EventWithSociety; compact?: boolean }) {
+  const c = useColors();
+  const dark = useIsDark();
   const a = availabilityTone(event);
   const toneColor = { warning: c.warningText, danger: c.dangerText, brand: c.tintText, success: c.successText }[a.tone];
-  // Share sits beside the row link, not inside it: nested buttons are invalid on web
+  const thumb = compact ? 64 : 104;
+  const quiet = dark ? c.textSecondary : palette.neutral[700];
+  // The buttons sit beside the row link, not inside it: nested buttons are invalid on web
   // and VoiceOver can't reach the inner one.
   return (
     <View style={styles.row}>
@@ -69,32 +116,44 @@ export function EventRow({ event }: { event: EventWithSociety }) {
         onPress={() => router.push(`/event/${event.id}`)}
         accessibilityRole="button"
         style={({ pressed }) => [styles.rowLink, { opacity: pressed ? 0.7 : 1 }]}>
-        <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={styles.rowArt} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ color: c.accentText, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+        <Artwork
+          seed={event.id}
+          uri={event.cover_url}
+          category={event.category}
+          style={{ width: thumb, height: thumb, borderRadius: compact ? 12 : 14 }}
+        />
+        <View style={{ flex: 1, gap: 2, minHeight: thumb }}>
+          <Text style={{ color: c.accentText, fontSize: 13, lineHeight: 19, fontWeight: '600' }} numberOfLines={1}>
             {formatWhen(event.starts_at)}
           </Text>
-          <Text style={{ color: c.text, fontSize: 16, lineHeight: 21, fontWeight: '600' }} numberOfLines={2}>
+          <Text style={{ color: c.text, fontSize: compact ? 16 : 17, lineHeight: 22, fontWeight: '600' }} numberOfLines={2}>
             {event.status === 'cancelled' ? t('Cancelled: {title}', { title: event.title }) : event.title}
           </Text>
-          <Text style={{ color: c.textSecondary, fontSize: 14 }} numberOfLines={1}>
-            {event.location} · {event.society.short_name ?? event.society.name}
-          </Text>
+          {!compact && (
+            <Text style={{ color: c.textSecondary, fontSize: 14, lineHeight: 20 }} numberOfLines={1}>
+              {event.location}
+            </Text>
+          )}
           <Text
-            style={{ color: toneColor, fontSize: 13, lineHeight: 30, fontWeight: '600', marginTop: 2, paddingRight: 40 }}
+            style={{
+              color: toneColor,
+              fontSize: 13,
+              lineHeight: compact ? 18 : 36,
+              fontWeight: '600',
+              marginTop: 'auto',
+              paddingRight: compact ? 0 : 80,
+            }}
             numberOfLines={1}>
             {a.label}
           </Text>
         </View>
       </Pressable>
-      <Pressable
-        onPress={() => shareEvent(event)}
-        hitSlop={6}
-        accessibilityRole="button"
-        accessibilityLabel={t('Share')}
-        style={({ pressed }) => [styles.rowAction, { backgroundColor: pressed ? c.fill : 'transparent' }]}>
-        <Icon name="share-outline" size={18} color={c.textSecondary} />
-      </Pressable>
+      {!compact && (
+        <View style={styles.rowActions}>
+          <ShareButton event={event} color={quiet} />
+          <SaveButton eventId={event.id} color={quiet} />
+        </View>
+      )}
     </View>
   );
 }
@@ -137,19 +196,10 @@ const styles = StyleSheet.create({
   large: { borderRadius: radius.lg },
   largeArt: { height: 140, borderRadius: 16 },
   title: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
-  row: { paddingVertical: space.xs, marginHorizontal: space.lg },
-  rowLink: { flexDirection: 'row', gap: space.md },
-  rowArt: { width: 88, height: 88, borderRadius: 12 },
-  rowAction: {
-    position: 'absolute',
-    right: 0,
-    bottom: space.xs,
-    width: 36,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  row: { marginHorizontal: space.lg },
+  rowLink: { flexDirection: 'row', gap: 14 },
+  rowActions: { position: 'absolute', right: -8, bottom: 0, flexDirection: 'row', gap: 2 },
+  rowAction: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   next: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: 12, borderRadius: 18 },
   nextLink: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
   nextArt: { width: 56, height: 56, borderRadius: 12 },

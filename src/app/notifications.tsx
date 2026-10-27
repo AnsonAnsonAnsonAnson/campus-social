@@ -9,10 +9,10 @@ import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { confirmAsync } from '@/lib/dialog';
 import { formatAgo, hkDate, todayHK } from '@/lib/format';
-import { space, type, useColors } from '@/lib/theme';
+import { space, textStyle, type, useColors } from '@/lib/theme';
 import type { AppNotification, NotificationKind } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
-import { t } from '@/lib/i18n';
+import { t, useLang } from '@/lib/i18n';
 
 const ICONS: Record<NotificationKind, IconName> = {
   waitlist_promoted: 'ticket',
@@ -27,8 +27,18 @@ const ICONS: Record<NotificationKind, IconName> = {
   payment_settings_changed: 'warning',
 };
 
+/** The button under each message, as in the design. Same tap target as the row. */
+const ACTIONS: Partial<Record<NotificationKind, string>> = {
+  waitlist_promoted: 'View ticket',
+  event_updated: 'View event',
+  new_event: 'View event',
+  membership_active: 'Show card',
+  order_update: 'View order',
+};
+
 export default function Notifications() {
   const c = useColors();
+  const lang = useLang();
   const { user } = useAuth();
   const q = useQuery(() => api.listNotifications(), [user?.id]);
   // Remember what was unread when the screen opened, so the dots stay visible
@@ -72,7 +82,7 @@ export default function Notifications() {
 
   return (
     <>
-      <Stack.Screen options={{ title: t('Notifications') }} />
+      <Stack.Screen options={{ title: '', headerShadowVisible: false, headerStyle: { backgroundColor: c.backgroundPlain } }} />
       {q.loading && !q.data ? (
         <ListSkeleton rows={5} />
       ) : q.error && !q.data ? (
@@ -85,6 +95,11 @@ export default function Notifications() {
           sections={sections}
           keyExtractor={(n) => n.id}
           stickySectionHeadersEnabled={false}
+          ListHeaderComponent={
+            <Text style={[textStyle('largeTitle', lang), styles.bigTitle, { color: c.text }]} accessibilityRole="header">
+              {t('Inbox')}
+            </Text>
+          }
           refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}
           ListEmptyComponent={
             <EmptyState
@@ -121,6 +136,13 @@ export default function Notifications() {
                   <Text style={[type.subhead, { color: c.textSecondary, lineHeight: 20 }]} numberOfLines={3}>
                     {item.body}
                   </Text>
+                  {ACTIONS[item.kind] && tappable && (
+                    <View style={[styles.action, { backgroundColor: item.kind === 'waitlist_promoted' ? c.ink : c.fill }]}>
+                      <Text style={{ color: item.kind === 'waitlist_promoted' ? c.onInk : c.text, fontSize: 14, fontWeight: '600' }}>
+                        {t(ACTIONS[item.kind]!)}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 {unread && <View style={[styles.dot, { backgroundColor: c.tint }]} />}
               </Pressable>
@@ -145,4 +167,6 @@ const styles = StyleSheet.create({
   icon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
   dot: { width: 9, height: 9, borderRadius: 5, marginTop: 6 },
+  bigTitle: { marginHorizontal: space.lg, marginTop: space.xs },
+  action: { alignSelf: 'flex-start', marginTop: space.sm, paddingHorizontal: 14, height: 32, borderRadius: 16, justifyContent: 'center' },
 });

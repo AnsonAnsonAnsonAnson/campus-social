@@ -82,6 +82,9 @@ export interface Backend {
   myHiddenSocietyIds(): Promise<string[]>;
   setSocietyHidden(societyId: string, hidden: boolean): Promise<void>;
   setFollow(societyId: string, follow: boolean): Promise<void>;
+  /** Events this person saved for later (private to them). */
+  mySavedEventIds(): Promise<string[]>;
+  setEventSaved(eventId: string, saved: boolean): Promise<void>;
   myTickets(): Promise<Ticket[]>;
   myRegistration(eventId: string): Promise<MyRegistration | null>;
   waitlistPosition(eventId: string): Promise<number>;

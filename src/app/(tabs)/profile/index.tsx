@@ -2,9 +2,10 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toast } from '@/components/Toast';
-import { Button, Card, EmptyState, Icon, ListGroup, ListRow, Pill, SocietyAvatar, StatTile } from '@/components/ui';
+import { Button, Card, EmptyState, Icon, ListGroup, ListRow, Pill, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/lib/constants';
@@ -18,13 +19,14 @@ import {
   setRemindersEnabled,
   unregisterForPush,
 } from '@/lib/notifications';
-import { space, type, useColors } from '@/lib/theme';
+import { radius, space, type, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
 import { changeLanguage, LANGUAGES, t, useLang } from '@/lib/i18n';
 
 export default function Profile() {
   const c = useColors();
-  const { user, profile, followIds } = useAuth();
+  const { user, profile, followIds, savedIds } = useAuth();
+  const insets = useSafeAreaInsets();
   const societies = useQuery(() => api.mySocieties(), [user?.id]);
   const stats = useQuery(async () => {
     if (!user) return null;
@@ -81,9 +83,9 @@ export default function Profile() {
 
   return (
     <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
+      contentInsetAdjustmentBehavior="never"
       style={{ backgroundColor: c.background }}
-      contentContainerStyle={{ paddingBottom: 48, gap: space.xl, paddingTop: space.md }}>
+      contentContainerStyle={{ paddingBottom: 48, gap: space.xl, paddingTop: insets.top + space.xl }}>
       {api.isDemo && (
         <Card style={{ marginHorizontal: space.lg, gap: 6 }}>
           <Pill label={t('Demo mode')} tone="brand" />
@@ -114,25 +116,16 @@ export default function Profile() {
             {user.email}
           </Text>
           {!!profile?.college && <Pill label={t('{college} College', { college: t(profile.college) })} tone="brand" icon={null} />}
-          <View style={styles.stats}>
-            <StatTile
-              style={{ flex: 1 }}
-              value={String(stats.data?.tickets ?? '–')}
-              label={t('Tickets')}
-              onPress={() => router.navigate('/tickets')}
+          <View style={[styles.stats, { backgroundColor: c.card }]}>
+            <Stat
+              value={savedIds.length}
+              label={t('Saved events')}
+              onPress={() => router.navigate({ pathname: '/tickets', params: { tab: 'saved' } })}
             />
-            <StatTile
-              style={{ flex: 1 }}
-              value={String(stats.data?.cards ?? '–')}
-              label={t('Member cards')}
-              onPress={() => router.navigate({ pathname: '/tickets', params: { tab: 'cards' } })}
-            />
-            <StatTile
-              style={{ flex: 1 }}
-              value={String(followIds.size)}
-              label={t('Following')}
-              onPress={() => router.navigate('/societies')}
-            />
+            <View style={[styles.statDivider, { backgroundColor: c.border }]} />
+            <Stat value={stats.data?.tickets} label={t('Tickets')} onPress={() => router.navigate('/tickets')} />
+            <View style={[styles.statDivider, { backgroundColor: c.border }]} />
+            <Stat value={followIds.size} label={t('Following')} onPress={() => router.navigate('/societies')} />
           </View>
         </View>
       ) : (
@@ -142,6 +135,18 @@ export default function Profile() {
           body={t('Follow societies, register for events and keep your tickets in one place.')}
           action={<Button title={t('Sign in')} onPress={() => router.push('/sign-in')} />}
         />
+      )}
+
+      {user && (
+        <ListGroup>
+          <ListRow icon="notifications-outline" title={t('Inbox')} badge={unread.data ?? 0} onPress={() => router.push('/notifications')} />
+          <ListRow
+            icon="card-outline"
+            title={t('Member cards')}
+            value={stats.data ? String(stats.data.cards) : undefined}
+            onPress={() => router.navigate({ pathname: '/tickets', params: { tab: 'cards' } })}
+          />
+        </ListGroup>
       )}
 
       {user && (
@@ -159,9 +164,8 @@ export default function Profile() {
         </ListGroup>
       )}
 
-      {user && (
-        <ListGroup title={t('Notifications')}>
-          <ListRow icon="notifications-outline" title={t('Inbox')} badge={unread.data ?? 0} onPress={() => router.push('/notifications')} />
+      {user && notificationsSupported && (
+        <ListGroup title={t('Settings')}>
           {notificationsSupported && notif.data && (
             <View style={[styles.switchRow, { backgroundColor: c.card }]}>
               <Icon name="alarm-outline" size={20} color={c.textSecondary} />
@@ -215,6 +219,16 @@ export default function Profile() {
   );
 }
 
+function Stat({ value, label, onPress }: { value: number | undefined; label: string; onPress: () => void }) {
+  const c = useColors();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" style={styles.stat}>
+      <Text style={{ color: c.text, fontSize: 22, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{value ?? '–'}</Text>
+      <Text style={{ color: c.textSecondary, fontSize: 13 }}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   header: { alignItems: 'center', gap: 6, marginHorizontal: space.lg },
   avatar: {
@@ -228,6 +242,15 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: '#fff', fontSize: 36, fontWeight: '700' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32 },
-  stats: { flexDirection: 'row', gap: space.sm, alignSelf: 'stretch', marginTop: space.md },
+  stats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginTop: space.md,
+    borderRadius: radius.lg,
+    paddingVertical: space.md,
+  },
+  stat: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: space.xs },
+  statDivider: { width: StyleSheet.hairlineWidth * 2, height: 36 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, minHeight: 58 },
 });

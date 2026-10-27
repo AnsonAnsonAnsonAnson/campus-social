@@ -155,6 +155,7 @@ export const remoteBackend: Backend = {
     if (q.from) query = query.gte('ends_at', q.from);
     if (q.to) query = query.lte('starts_at', q.to);
     if (q.societyIds) query = query.in('society_id', q.societyIds);
+    if (q.ids) query = query.in('id', q.ids);
     if (q.category) query = query.eq('category', q.category);
     const s = q.search && cleanSearch(q.search);
     if (s) query = query.or(`title.ilike.*${s}*,location.ilike.*${s}*`);
@@ -203,6 +204,20 @@ export const remoteBackend: Backend = {
       if (error && error.code !== '23505') throw new Error(error.message);
     } else {
       check(await db().from('follows').delete().eq('society_id', societyId));
+    }
+  },
+  async mySavedEventIds() {
+    if (!(await currentUser())) return [];
+    const rows = check(await db().from('saved_events').select('event_id').order('created_at', { ascending: false }));
+    return (rows ?? []).map((r: { event_id: string }) => r.event_id);
+  },
+  async setEventSaved(eventId, saved) {
+    await requireUserId();
+    if (saved) {
+      const { error } = await db().from('saved_events').insert({ event_id: eventId });
+      if (error && error.code !== '23505') throw new Error(error.message);
+    } else {
+      check(await db().from('saved_events').delete().eq('event_id', eventId));
     }
   },
   async myTickets() {

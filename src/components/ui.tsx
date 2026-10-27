@@ -678,7 +678,140 @@ export function ListGroup({ children, title }: { children: ReactNode; title?: st
   );
 }
 
+/**
+ * Large page title drawn in the content, as in the design: 34pt, with round
+ * buttons on the right. Tab screens use it instead of a navigation bar.
+ */
+export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
+  const c = useColors();
+  const lang = useLang();
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.pageHeader, { paddingTop: insets.top + 10 }]}>
+      <Text style={[textStyle('largeTitle', lang), { color: c.text, flexShrink: 1 }]} accessibilityRole="header" numberOfLines={1}>
+        {title}
+      </Text>
+      {children && <View style={styles.pageHeaderActions}>{children}</View>}
+    </View>
+  );
+}
+
+/** 44pt round grey button for page headers: bell, add, today. Optional red dot. */
+export function CircleButton({
+  icon,
+  label,
+  onPress,
+  dot,
+  text,
+}: {
+  icon?: IconName;
+  label: string;
+  onPress: () => void;
+  dot?: boolean;
+  /** A short word instead of an icon makes it a pill ("Today", "+ Register"). */
+  text?: string;
+}) {
+  const c = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={4}
+      style={({ pressed }) => [text ? styles.circlePill : styles.circle, { backgroundColor: pressed ? c.fillStrong : c.fill }]}>
+      {icon && <Ionicons name={icon} size={text ? 16 : 21} color={c.text} />}
+      {text && <Text style={{ color: c.text, fontSize: 15, fontWeight: '600' }}>{text}</Text>}
+      {dot && <View style={[styles.circleDot, { backgroundColor: c.danger, borderColor: c.fill }]} />}
+    </Pressable>
+  );
+}
+
+/** Round search field. With onPress it is a button that opens the search screen. */
+export function SearchField({
+  placeholder,
+  value,
+  onChangeText,
+  onPress,
+  autoFocus,
+}: {
+  placeholder: string;
+  value?: string;
+  onChangeText?: (v: string) => void;
+  onPress?: () => void;
+  autoFocus?: boolean;
+}) {
+  const c = useColors();
+  const inner = (
+    <>
+      <Ionicons name="search" size={18} color={c.textSecondary} />
+      {onPress ? (
+        <Text style={{ flex: 1, color: c.textTertiary, fontSize: 16 }} numberOfLines={1}>
+          {placeholder}
+        </Text>
+      ) : (
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={c.textTertiary}
+          autoFocus={autoFocus}
+          autoCorrect={false}
+          returnKeyType="search"
+          accessibilityLabel={placeholder}
+          style={[styles.searchInput, { color: c.text }]}
+        />
+      )}
+      {!onPress && !!value && (
+        <Pressable onPress={() => onChangeText?.('')} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('Clear')}>
+          <Ionicons name="close-circle" size={18} color={c.textTertiary} />
+        </Pressable>
+      )}
+    </>
+  );
+  return onPress ? (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="search"
+      accessibilityLabel={placeholder}
+      style={({ pressed }) => [styles.search, { backgroundColor: pressed ? c.fillStrong : c.fill }]}>
+      {inner}
+    </Pressable>
+  ) : (
+    <View style={[styles.search, { backgroundColor: c.fill }]}>{inner}</View>
+  );
+}
+
 const styles = StyleSheet.create({
+  pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.md,
+  },
+  pageHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  circle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  circlePill: {
+    height: 38,
+    paddingHorizontal: 14,
+    borderRadius: 19,
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  circleDot: { position: 'absolute', top: 9, right: 10, width: 11, height: 11, borderRadius: 6, borderWidth: 2 },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    height: 46,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.pill,
+    marginHorizontal: space.lg,
+  },
+  searchInput: { flex: 1, fontSize: 16, height: 46, outlineStyle: 'none' } as object,
   button: {
     minHeight: 50,
     borderRadius: radius.md,

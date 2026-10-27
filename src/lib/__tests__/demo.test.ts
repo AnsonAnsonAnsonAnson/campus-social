@@ -157,3 +157,13 @@ it('cancelling a paid sign-up cancels its unpaid order', async () => {
   const order = (await api.myOrders()).find((o) => o.id === mine.order!.id)!;
   expect(order.status).toBe('cancelled');
 });
+
+it('saves events privately and only ones you can see', async () => {
+  const before = await api.mySavedEventIds();
+  await api.setEventSaved(eid(3), true);
+  expect((await api.mySavedEventIds())[0]).toBe(eid(3));
+  expect((await api.listEvents({ ids: [eid(3)] })).map((e) => e.id)).toEqual([eid(3)]);
+  await api.setEventSaved(eid(3), false);
+  expect(await api.mySavedEventIds()).toEqual(before);
+  await expect(api.setEventSaved('20000000-0000-4000-8000-999999999999', true)).rejects.toThrow('Event not found');
+});

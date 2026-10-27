@@ -89,7 +89,8 @@ export default function RootLayout() {
           <Stack.Screen name="manage/attendees" options={{ title: t('Attendees') }} />
           <Stack.Screen name="manage/scan" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="admin/index" options={{ title: t('Review queue') }} />
-          <Stack.Screen name="notifications" options={{ title: t('Notifications') }} />
+          <Stack.Screen name="notifications" options={{ title: '' }} />
+          <Stack.Screen name="search" options={{ headerShown: false }} />
           <Stack.Screen name="manage/members" options={{ title: t('Committee') }} />
           <Stack.Screen name="manage/edit-society" options={{ presentation: 'modal', title: t('Edit society') }} />
           <Stack.Screen name="manage/roster" options={{ title: t('Members') }} />

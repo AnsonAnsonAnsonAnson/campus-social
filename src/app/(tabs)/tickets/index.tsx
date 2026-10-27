@@ -4,7 +4,8 @@ import { RefreshControl, ScrollView, Text, View } from 'react-native';
 
 import { ListSkeleton } from '@/components/Skeleton';
 import { TicketCard, TicketStub } from '@/components/TicketCard';
-import { Banner, Button, EmptyState, ErrorView, Icon, UnderlineTabs } from '@/components/ui';
+import { EventRow } from '@/components/EventCard';
+import { Banner, Button, EmptyState, ErrorView, Icon, PageHeader, UnderlineTabs } from '@/components/ui';
 import { MemberCard, OrderRow } from '@/components/Wallet';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -17,11 +18,11 @@ import { space, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
 import { t } from '@/lib/i18n';
 
-type Tab = 'upcoming' | 'cards' | 'orders' | 'past';
+type Tab = 'upcoming' | 'saved' | 'cards' | 'orders' | 'past';
 
 export default function Tickets() {
   const c = useColors();
-  const { user } = useAuth();
+  const { user, savedIds } = useAuth();
   const params = useLocalSearchParams<{ tab?: Tab }>();
   const [tab, setTab] = useState<Tab>(params.tab ?? 'upcoming');
   useEffect(() => {
@@ -41,6 +42,13 @@ export default function Tickets() {
     ]);
     return { tickets, wallet };
   }, [user?.id]);
+  const saved = useQuery(async () => (user && savedIds.length ? api.listEvents({ ids: savedIds }) : []), [user?.id, savedIds.join()]);
+  const savedEvents = useMemo(() => {
+    // Upcoming first, soonest first; then past ones.
+    const now = new Date().toISOString();
+    const xs = saved.data ?? [];
+    return [...xs.filter((e) => e.ends_at >= now), ...xs.filter((e) => e.ends_at < now).reverse()];
+  }, [saved.data]);
   const offline = !!q.data?.tickets.offline;
   const savedAt = q.data?.tickets.savedAt;
 
@@ -65,9 +73,10 @@ export default function Tickets() {
   if (!user) {
     return (
       <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
+        contentInsetAdjustmentBehavior="never"
         style={{ backgroundColor: c.backgroundPlain }}
         contentContainerStyle={{ flexGrow: 1 }}>
+        <PageHeader title={t('Tickets')} />
         <EmptyState
           icon="ticket-outline"
           title={t('Your tickets live here')}
@@ -82,15 +91,17 @@ export default function Tickets() {
 
   return (
     <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
+      contentInsetAdjustmentBehavior="never"
       style={{ backgroundColor: c.backgroundPlain }}
       contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
       refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}>
+      <PageHeader title={t('Tickets')} />
       <UnderlineTabs
         value={tab}
         onChange={setTab}
         tabs={[
           { value: 'upcoming', label: t('Upcoming'), count: upcoming.length },
+          { value: 'saved', label: t('Saved events'), count: savedIds.length },
           { value: 'cards', label: t('Member cards'), count: cards.length },
           { value: 'orders', label: t('Orders'), count: openOrders },
           { value: 'past', label: t('Past') },
@@ -138,6 +149,23 @@ export default function Tickets() {
             icon="ticket-outline"
             title={t('No upcoming tickets')}
             body={t('Find something fun on Discover and sign up in one tap.')}
+            action={<Button title={t('Discover events')} onPress={() => router.navigate('/discover')} />}
+          />
+        )
+      ) : tab === 'saved' ? (
+        savedEvents.length ? (
+          <View style={{ gap: 20, marginTop: space.lg }}>
+            {savedEvents.map((e) => (
+              <EventRow key={e.id} event={e} />
+            ))}
+          </View>
+        ) : saved.loading ? (
+          <ListSkeleton rows={2} />
+        ) : (
+          <EmptyState
+            icon="heart-outline"
+            title={t('Nothing saved yet')}
+            body={t('Tap the heart on any event to keep it here for later. Saving doesn’t sign you up.')}
             action={<Button title={t('Discover events')} onPress={() => router.navigate('/discover')} />}
           />
         )

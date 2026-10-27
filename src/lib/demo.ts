@@ -78,6 +78,8 @@ const state = {
   campusDates: makeDemoCampusDates(),
   follows: new Set<string>([demoSocieties[0].id, demoSocieties[1].id]),
   hidden: new Set<string>(),
+  // Two events already saved, so Tickets › Saved isn't empty in the demo.
+  saved: ['20000000-0000-4000-8000-000000000006', '20000000-0000-4000-8000-000000000008'] as string[],
   registrations: [] as Registration[],
   // In demo mode you help run CU Coding Society, so committee tools are visible.
   members: [{ society_id: demoSocieties[1].id, role: 'owner' as SocietyRole }],
@@ -531,6 +533,7 @@ export const demoBackend: Backend = {
       .filter((e) => !q.from || e.ends_at >= q.from)
       .filter((e) => !q.to || e.starts_at <= q.to)
       .filter((e) => !q.societyIds || q.societyIds.includes(e.society_id))
+      .filter((e) => !q.ids || q.ids.includes(e.id))
       .filter((e) => !q.category || e.category === q.category)
       .filter((e) => !search || e.title.toLowerCase().includes(search) || e.location.toLowerCase().includes(search))
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
@@ -569,6 +572,19 @@ export const demoBackend: Backend = {
       // Mirrors unfollow_hidden_society().
       await this.setFollow(societyId, false);
     } else state.hidden.delete(societyId);
+  },
+  async mySavedEventIds() {
+    return state.user ? [...state.saved] : [];
+  },
+  async setEventSaved(eventId, saved) {
+    requireUser();
+    state.saved = state.saved.filter((id) => id !== eventId);
+    if (saved) {
+      const e = state.events.find((x) => x.id === eventId);
+      // Mirrors the "save a visible event" policy.
+      if (!e || !visibleEvent(e) || e.status === 'draft' || e.removed_at) throw new Error('Event not found');
+      state.saved.unshift(eventId);
+    }
   },
   async myFollowIds() {
     return state.user ? [...state.follows] : [];

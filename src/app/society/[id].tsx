@@ -244,7 +244,7 @@ export default function SocietyScreen() {
       </View>
       <View style={{ gap: space.sm, marginTop: space.md }}>
         {list.length ? (
-          list.map((e) => <EventRow key={e.id} event={e} />)
+          list.map((e) => <EventRow key={e.id} event={e} compact />)
         ) : (
           <EmptyState
             icon="calendar-outline"

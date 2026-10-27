@@ -2,14 +2,14 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 
-import { Button, Field, Icon } from '@/components/ui';
+import { Button, Field } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { isCuhkEmail } from '@/lib/backend';
 import { DEMO_CODE } from '@/lib/demo';
 import { showAlert } from '@/lib/dialog';
 import { needsOnboarding } from '@/lib/onboarding';
-import { space, useColors } from '@/lib/theme';
-import { t } from '@/lib/i18n';
+import { space, textStyle, useColors } from '@/lib/theme';
+import { t, useLang } from '@/lib/i18n';
 
 /** Leave the sign-in sheet: first-timers go to the welcome screen, everyone else back to where they were. */
 async function done() {
@@ -20,6 +20,7 @@ async function done() {
 
 export default function SignIn() {
   const c = useColors();
+  const lang = useLang();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'email' | 'code' | 'password'>('email');
@@ -67,14 +68,13 @@ export default function SignIn() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.backgroundPlain }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ padding: space.xl, gap: space.lg }} keyboardShouldPersistTaps="handled">
-        <View style={{ alignItems: 'center', gap: space.sm, marginVertical: space.lg }}>
-          <Icon name={step === 'code' ? 'mail-open' : 'school'} size={48} color={c.tint} />
-          <Text style={{ color: c.text, fontSize: 24, fontWeight: '800', textAlign: 'center' }}>
+        <View style={{ gap: space.sm, marginTop: space.sm, marginBottom: space.sm }}>
+          <Text style={[textStyle('title1', lang), { color: c.text }]} accessibilityRole="header">
             {step === 'code' ? t('Check your inbox') : t('Sign in with your CUHK email')}
           </Text>
-          <Text style={{ color: c.textSecondary, fontSize: 15, textAlign: 'center', lineHeight: 21 }}>
+          <Text style={{ color: c.textSecondary, fontSize: 16, lineHeight: 23 }}>
             {step !== 'code'
               ? t("We'll email you a one-time code. No password needed, and only CUHK students and staff can join.")
               : t('We sent a code to {email}. It may take a minute to arrive.', { email: email.trim() })}
@@ -97,7 +97,13 @@ export default function SignIn() {
               onSubmitEditing={sendCode}
               autoFocus
             />
-            <Button title={t('Send code')} loading={busy} disabled={!email.includes('@')} onPress={sendCode} />
+            <Button
+              title={t('Send code')}
+              loading={busy}
+              disabled={!email.includes('@')}
+              hint={t('Enter your @link.cuhk.edu.hk or @cuhk.edu.hk email')}
+              onPress={sendCode}
+            />
             <Button title={t('Sign in with a password instead')} variant="plain" small onPress={() => setStep('password')} />
           </>
         ) : step === 'password' ? (
@@ -135,7 +141,7 @@ export default function SignIn() {
           </>
         )}
 
-        <Text style={{ color: c.textSecondary, fontSize: 12, textAlign: 'center', lineHeight: 17 }}>
+        <Text style={{ color: c.textSecondary, fontSize: 12, textAlign: 'center', lineHeight: 17, marginTop: space.xl }}>
           {t('By continuing you agree to the Terms of Use and Privacy Policy. Your email is only used to verify you are a CUHK member.')}
         </Text>
       </ScrollView>
