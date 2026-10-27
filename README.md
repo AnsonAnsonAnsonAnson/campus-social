@@ -57,6 +57,24 @@ The in-app inbox and local event reminders work without this. To also send pushe
 
 Devices that uninstall the app are removed from `push_tokens` automatically.
 
+### Payments and receipts
+
+Campus Social never holds money. Buyers, members and ticket holders pay the society directly (FPS QR with the amount and reference filled in, PayMe link, or cash), then tap "I've paid" or add an optional payment screenshot; the treasurer confirms in the app. Treasurers can also paste their bank's transaction list into **Orders → Match bank statement**, which finds the references and ticks the matching payments for them, so most people never need a screenshot.
+
+Screenshots are kept small and short-lived:
+
+- The app shrinks each one to a JPEG about 1000 px on its longest side (typically 60–150 KB) before upload, which also strips location and camera data.
+- The private `receipts` bucket only accepts JPEGs up to 300 KB. Each order or membership has one file at a fixed path, so a second upload replaces the first instead of adding to it.
+- Only the payer and the society's owners and admins can open one, through a link that lasts five minutes.
+- The `purge-receipts` Edge Function deletes them 30 days after a payment is confirmed, 7 days after a cancellation, after 90 days at most, and removes uploads that were never attached after a day. It also frees event places held by tickets nobody paid for in time.
+
+To turn on the daily clean-up:
+
+1. `supabase functions deploy purge-receipts --no-verify-jwt`, then `supabase secrets set CRON_SECRET=<long random string>`.
+2. In the dashboard, **Integrations → Cron → Create job**: schedule `0 4 * * *` (04:00 UTC, noon in Hong Kong), type **Supabase Edge Function**, function `purge-receipts`, method POST, with an HTTP header `x-cron-secret` equal to the secret.
+
+Without it nothing breaks: expired places are also released whenever someone signs up for that event, and screenshots stay until the job runs.
+
 ## Launching on the App Store
 
 You need an Apple Developer account (US$99/year) and an Expo account. No Mac is required; EAS builds in the cloud.
@@ -100,7 +118,7 @@ store/              App Store listing text in both languages
   __tests__/        Unit tests (jest)
 supabase/
   migrations/       Schema, RLS policies, RPCs (register, cancel, check-in, committee, moderation, ...)
-  functions/        send-push Edge Function
+  functions/        send-push and purge-receipts Edge Functions
   tests/            Database tests (run against plain Postgres)
   seed.sql          Generated sample data
   setup.sql         All migrations in one file, for a new project's SQL Editor

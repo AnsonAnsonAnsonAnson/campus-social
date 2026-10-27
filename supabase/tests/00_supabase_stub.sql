@@ -23,9 +23,12 @@ create table auth.users (id uuid primary key default gen_random_uuid(), email te
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
-create table storage.buckets (id text primary key, name text, public boolean);
-create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+create table storage.objects (
+  id uuid primary key default gen_random_uuid(), bucket_id text, name text, created_at timestamptz default now()
+);
 alter table storage.objects enable row level security;
+grant select, insert, update, delete on storage.objects, storage.buckets to authenticated;
 create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 
 grant usage on schema public, auth, storage to anon, authenticated;

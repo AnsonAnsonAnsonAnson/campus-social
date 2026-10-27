@@ -38,3 +38,10 @@ select public.join_society(:'plan', 'Member Person', null, null, null, null, '[]
 select tests.eq((public.register_for_event(:'eid')).status::text, 'confirmed', 'current members can sign up');
 select tests.login('00000000-0000-0000-0000-000000000071');
 select tests.eq((public.register_for_event(:'eid')).status::text, 'confirmed', 'committee can sign up');
+
+-- committees can set the flag themselves
+select tests.login('00000000-0000-0000-0000-000000000071');
+insert into public.events (society_id, title, starts_at, ends_at, status, members_only)
+values (:'sid', 'Committee-made members night', now() + interval '4 days', now() + interval '4 days 2 hours', 'draft', true);
+update public.events set members_only = false where society_id = :'sid' and title = 'Committee-made members night';
+select tests.eq((select members_only from public.events where title = 'Committee-made members night'), false, 'committee can change members only');

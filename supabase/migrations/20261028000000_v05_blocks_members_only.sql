@@ -45,6 +45,7 @@ create trigger society_blocks_unfollow
 -- ---------------------------------------------------------------------------
 
 alter table public.events add column members_only boolean not null default false;
+grant insert (members_only), update (members_only) on public.events to authenticated;
 
 create or replace function public.enforce_members_only()
 returns trigger
