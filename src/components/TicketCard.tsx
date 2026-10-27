@@ -77,7 +77,7 @@ export function TicketCard({ ticket, showQR }: { ticket: Ticket; showQR: boolean
             </View>
           </>
         ) : (
-          <View style={{ gap: 6 }}>
+          <View style={{ gap: 6, flex: 1 }}>
             <TicketStatus ticket={ticket} />
             {ticket.status === 'waitlisted' && (
               <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('If someone cancels, you’ll be moved up automatically.')}</Text>

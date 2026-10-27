@@ -217,6 +217,12 @@ export default function Roster() {
                   .filter(Boolean)
                   .join(' · ')}
               </Text>
+              {!!r.m.receipt_path && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Icon name="image-outline" size={14} color={c.infoText} />
+                  <Text style={{ color: c.infoText, fontSize: 13 }}>{t('Screenshot attached')}</Text>
+                </View>
+              )}
             </View>
             <Pill label={r.state.label} tone={r.state.tone} />
           </Pressable>
