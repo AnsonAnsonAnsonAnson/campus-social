@@ -1,5 +1,22 @@
 import type {
   AppNotification,
+  ImportRow,
+  JoinInput,
+  MemberCardResult,
+  Membership,
+  MembershipPlan,
+  MembershipStatus,
+  MyMembership,
+  MyOrder,
+  Order,
+  OrderStatus,
+  PaymentMethod,
+  PaymentSettings,
+  PickupResult,
+  PlanInput,
+  ProductInput,
+  ProductWithStock,
+  SocietyOrder,
   Attendee,
   Banner,
   BannerInput,
@@ -95,6 +112,42 @@ export interface Backend {
   requestBanner(input: BannerInput): Promise<void>;
   deleteBanner(id: string): Promise<void>;
   uploadImage(localUri: string): Promise<string>;
+
+  // Members: students
+  /** Open plans for a society (committee members also see closed ones). */
+  listPlans(societyId: string): Promise<MembershipPlan[]>;
+  myMemberships(): Promise<MyMembership[]>;
+  joinSociety(input: JoinInput): Promise<Membership>;
+  claimMembershipPaid(id: string): Promise<void>;
+  cancelMembership(id: string): Promise<void>;
+
+  // Members: committee
+  savePlan(input: PlanInput): Promise<string>;
+  deletePlan(id: string): Promise<void>;
+  /** Every membership of a society, newest first. */
+  listMemberships(societyId: string): Promise<Membership[]>;
+  /** 'active' approves (and records payment on paid plans). Returns how many changed. */
+  setMembershipStatus(ids: string[], status: Exclude<MembershipStatus, 'cancelled'>): Promise<number>;
+  importMemberships(planId: string, rows: ImportRow[]): Promise<number>;
+  logMembershipExport(societyId: string, rows: number): Promise<void>;
+  checkMemberCard(societyId: string, code: string): Promise<MemberCardResult>;
+
+  // Shop: students
+  getPaymentSettings(societyId: string): Promise<PaymentSettings | null>;
+  /** A society's products, or every open product across shops when societyId is null. */
+  listProducts(societyId: string | null): Promise<ProductWithStock[]>;
+  placeOrder(productId: string, items: { variant: string; qty: number }[], method: PaymentMethod, note?: string): Promise<Order>;
+  myOrders(): Promise<MyOrder[]>;
+  claimOrderPaid(id: string, note?: string): Promise<void>;
+  cancelMyOrder(id: string): Promise<void>;
+
+  // Shop: committee
+  setPaymentSettings(societyId: string, s: Pick<PaymentSettings, 'fps_id' | 'payee_name' | 'payme_link' | 'instructions'>): Promise<void>;
+  saveProduct(input: ProductInput): Promise<string>;
+  deleteProduct(id: string): Promise<void>;
+  listOrders(societyId: string): Promise<SocietyOrder[]>;
+  setOrderStatus(ids: string[], status: Exclude<OrderStatus, 'payment_claimed'>): Promise<number>;
+  collectOrder(societyId: string, code: string): Promise<PickupResult>;
 
   // Platform admins (Student Affairs / app team)
   pendingSocieties(): Promise<Society[]>;

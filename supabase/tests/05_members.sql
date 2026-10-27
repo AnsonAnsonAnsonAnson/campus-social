@@ -76,6 +76,8 @@ select tests.throws(format('select public.check_member_card(%L, %L)', :'sid', :'
 select tests.login('00000000-0000-0000-0000-0000000000e3');
 select tests.eq((public.check_member_card(:'sid', :'card') ->> 'ok')::boolean, true, 'active card accepted');
 select tests.eq(public.check_member_card(:'sid', 'nope') ->> 'message', 'Member card not found', 'unknown card');
+select tests.eq((public.check_member_card(:'sid', '#1') ->> 'ok')::boolean, true, 'typed member number accepted');
+select tests.eq(public.check_member_card(:'sid', '999') ->> 'message', 'Member card not found', 'unknown member number');
 
 -- import: one row matches an account, one waits for sign-in, duplicates and blanks skipped
 select tests.login('00000000-0000-0000-0000-0000000000e1');

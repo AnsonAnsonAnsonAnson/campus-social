@@ -1,9 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { useState, type ComponentProps, type ReactNode } from 'react';
+import { Children, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -21,15 +23,18 @@ import {
   avatarRadius,
   coverFor,
   coverVariant,
+  elevation,
   familyFor,
   initialsFor,
   radius,
   space,
+  textStyle,
   type,
   useColors,
   useIsDark,
 } from '@/lib/theme';
-import { t } from '@/lib/i18n';
+import { t, useLang } from '@/lib/i18n';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -199,33 +204,237 @@ export function Pill({ label, tone = 'neutral', icon }: { label: string; tone?: 
 
 export function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   const c = useColors();
+  const lang = useLang();
   return (
     <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionTitle, { color: c.text }]} accessibilityRole="header">
+      <Text style={[textStyle('title2', lang), { color: c.text, flexShrink: 1 }]} accessibilityRole="header">
         {title}
       </Text>
       {action && (
-        <Pressable onPress={onAction} hitSlop={10}>
-          <Text style={{ color: c.tint, fontSize: 15, fontWeight: '600' }}>{action}</Text>
+        <Pressable onPress={onAction} hitSlop={10} accessibilityRole="button" style={styles.sectionAction}>
+          <Text style={{ color: c.textSecondary, fontSize: 15, fontWeight: '600' }}>{action}</Text>
+          <Ionicons name="chevron-forward" size={14} color={c.textSecondary} />
         </Pressable>
       )}
     </View>
   );
 }
 
+/** Content card: white with a soft shadow in light mode, a lighter surface in dark mode. */
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const c = useColors();
-  return <View style={[styles.card, { backgroundColor: c.card }, style]}>{children}</View>;
+  const dark = useIsDark();
+  return <View style={[styles.card, { backgroundColor: c.card }, !dark && elevation.e1, style]}>{children}</View>;
 }
 
+/** Empty or signed-out screen: a tinted icon, what's going on, and one clear next step. */
 export function EmptyState({ icon, title, body, action }: { icon: IconName; title: string; body?: string; action?: ReactNode }) {
   const c = useColors();
   return (
     <View style={styles.empty}>
-      <Ionicons name={icon} size={44} color={c.textSecondary} />
+      <View style={[styles.emptyIcon, { backgroundColor: c.tintSoft }]}>
+        <Ionicons name={icon} size={34} color={c.tintText} />
+      </View>
       <Text style={[styles.emptyTitle, { color: c.text }]}>{title}</Text>
       {body && <Text style={[styles.emptyBody, { color: c.textSecondary }]}>{body}</Text>}
-      {action}
+      {action && <View style={{ marginTop: space.sm, alignSelf: 'stretch', alignItems: 'center' }}>{action}</View>}
+    </View>
+  );
+}
+
+/** Two to four options in a pill track; the selected one is a raised card. */
+export function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  style,
+  grey,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  style?: StyleProp<ViewStyle>;
+  /** On grey (grouped) screens the track is a shade darker. */
+  grey?: boolean;
+}) {
+  const c = useColors();
+  return (
+    <View style={[styles.segmented, { backgroundColor: grey ? c.fillStrong : c.fill }, style]} accessibilityRole="tablist">
+      {options.map((o) => {
+        const selected = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            onPress={() => {
+              if (selected) return;
+              tap();
+              onChange(o.value);
+            }}
+            style={[styles.segment, selected && [styles.segmentSelected, { backgroundColor: c.card }]]}>
+            <Text style={[styles.segmentText, { color: selected ? c.text : c.textSecondary }]} numberOfLines={1}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Text tabs with an underline under the active one, and an optional count. */
+export function UnderlineTabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+}: {
+  tabs: { value: T; label: string; count?: number; urgent?: boolean }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  const c = useColors();
+  return (
+    <View style={[styles.tabsRow, { borderBottomColor: c.border }]} accessibilityRole="tablist">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContent}>
+        {tabs.map((tb) => {
+          const active = tb.value === value;
+          return (
+            <Pressable
+              key={tb.value}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              onPress={() => {
+                if (active) return;
+                tap();
+                onChange(tb.value);
+              }}
+              style={[styles.tab, { borderBottomColor: active ? c.text : 'transparent' }]}>
+              <Text style={[styles.tabText, { color: active ? c.text : c.textSecondary }]}>{tb.label}</Text>
+              {!!tb.count && (
+                <View style={[styles.tabCount, { backgroundColor: tb.urgent ? c.danger : c.fillStrong }]}>
+                  <Text style={{ color: tb.urgent ? '#fff' : c.textSecondary, fontSize: 12, fontWeight: '700' }}>{tb.count}</Text>
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+/** A number with a label, for dashboards. */
+export function StatTile({
+  value,
+  label,
+  tone,
+  onPress,
+  style,
+}: {
+  value: string;
+  label: string;
+  tone?: 'success' | 'warning';
+  onPress?: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const c = useColors();
+  const [bg, fg] = tone === 'success' ? [c.successSoft, c.successText] : tone === 'warning' ? [c.warningSoft, c.warningText] : [c.card, c.text];
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={`${label}: ${value}`}
+      style={({ pressed }) => [styles.stat, { backgroundColor: bg, opacity: pressed ? 0.75 : 1 }, style]}>
+      <Text style={[styles.statValue, { color: fg }]} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+      <Text style={{ color: tone ? fg : c.textSecondary, fontSize: 13 }} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Event page detail line: icon tile, main text, sub text, optional trailing action. */
+export function InfoRow({
+  icon,
+  title,
+  sub,
+  subColor,
+  action,
+  onAction,
+  children,
+}: {
+  icon: IconName;
+  title: string;
+  sub?: string;
+  subColor?: string;
+  action?: string;
+  onAction?: () => void;
+  children?: ReactNode;
+}) {
+  const c = useColors();
+  return (
+    <View style={styles.infoRow}>
+      <View style={[styles.infoIcon, { backgroundColor: c.fill }]}>
+        <Ionicons name={icon} size={20} color={c.text} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }}>{title}</Text>
+        {sub && <Text style={{ color: subColor ?? c.textSecondary, fontSize: 14, fontWeight: subColor ? '600' : '400' }}>{sub}</Text>}
+        {children}
+      </View>
+      {action && (
+        <Pressable onPress={onAction} hitSlop={10} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }}>
+          <Text style={{ color: c.tintText, fontSize: 15, fontWeight: '600' }}>{action}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/** Thin progress bar (capacity, stock). */
+export function ProgressBar({ value, tone = 'success' }: { value: number; tone?: 'success' | 'warning' }) {
+  const c = useColors();
+  return (
+    <View style={[styles.progress, { backgroundColor: c.fillStrong }]}>
+      <View style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%`, height: '100%', borderRadius: 3, backgroundColor: tone === 'warning' ? c.warning : c.success }} />
+    </View>
+  );
+}
+
+/** Bottom sheet: grabber, rounded top, tap outside to close. */
+export function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: ReactNode }) {
+  const c = useColors();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.sheetBackdrop, { backgroundColor: c.scrim }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel={t('Close')} />
+        <View style={[styles.sheet, elevation.e3, { backgroundColor: c.elevated, paddingBottom: Math.max(insets.bottom, space.lg) }]}>
+          <View style={[styles.grabber, { backgroundColor: c.border }]} />
+          {children}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+/** Notice inside a screen (offline, pending review): tinted, with an icon. Not a toast. */
+export function Banner({ icon, text, tone = 'info' }: { icon: IconName; text: string; tone?: 'info' | 'warning' | 'success' | 'danger' }) {
+  const c = useColors();
+  const [bg, fg] = {
+    info: [c.infoSoft, c.infoText],
+    warning: [c.warningSoft, c.warningText],
+    success: [c.successSoft, c.successText],
+    danger: [c.dangerSoft, c.dangerText],
+  }[tone];
+  return (
+    <View style={[styles.banner, { backgroundColor: bg }]} accessibilityRole="text">
+      <Ionicons name={icon} size={18} color={fg} />
+      <Text style={{ color: fg, flex: 1, fontSize: 14, lineHeight: 20 }}>{text}</Text>
     </View>
   );
 }
@@ -392,40 +601,70 @@ export function Field({ label, hint, error, valid, onFocus, onBlur, ...props }: 
 export function ListRow({
   icon,
   title,
+  subtitle,
   value,
+  badge,
   onPress,
   destructive,
+  right,
 }: {
   icon?: IconName;
   title: string;
+  subtitle?: string;
   value?: string;
+  /** Red count on the right (Inbox). */
+  badge?: number;
   onPress?: () => void;
   destructive?: boolean;
+  /** Replaces the value and chevron, e.g. a Switch. */
+  right?: ReactNode;
 }) {
   const c = useColors();
+  const fg = destructive ? c.dangerText : c.text;
   return (
     <Pressable
       onPress={onPress}
+      disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
-      style={({ pressed }) => [styles.listRow, { backgroundColor: pressed ? c.fill : c.card }]}>
-      {icon && <Ionicons name={icon} size={20} color={destructive ? c.danger : c.tint} />}
-      <Text style={{ flex: 1, fontSize: 16, color: destructive ? c.danger : c.text }}>{title}</Text>
-      {value != null && <Text style={{ color: c.textSecondary, fontSize: 15 }}>{value}</Text>}
-      {onPress && !destructive && <Ionicons name="chevron-forward" size={16} color={c.textSecondary} />}
+      style={({ pressed }) => [styles.listRow, subtitle ? { minHeight: 58 } : null, { backgroundColor: pressed ? c.fill : c.card }]}>
+      {icon && <Ionicons name={icon} size={20} color={destructive ? c.dangerText : c.textSecondary} />}
+      <View style={{ flex: 1, paddingVertical: 10 }}>
+        <Text style={{ fontSize: 16, color: fg }}>{title}</Text>
+        {subtitle && <Text style={{ fontSize: 13, color: c.textSecondary, marginTop: 1 }}>{subtitle}</Text>}
+      </View>
+      {right ?? (
+        <>
+          {value != null && (
+            <Text style={{ color: c.textSecondary, fontSize: 15, maxWidth: '45%' }} numberOfLines={1}>
+              {value}
+            </Text>
+          )}
+          {!!badge && (
+            <View style={[styles.badge, { backgroundColor: c.danger }]}>
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>{badge}</Text>
+            </View>
+          )}
+          {onPress && !destructive && <Ionicons name="chevron-forward" size={14} color={c.textTertiary} />}
+        </>
+      )}
     </Pressable>
   );
 }
 
 export function ListGroup({ children, title }: { children: ReactNode; title?: string }) {
   const c = useColors();
+  const items = Children.toArray(children).filter(Boolean);
   return (
     <View style={{ gap: 6 }}>
-      {title && (
-        <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600', marginLeft: space.lg, textTransform: 'uppercase' }}>
-          {title}
-        </Text>
-      )}
-      <View style={[styles.listGroup, { backgroundColor: c.card }]}>{children}</View>
+      {title && <Text style={[type.label, { color: c.textSecondary, marginLeft: space.lg + space.xs }]}>{title}</Text>}
+      <View style={[styles.listGroup, { backgroundColor: c.card }]}>
+        {items.map((child, i) => (
+          <View key={i}>
+            {i > 0 && <View style={[styles.separator, { backgroundColor: c.border }]} />}
+            {child}
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -469,17 +708,40 @@ const styles = StyleSheet.create({
   pillText: { ...type.caption, flexShrink: 1 },
   sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: space.md,
+    minHeight: 44,
     paddingHorizontal: space.lg,
     marginTop: space.xl,
-    marginBottom: space.md,
+    marginBottom: space.sm,
   },
-  sectionTitle: { fontSize: 22, fontWeight: '700' },
+  sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 44 },
   card: { borderRadius: radius.lg, padding: space.lg },
   empty: { alignItems: 'center', justifyContent: 'center', padding: space.xl, gap: space.md, flexGrow: 1, minHeight: 280 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  emptyBody: { fontSize: 15, textAlign: 'center', lineHeight: 21 },
+  emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: space.xs },
+  emptyTitle: { fontSize: 19, fontWeight: '600', textAlign: 'center' },
+  emptyBody: { fontSize: 15, textAlign: 'center', lineHeight: 22, maxWidth: 280 },
+  segmented: { flexDirection: 'row', borderRadius: 10, padding: 2 },
+  segment: { flex: 1, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.sm },
+  segmentSelected: { shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  segmentText: { fontSize: 14, fontWeight: '600' },
+  tabsRow: { borderBottomWidth: StyleSheet.hairlineWidth },
+  tabsContent: { paddingHorizontal: space.lg, gap: 22 },
+  tab: { height: 44, flexDirection: 'row', alignItems: 'center', gap: 6, borderBottomWidth: 2.5 },
+  tabText: { fontSize: 16, fontWeight: '600' },
+  tabCount: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
+  stat: { flex: 1, borderRadius: 14, paddingVertical: space.md, paddingHorizontal: space.md, gap: 2 },
+  statValue: { fontSize: 24, lineHeight: 30, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.sm },
+  infoIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  progress: { height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 6 },
+  sheetBackdrop: { flex: 1, justifyContent: 'flex-end' },
+  sheet: { padding: space.lg, paddingTop: space.sm, gap: space.md, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+  grabber: { width: 36, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: space.xs },
+  banner: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md, marginHorizontal: space.lg },
+  badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
+  separator: { height: StyleSheet.hairlineWidth, marginLeft: 48 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   avatarCenter: { alignItems: 'center', justifyContent: 'center' },
   inputRing: { borderWidth: 3, borderRadius: radius.md + 3, margin: -3 },

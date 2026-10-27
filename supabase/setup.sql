@@ -1766,7 +1766,8 @@ begin
       perform public._activate_membership(v_m.id);
     else
       update public.memberships set status = p_status, updated_at = now(),
-        paid_at = case when p_status = 'pending' then null else paid_at end
+        paid_at = case when p_status = 'pending' then null else paid_at end,
+        claimed_paid_at = case when p_status = 'pending' then null else claimed_paid_at end
         where id = v_m.id;
     end if;
     v_count := v_count + 1;
@@ -1877,7 +1878,15 @@ begin
   if not public.is_society_member(p_society_id) then
     raise exception 'Only society committee members can check member cards';
   end if;
-  select * into v_m from public.memberships where card_code = lower(trim(p_code));
+  if trim(p_code) ~ '^#?[0-9]{1,6}$' then
+    -- Typed member number from the card: the newest plan's member with that number.
+    select m.* into v_m from public.memberships m
+      join public.membership_plans p on p.id = m.plan_id
+      where m.society_id = p_society_id and m.member_no = ltrim(trim(p_code), '#')::int
+      order by p.valid_until desc limit 1;
+  else
+    select * into v_m from public.memberships where card_code = lower(trim(p_code));
+  end if;
   if v_m.id is null then
     return jsonb_build_object('ok', false, 'message', 'Member card not found');
   end if;
@@ -2399,7 +2408,10 @@ begin
   if not public.is_society_member(p_society_id) then
     raise exception 'Only society committee members can hand out orders';
   end if;
-  select * into v_o from public.orders where pickup_code = lower(trim(p_code)) for update;
+  -- The QR holds the pickup code; at the counter the committee can also type the order ref.
+  select * into v_o from public.orders
+    where pickup_code = lower(trim(p_code)) or (society_id = p_society_id and ref = upper(trim(p_code)))
+    limit 1 for update;
   if v_o.id is null then
     return jsonb_build_object('ok', false, 'message', 'Order not found');
   end if;

@@ -11,7 +11,17 @@ import type {
   CampusDate,
   CheckInResult,
   EventWithSociety,
+  MemberCardResult,
+  Membership,
+  MembershipPlan,
+  MyMembership,
+  MyOrder,
   MySociety,
+  Order,
+  PaymentSettings,
+  PickupResult,
+  ProductWithStock,
+  SocietyOrder,
   OpenReport,
   Profile,
   Registration,
@@ -45,6 +55,7 @@ if (supabase && Platform.OS !== 'web') {
 }
 
 const SOCIETY_SUMMARY = 'id, name, short_name, logo_url, verified';
+const SOCIETY_CARD = `${SOCIETY_SUMMARY}, category`;
 const EVENT_WITH_SOCIETY = `*, society:societies!inner(${SOCIETY_SUMMARY})`;
 
 function db() {
@@ -304,6 +315,149 @@ export const remoteBackend: Backend = {
     const { error } = await db().storage.from('media').upload(path, body, { contentType });
     if (error) throw new Error(error.message);
     return db().storage.from('media').getPublicUrl(path).data.publicUrl;
+  },
+
+  async listPlans(societyId) {
+    return check(
+      await db().from('membership_plans').select('*').eq('society_id', societyId).order('valid_until', { ascending: false }),
+    ) as MembershipPlan[];
+  },
+  async myMemberships() {
+    const u = await currentUser();
+    if (!u) return [];
+    return check(
+      await db()
+        .from('memberships')
+        .select(`*, plan:membership_plans(*), society:societies(${SOCIETY_CARD})`)
+        .eq('user_id', u.id)
+        .in('status', ['pending', 'active'])
+        .order('created_at', { ascending: false }),
+    ) as MyMembership[];
+  },
+  async joinSociety(input) {
+    return check(
+      await db().rpc('join_society', {
+        p_plan_id: input.plan_id,
+        p_full_name: input.full_name,
+        p_student_id: input.student_id,
+        p_college: input.college,
+        p_major: input.major,
+        p_phone: input.phone,
+        p_answers: input.answers,
+        p_payment_method: input.payment_method,
+      }),
+    ) as Membership;
+  },
+  async claimMembershipPaid(id) {
+    check(await db().rpc('claim_membership_paid', { p_id: id }));
+  },
+  async cancelMembership(id) {
+    check(await db().rpc('cancel_membership', { p_id: id }));
+  },
+  async savePlan(input) {
+    const { id, society_id, ...fields } = input;
+    if (id) {
+      check(await db().from('membership_plans').update(fields).eq('id', id));
+      return id;
+    }
+    const row = check(
+      await db()
+        .from('membership_plans')
+        .insert({ society_id, ...fields })
+        .select('id')
+        .single(),
+    );
+    return (row as { id: string }).id;
+  },
+  async deletePlan(id) {
+    check(await db().from('membership_plans').delete().eq('id', id));
+  },
+  async listMemberships(societyId) {
+    return check(
+      await db().from('memberships').select('*').eq('society_id', societyId).order('created_at', { ascending: false }).limit(5000),
+    ) as Membership[];
+  },
+  async setMembershipStatus(ids, status) {
+    return check(await db().rpc('set_membership_status', { p_ids: ids, p_status: status })) as number;
+  },
+  async importMemberships(planId, rows) {
+    return check(await db().rpc('import_memberships', { p_plan_id: planId, p_rows: rows })) as number;
+  },
+  async logMembershipExport(societyId, rows) {
+    check(await db().rpc('log_membership_export', { p_society_id: societyId, p_rows: rows }));
+  },
+  async checkMemberCard(societyId, code) {
+    return check(await db().rpc('check_member_card', { p_society_id: societyId, p_code: code })) as MemberCardResult;
+  },
+
+  async getPaymentSettings(societyId) {
+    return check(
+      await db().from('society_payment_settings').select('*').eq('society_id', societyId).maybeSingle(),
+    ) as PaymentSettings | null;
+  },
+  async listProducts(societyId) {
+    return check(await db().rpc('list_products', { p_society_id: societyId })) as ProductWithStock[];
+  },
+  async placeOrder(productId, items, method, note) {
+    return check(
+      await db().rpc('place_order', { p_product_id: productId, p_items: items, p_payment_method: method, p_note: note ?? null }),
+    ) as Order;
+  },
+  async myOrders() {
+    const u = await currentUser();
+    if (!u) return [];
+    return check(
+      await db()
+        .from('orders')
+        .select(`*, society:societies(${SOCIETY_CARD})`)
+        .eq('user_id', u.id)
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ) as MyOrder[];
+  },
+  async claimOrderPaid(id, note) {
+    check(await db().rpc('claim_order_paid', { p_order_id: id, p_note: note ?? null }));
+  },
+  async cancelMyOrder(id) {
+    check(await db().rpc('cancel_my_order', { p_order_id: id }));
+  },
+  async setPaymentSettings(societyId, s) {
+    check(
+      await db().rpc('set_payment_settings', {
+        p_society_id: societyId,
+        p_fps_id: s.fps_id,
+        p_payee_name: s.payee_name,
+        p_payme_link: s.payme_link,
+        p_instructions: s.instructions,
+      }),
+    );
+  },
+  async saveProduct(input) {
+    const { id, society_id, ...fields } = input;
+    if (id) {
+      check(await db().from('products').update(fields).eq('id', id));
+      return id;
+    }
+    const row = check(
+      await db()
+        .from('products')
+        .insert({ society_id, ...fields })
+        .select('id')
+        .single(),
+    );
+    return (row as { id: string }).id;
+  },
+  async deleteProduct(id) {
+    check(await db().from('products').delete().eq('id', id));
+  },
+  async listOrders(societyId) {
+    return check(await db().rpc('list_orders', { p_society_id: societyId })) as SocietyOrder[];
+  },
+  async setOrderStatus(ids, status) {
+    return check(await db().rpc('set_order_status', { p_ids: ids, p_status: status })) as number;
+  },
+  async collectOrder(societyId, code) {
+    return check(await db().rpc('collect_order', { p_society_id: societyId, p_code: code })) as PickupResult;
   },
 
   async pendingSocieties() {

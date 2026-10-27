@@ -92,7 +92,7 @@ export default function Profile() {
           <SocietyAvatar name={profile?.display_name || user.email} uri={profile?.avatar_url} size={64} />
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={{ color: c.text, fontSize: 20, fontWeight: '700' }} numberOfLines={1}>
-              {profile?.display_name || user.email.split('@')[0]}
+              {profile?.display_name || t('Add your name')}
             </Text>
             <Text style={{ color: c.textSecondary }} numberOfLines={1}>
               {user.email}

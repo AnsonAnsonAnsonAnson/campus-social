@@ -158,7 +158,16 @@ export type EventQuery = {
 };
 
 export type NotificationKind =
-  'waitlist_promoted' | 'event_cancelled' | 'event_updated' | 'new_event' | 'society_approved' | 'committee_added';
+  | 'waitlist_promoted'
+  | 'event_cancelled'
+  | 'event_updated'
+  | 'new_event'
+  | 'society_approved'
+  | 'committee_added'
+  | 'membership_active'
+  | 'membership_renewal'
+  | 'order_update'
+  | 'payment_settings_changed';
 
 export type AppNotification = {
   id: string;
@@ -190,3 +199,157 @@ export type OpenReport = {
   report_count: number;
   created_at: string;
 };
+
+// ---------------------------------------------------------------------------
+// Members (v0.4). Separate from SocietyMember, which is the committee.
+// ---------------------------------------------------------------------------
+
+export type MembershipPlan = {
+  id: string;
+  society_id: string;
+  name: string;
+  price_hkd: number;
+  valid_from: string; // YYYY-MM-DD
+  valid_until: string;
+  /** Extra questions asked when joining. */
+  questions: string[];
+  /** Free plans only: new members are active straight away. */
+  auto_approve: boolean;
+  is_open: boolean;
+  created_at: string;
+};
+
+export type PlanInput = Omit<MembershipPlan, 'id' | 'created_at'> & { id?: string };
+
+export type MembershipStatus = 'pending' | 'active' | 'rejected' | 'cancelled';
+export type PaymentMethod = 'fps' | 'payme' | 'cash';
+
+export type Membership = {
+  id: string;
+  plan_id: string;
+  society_id: string;
+  user_id: string | null;
+  status: MembershipStatus;
+  member_no: number | null;
+  card_code: string;
+  full_name: string;
+  email: string;
+  student_id: string | null;
+  college: string | null;
+  major: string | null;
+  phone: string | null;
+  answers: string[];
+  payment_method: PaymentMethod | null;
+  consent_at: string | null;
+  claimed_paid_at: string | null;
+  paid_at: string | null;
+  imported: boolean;
+  created_at: string;
+};
+
+/** A membership with its plan and society, for the member's own card. */
+export type MyMembership = Membership & {
+  plan: MembershipPlan;
+  society: SocietySummary & { category: string };
+};
+
+export type JoinInput = {
+  plan_id: string;
+  full_name: string;
+  student_id: string;
+  college: string;
+  major: string;
+  phone: string;
+  answers: string[];
+  payment_method: PaymentMethod | null;
+};
+
+export type ImportRow = {
+  full_name: string;
+  email?: string;
+  student_id?: string;
+  college?: string;
+  major?: string;
+  phone?: string;
+};
+
+export type MemberCardResult = CheckInResult & { member_no?: number; valid_until?: string; plan?: string };
+
+// ---------------------------------------------------------------------------
+// Shop (v0.4)
+// ---------------------------------------------------------------------------
+
+export type PaymentSettings = {
+  society_id: string;
+  /** FPS proxy: HK mobile number, email or FPS ID. */
+  fps_id: string | null;
+  payee_name: string | null;
+  payme_link: string | null;
+  instructions: string | null;
+  updated_at: string;
+};
+
+/** A size or colour. `stock` null means pre-order with no limit; one variant named '' means one size. */
+export type ProductVariant = { name: string; stock: number | null };
+export type ProductStatus = 'draft' | 'published' | 'closed';
+
+export type Product = {
+  id: string;
+  society_id: string;
+  title: string;
+  description: string;
+  image_url: string | null;
+  price_hkd: number;
+  member_price_hkd: number | null;
+  variants: ProductVariant[];
+  opens_at: string | null;
+  closes_at: string | null;
+  pickup_note: string | null;
+  max_per_order: number;
+  payment_window_hours: number;
+  status: ProductStatus;
+  created_at: string;
+};
+
+export type ProductWithStock = Product & {
+  /** Units held by live orders, by variant name. */
+  sold: Record<string, number>;
+  society: SocietySummary & { category: string };
+};
+
+export type ProductInput = Omit<Product, 'id' | 'created_at'> & { id?: string };
+
+export type OrderStatus = 'awaiting_payment' | 'payment_claimed' | 'paid' | 'ready' | 'collected' | 'cancelled' | 'refunded';
+
+export type OrderItem = { variant: string; qty: number; unit_price: number };
+
+export type Order = {
+  id: string;
+  society_id: string;
+  product_id: string | null;
+  user_id: string | null;
+  ref: string;
+  product_title: string;
+  items: OrderItem[];
+  total_hkd: number;
+  member_price: boolean;
+  status: OrderStatus;
+  payment_method: PaymentMethod;
+  buyer_note: string | null;
+  pickup_code: string;
+  expires_at: string | null;
+  claimed_at: string | null;
+  paid_at: string | null;
+  ready_at: string | null;
+  collected_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+};
+
+/** The buyer's own order, with the society. */
+export type MyOrder = Order & { society: SocietySummary & { category: string } };
+
+/** An order as the committee sees it. */
+export type SocietyOrder = Order & { buyer_name: string; buyer_email: string; expired: boolean };
+
+export type PickupResult = CheckInResult & { ref?: string; items?: string; collected_at?: string };

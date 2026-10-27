@@ -21,6 +21,10 @@ const ICONS: Record<NotificationKind, IconName> = {
   new_event: 'sparkles',
   society_approved: 'shield-checkmark',
   committee_added: 'people',
+  membership_active: 'card',
+  membership_renewal: 'refresh',
+  order_update: 'bag-handle',
+  payment_settings_changed: 'warning',
 };
 
 export default function Notifications() {
@@ -48,6 +52,10 @@ export default function Notifications() {
 
   const open = (n: AppNotification) => {
     if (n.event_id) router.push(`/event/${n.event_id}`);
+    else if (n.kind === 'membership_active') router.navigate({ pathname: '/tickets', params: { tab: 'cards' } });
+    else if (n.kind === 'order_update') router.navigate({ pathname: '/tickets', params: { tab: 'orders' } });
+    else if (n.kind === 'payment_settings_changed' && n.society_id)
+      router.push({ pathname: '/manage/payment-settings', params: { societyId: n.society_id } });
     else if (n.kind === 'committee_added' && n.society_id) router.push(`/manage/${n.society_id}`);
     else if (n.society_id) router.push(`/society/${n.society_id}`);
   };

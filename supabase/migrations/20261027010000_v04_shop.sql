@@ -464,7 +464,10 @@ begin
   if not public.is_society_member(p_society_id) then
     raise exception 'Only society committee members can hand out orders';
   end if;
-  select * into v_o from public.orders where pickup_code = lower(trim(p_code)) for update;
+  -- The QR holds the pickup code; at the counter the committee can also type the order ref.
+  select * into v_o from public.orders
+    where pickup_code = lower(trim(p_code)) or (society_id = p_society_id and ref = upper(trim(p_code)))
+    limit 1 for update;
   if v_o.id is null then
     return jsonb_build_object('ok', false, 'message', 'Order not found');
   end if;

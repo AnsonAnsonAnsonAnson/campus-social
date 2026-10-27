@@ -75,7 +75,7 @@ reset role;
 update public.orders set status = 'cancelled' where id = :'oid';
 set role authenticated;
 select tests.login('00000000-0000-0000-0000-0000000000f2');
-select id as oid, pickup_code as code from public.place_order(:'pid', '[{"variant": "L", "qty": 1}]', 'payme') \gset
+select id as oid, pickup_code as code, lower(ref) as oref from public.place_order(:'pid', '[{"variant": "L", "qty": 1}]', 'payme') \gset
 select tests.eq((public.claim_order_paid(:'oid', 'paid 3pm')).status, 'payment_claimed', 'buyer says paid');
 
 select tests.login('00000000-0000-0000-0000-0000000000f3');
@@ -97,6 +97,7 @@ select tests.login('00000000-0000-0000-0000-0000000000f3');
 select tests.eq(public.set_order_status(array[:'oid'::uuid], 'ready'), 1, 'editors mark ready');
 select tests.eq((public.collect_order(:'sid', :'code') ->> 'ok')::boolean, true, 'pickup scan collects');
 select tests.eq(public.collect_order(:'sid', :'code') ->> 'message', 'Already collected', 'second scan warns');
+select tests.eq(public.collect_order(:'sid', :'oref') ->> 'message', 'Already collected', 'typed order ref finds the order');
 
 select tests.login('00000000-0000-0000-0000-0000000000f2');
 select tests.eq((select count(*) from public.notifications where kind = 'order_update'), 3::bigint, 'buyer told: not received, paid, ready');

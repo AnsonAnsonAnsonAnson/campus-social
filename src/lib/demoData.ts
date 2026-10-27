@@ -1,7 +1,7 @@
 // Sample content used by demo mode and by scripts/make-seed.ts (supabase/seed.sql).
 // Event times are relative to "today" in Hong Kong so the app always looks alive.
 // Campus dates are illustrative: replace them with the official CUHK calendar.
-import type { Banner, CampusDate, CampusEvent, Society } from './types';
+import type { Banner, CampusDate, CampusEvent, Membership, MembershipPlan, PaymentSettings, Product, Society } from './types';
 
 const HK_OFFSET_HOURS = 8;
 
@@ -21,6 +21,8 @@ const sid = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, '0'
 const eid = (n: number) => `20000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const bid = (n: number) => `30000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const cid = (n: number) => `40000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const pid = (n: number) => `50000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const prid = (n: number) => `60000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 function society(n: number, s: Partial<Society> & Pick<Society, 'name' | 'category' | 'description'>): Society {
   return {
@@ -376,5 +378,140 @@ export function makeDemoCampusDates(now = new Date()): CampusDate[] {
     date(6, 'New Asia High Table Dinner', '新亞高桌晚宴', 'college', 12, 12, 'New Asia'),
     date(7, 'Last day of classes', '最後上課日', 'term', 35),
     date(8, 'Examination period', '考試期', 'exam', 38, 50),
+  ];
+}
+
+/** This academic year's membership plans: the demo user can join Hiking, and runs CUCS's. */
+export function makeDemoPlans(now = new Date()): MembershipPlan[] {
+  const year = Number(hkDay(0, now).slice(0, 4)) - (Number(hkDay(0, now).slice(5, 7)) < 9 ? 1 : 0);
+  const plan = (n: number, society: number, name: string, price: number, extra: Partial<MembershipPlan> = {}): MembershipPlan => ({
+    id: pid(n),
+    society_id: sid(society),
+    name,
+    price_hkd: price,
+    valid_from: `${year}-09-01`,
+    valid_until: `${year + 1}-08-31`,
+    questions: [],
+    auto_approve: false,
+    is_open: true,
+    created_at: `${year}-08-20T02:00:00Z`,
+    ...extra,
+  });
+  return [
+    plan(1, 1, `${year}-${String(year + 1).slice(2)} member`, 50, { questions: ['Hiking experience (beginner, some, lots)'] }),
+    plan(2, 2, `${year}-${String(year + 1).slice(2)} member`, 30, { questions: ['GitHub username'] }),
+    plan(3, 6, 'Friends of the Orchestra', 0, { auto_approve: true }),
+  ];
+}
+
+const DEMO_MEMBERS = [
+  ['Chan Tai Man', '1155180001', 'Shaw', 'Computer Science'],
+  ['Wong Ka Yan', '1155180002', 'New Asia', 'Information Engineering'],
+  ['Lee Hoi Ching', '1155190003', 'United', 'Mathematics'],
+  ['Cheung Chi Ho', '1155190004', 'Chung Chi', 'Computer Science'],
+  ['Lam Wing Sze', '1155200005', 'Morningside', 'Physics'],
+  ['Ng Pak Hei', '1155200006', 'S.H. Ho', 'Computer Engineering'],
+  ['Ho Sum Yee', '1155210007', 'Wu Yee Sun', 'Statistics'],
+  ['Yeung Tsz Kit', '1155210008', 'Lee Woo Sing', 'Computer Science'],
+] as const;
+
+/** CUCS's roster: mostly active, a couple waiting for the treasurer. */
+export function makeDemoMemberships(now = new Date()): Membership[] {
+  return DEMO_MEMBERS.map(([full_name, student_id, college, major], i) => {
+    const pending = i >= 6;
+    return {
+      id: `70000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+      plan_id: pid(2),
+      society_id: sid(2),
+      user_id: null,
+      status: pending ? 'pending' : 'active',
+      member_no: pending ? null : i + 1,
+      card_code: `democard${i + 1}`.padEnd(32, '0'),
+      full_name,
+      email: `${student_id}@link.cuhk.edu.hk`,
+      student_id,
+      college,
+      major,
+      phone: null,
+      answers: [i % 2 ? '' : full_name.split(' ')[0].toLowerCase() + '-dev'],
+      payment_method: 'fps',
+      consent_at: hkAt(-30 + i, 12, 0, now),
+      claimed_paid_at: i === 6 ? hkAt(-1, 21, 0, now) : pending ? null : hkAt(-30 + i, 12, 5, now),
+      paid_at: pending ? null : hkAt(-29 + i, 10, 0, now),
+      imported: i < 3,
+      created_at: hkAt(-30 + i, 12, 0, now),
+    };
+  });
+}
+
+export const demoPaymentSettings: PaymentSettings[] = [
+  {
+    society_id: sid(1),
+    fps_id: '91234567',
+    payee_name: 'CUHK Hiking Club',
+    payme_link: 'https://payme.hsbc/example',
+    instructions: 'Use your order reference as the payment note.',
+    updated_at: '2026-09-01T02:00:00Z',
+  },
+  {
+    society_id: sid(2),
+    fps_id: '1234567',
+    payee_name: 'CU Coding Society',
+    payme_link: null,
+    instructions: null,
+    updated_at: '2026-09-01T02:00:00Z',
+  },
+];
+
+export function makeDemoProducts(now = new Date()): Product[] {
+  const product = (n: number, society: number, p: Partial<Product> & Pick<Product, 'title' | 'price_hkd'>): Product => ({
+    id: prid(n),
+    society_id: sid(society),
+    description: '',
+    image_url: null,
+    member_price_hkd: null,
+    variants: [{ name: '', stock: null }],
+    opens_at: null,
+    closes_at: hkAt(10, 23, 59, now),
+    pickup_note: null,
+    max_per_order: 5,
+    payment_window_hours: 48,
+    status: 'published',
+    created_at: hkAt(-5, 12, 0, now),
+    ...p,
+  });
+  return [
+    product(1, 1, {
+      title: 'Club hoodie 2026',
+      price_hkd: 220,
+      member_price_hkd: 180,
+      description: 'Heavyweight hoodie with the club logo on the back. Pre-order closes in 10 days; pickup at the Sunday hike meeting point.',
+      variants: [
+        { name: 'S', stock: 10 },
+        { name: 'M', stock: 3 },
+        { name: 'L', stock: 12 },
+        { name: 'XL', stock: 0 },
+      ],
+      pickup_note: 'University Station exit B, before the Sunday hikes',
+    }),
+    product(2, 2, {
+      title: 'Sticker pack',
+      price_hkd: 25,
+      member_price_hkd: 15,
+      description: 'Six vinyl stickers, laptop-sized.',
+      variants: [{ name: '', stock: 80 }],
+      pickup_note: 'Room 1009, Ho Sin-Hang Engineering Building, Tue and Thu 1-2pm',
+    }),
+    product(3, 2, {
+      title: 'CUCS T-shirt',
+      price_hkd: 90,
+      member_price_hkd: 70,
+      variants: [
+        { name: 'S', stock: null },
+        { name: 'M', stock: null },
+        { name: 'L', stock: null },
+      ],
+      status: 'draft',
+    }),
   ];
 }

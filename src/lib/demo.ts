@@ -2,7 +2,16 @@
 // App Store screenshots, UI work). Mirrors the rules in the SQL migration.
 import type { AuthUser, Backend } from './backend';
 import { isCuhkEmail } from './backend';
-import { makeDemoBanners, makeDemoCampusDates, makeDemoEvents, demoSocieties } from './demoData';
+import {
+  demoPaymentSettings,
+  demoSocieties,
+  makeDemoBanners,
+  makeDemoCampusDates,
+  makeDemoEvents,
+  makeDemoMemberships,
+  makeDemoPlans,
+  makeDemoProducts,
+} from './demoData';
 import { t } from './i18n';
 import type {
   AppNotification,
@@ -10,7 +19,14 @@ import type {
   Banner,
   CampusEvent,
   EventWithSociety,
+  Membership,
+  MembershipPlan,
   MySociety,
+  Order,
+  OrderStatus,
+  PaymentSettings,
+  Product,
+  SocietyOrder,
   NotificationKind,
   OpenReport,
   Profile,
@@ -81,7 +97,112 @@ const state = {
   checkedInFake: new Map<string, Set<number>>(),
   notifications: [] as AppNotification[],
   reports: [] as (OpenReport & { resolved: boolean })[],
+  plans: makeDemoPlans() as MembershipPlan[],
+  memberships: makeDemoMemberships() as Membership[],
+  paymentSettings: demoPaymentSettings.map((p) => ({ ...p })) as PaymentSettings[],
+  products: makeDemoProducts() as Product[],
+  orders: makeDemoOrders() as (Order & { buyer_name: string; buyer_email: string })[],
 };
+
+/** Orders other students placed with CUCS, so the committee's orders table has something in it. */
+function makeDemoOrders() {
+  const statuses: OrderStatus[] = ['payment_claimed', 'payment_claimed', 'awaiting_payment', 'paid', 'paid', 'ready', 'collected'];
+  const product = makeDemoProducts().find((p) => p.title === 'Sticker pack')!;
+  return statuses.map((status, i) => {
+    const qty = (i % 3) + 1;
+    const created = new Date(Date.now() - (i + 1) * 5 * 3600_000).toISOString();
+    return {
+      id: `80000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+      society_id: product.society_id,
+      product_id: product.id,
+      user_id: `demo-buyer-${i}`,
+      ref: `CUC-${String(4821 + i * 37).slice(-4)}`,
+      product_title: product.title,
+      items: [{ variant: '', qty, unit_price: product.price_hkd }],
+      total_hkd: qty * product.price_hkd,
+      member_price: false,
+      status,
+      payment_method: i === 2 ? ('cash' as const) : ('fps' as const),
+      buyer_note: null,
+      pickup_code: `demopickup${i}`.padEnd(32, '0'),
+      expires_at: i === 2 ? null : new Date(Date.parse(created) + 48 * 3600_000).toISOString(),
+      claimed_at: status === 'awaiting_payment' ? null : created,
+      paid_at: ['paid', 'ready', 'collected'].includes(status) ? created : null,
+      ready_at: status === 'ready' ? created : null,
+      collected_at: status === 'collected' ? created : null,
+      cancelled_at: null,
+      created_at: created,
+      buyer_name: FAKE_NAMES[i],
+      buyer_email: `student${1155200000 + i}@link.cuhk.edu.hk`,
+    };
+  });
+}
+
+function todayHK() {
+  return new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+}
+
+function isCurrentMember(societyId: string) {
+  return state.memberships.some((m) => {
+    const plan = state.plans.find((p) => p.id === m.plan_id);
+    return (
+      m.society_id === societyId &&
+      m.user_id === state.user?.id &&
+      m.status === 'active' &&
+      !!plan &&
+      plan.valid_from <= todayHK() &&
+      todayHK() <= plan.valid_until
+    );
+  });
+}
+
+const planUntil = (m: Membership) => state.plans.find((p) => p.id === m.plan_id)?.valid_until ?? '';
+
+function activateMembership(m: Membership) {
+  if (m.member_no == null) {
+    m.member_no = Math.max(0, ...state.memberships.filter((x) => x.society_id === m.society_id).map((x) => x.member_no ?? 0)) + 1;
+  }
+  const was = m.status;
+  m.status = 'active';
+  if (m.user_id === state.user?.id && was !== 'active') {
+    const s = state.societies.find((x) => x.id === m.society_id)!;
+    const society = s.short_name ?? s.name;
+    notify('membership_active', t('Membership confirmed'), t("You're a member of {society}. Your member card is in Tickets.", { society }), null, s.id);
+  }
+}
+
+function holdsStock(o: Order) {
+  return !['cancelled', 'refunded'].includes(o.status) && !(o.status === 'awaiting_payment' && o.expires_at && o.expires_at < new Date().toISOString());
+}
+
+function productSold(productId: string) {
+  const sold: Record<string, number> = {};
+  for (const o of state.orders) {
+    if (o.product_id !== productId || !holdsStock(o)) continue;
+    for (const i of o.items) sold[i.variant] = (sold[i.variant] ?? 0) + i.qty;
+  }
+  return sold;
+}
+
+function societyCard(id: string) {
+  const s = state.societies.find((x) => x.id === id)!;
+  return { ...summary(s), category: s.category };
+}
+
+function notifyOrder(o: Order) {
+  if (o.user_id !== state.user?.id) return;
+  const titles: Partial<Record<OrderStatus, [string, string]>> = {
+    paid: [t('Payment received'), t('{title} ({ref}) is paid.', { title: o.product_title, ref: o.ref })],
+    ready: [t('Ready for pickup'), t('Show the pickup QR in Tickets to collect {title}.', { title: o.product_title })],
+    awaiting_payment: [
+      t('Payment not found yet'),
+      t('The society could not find a payment for {ref}. Check the reference and amount.', { ref: o.ref }),
+    ],
+    cancelled: [t('Order cancelled'), `${o.product_title} (${o.ref})`],
+  };
+  const n = titles[o.status];
+  if (n) notify('order_update', n[0], n[1], null, o.society_id);
+}
 
 function seedDemoInbox() {
   const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
@@ -196,7 +317,7 @@ export const demoBackend: Backend = {
     state.profile = {
       id: 'demo-user',
       email: e,
-      display_name: e.split('@')[0],
+      display_name: '',
       college: null,
       major: null,
       year_of_study: null,
@@ -606,6 +727,357 @@ export const demoBackend: Backend = {
   async uploadImage(localUri) {
     // Demo mode keeps the local file URI; it only lives on this device.
     return localUri;
+  },
+
+  async listPlans(societyId) {
+    await delay();
+    return state.plans
+      .filter((p) => p.society_id === societyId && (p.is_open || isMember(societyId)))
+      .sort((a, b) => b.valid_until.localeCompare(a.valid_until));
+  },
+  async myMemberships() {
+    await delay();
+    if (!state.user) return [];
+    return state.memberships
+      .filter((m) => m.user_id === state.user!.id && (m.status === 'pending' || m.status === 'active'))
+      .map((m) => ({ ...m, plan: state.plans.find((p) => p.id === m.plan_id)!, society: societyCard(m.society_id) }));
+  },
+  async joinSociety(input) {
+    await delay(300);
+    const user = requireUser();
+    const plan = state.plans.find((p) => p.id === input.plan_id);
+    if (!plan) throw new Error('This membership is not available');
+    if (!plan.is_open || todayHK() > plan.valid_until) throw new Error('This society is not taking new members right now');
+    if (!input.full_name.trim()) throw new Error('Enter your full name');
+    if (input.student_id.trim() && !/^\d{10}$/.test(input.student_id.trim())) throw new Error('A student ID has 10 digits');
+    if (plan.price_hkd > 0 && !input.payment_method) throw new Error('Choose how you will pay');
+    let m = state.memberships.find((x) => x.plan_id === plan.id && x.user_id === user.id);
+    if (m && (m.status === 'pending' || m.status === 'active')) return m;
+    const fields = {
+      status: 'pending' as const,
+      full_name: input.full_name.trim(),
+      student_id: input.student_id.trim() || null,
+      college: input.college || null,
+      major: input.major.trim() || null,
+      phone: input.phone.trim() || null,
+      answers: input.answers,
+      payment_method: plan.price_hkd > 0 ? input.payment_method : null,
+      consent_at: new Date().toISOString(),
+      claimed_paid_at: null,
+      paid_at: null,
+      created_at: new Date().toISOString(),
+    };
+    if (m) Object.assign(m, fields);
+    else {
+      m = {
+        id: uid(),
+        plan_id: plan.id,
+        society_id: plan.society_id,
+        user_id: user.id,
+        member_no: null,
+        card_code: uid().slice(5) + uid().slice(5) + uid().slice(5),
+        email: user.email,
+        imported: false,
+        ...fields,
+      };
+      state.memberships.unshift(m);
+    }
+    if (plan.price_hkd === 0 && plan.auto_approve) activateMembership(m);
+    return { ...m };
+  },
+  async claimMembershipPaid(id) {
+    const m = state.memberships.find((x) => x.id === id && x.user_id === state.user?.id && x.status === 'pending' && !x.paid_at);
+    if (!m) throw new Error('Membership not found');
+    m.claimed_paid_at = new Date().toISOString();
+  },
+  async cancelMembership(id) {
+    const m = state.memberships.find((x) => x.id === id && x.user_id === state.user?.id && ['pending', 'active'].includes(x.status));
+    if (!m) throw new Error('Membership not found');
+    m.status = 'cancelled';
+  },
+  async savePlan(input) {
+    await delay(300);
+    if (!isAdminOf(input.society_id)) throw new Error('Only society admins can change memberships');
+    if (input.id) {
+      Object.assign(state.plans.find((p) => p.id === input.id)!, input);
+      return input.id;
+    }
+    const plan: MembershipPlan = { ...input, id: uid(), created_at: new Date().toISOString() };
+    state.plans.push(plan);
+    // Mirrors notify_membership_renewal(): current members not yet on the new plan are asked to renew.
+    if (plan.is_open && isCurrentMember(plan.society_id)) {
+      const s = state.societies.find((x) => x.id === plan.society_id)!;
+      notify(
+        'membership_renewal',
+        t('Time to renew'),
+        t('{society} has opened {plan}. Renew to keep your member card.', { society: s.short_name ?? s.name, plan: plan.name }),
+        null,
+        s.id,
+      );
+    }
+    return plan.id;
+  },
+  async deletePlan(id) {
+    const plan = state.plans.find((p) => p.id === id);
+    if (!plan || !isAdminOf(plan.society_id)) throw new Error('Only society admins can change memberships');
+    state.plans = state.plans.filter((p) => p.id !== id);
+    state.memberships = state.memberships.filter((m) => m.plan_id !== id);
+  },
+  async listMemberships(societyId) {
+    await delay();
+    if (!isMember(societyId)) throw new Error('Only committee members can see the member list');
+    return state.memberships.filter((m) => m.society_id === societyId).map((m) => ({ ...m }));
+  },
+  async setMembershipStatus(ids, status) {
+    await delay(200);
+    let n = 0;
+    for (const m of state.memberships.filter((x) => ids.includes(x.id))) {
+      if (!isAdminOf(m.society_id)) throw new Error('Only society admins can change memberships');
+      if (status === 'active') {
+        const plan = state.plans.find((p) => p.id === m.plan_id)!;
+        if (plan.price_hkd > 0) m.paid_at ??= new Date().toISOString();
+        activateMembership(m);
+      } else {
+        m.status = status;
+        if (status === 'pending') {
+          // "Not received": back to unpaid, so the member sees the payment screen again.
+          m.paid_at = null;
+          m.claimed_paid_at = null;
+        }
+      }
+      n++;
+    }
+    return n;
+  },
+  async importMemberships(planId, rows) {
+    await delay(400);
+    const plan = state.plans.find((p) => p.id === planId);
+    if (!plan || !isAdminOf(plan.society_id)) throw new Error('Only society admins can import members');
+    if (rows.length > 2000) throw new Error('Import up to 2000 rows at a time');
+    let n = 0;
+    for (const r of rows) {
+      const sid = (r.student_id ?? '').replace(/\D/g, '');
+      const email = (r.email?.trim().toLowerCase() || (sid ? `${sid}@link.cuhk.edu.hk` : '')).trim();
+      if (!email || !r.full_name?.trim()) continue;
+      const userId = state.user && email === state.user.email ? state.user.id : null;
+      if (state.memberships.some((m) => m.plan_id === planId && ((userId && m.user_id === userId) || m.email.toLowerCase() === email))) continue;
+      const m: Membership = {
+        id: uid(),
+        plan_id: planId,
+        society_id: plan.society_id,
+        user_id: userId,
+        status: 'pending',
+        member_no: null,
+        card_code: uid().slice(5) + uid().slice(5) + uid().slice(5),
+        full_name: r.full_name.trim().slice(0, 80),
+        email,
+        student_id: /^\d{10}$/.test(sid) ? sid : null,
+        college: r.college?.trim() || null,
+        major: r.major?.trim().slice(0, 80) || null,
+        phone: r.phone?.trim().slice(0, 30) || null,
+        answers: [],
+        payment_method: null,
+        consent_at: null,
+        claimed_paid_at: null,
+        paid_at: null,
+        imported: true,
+        created_at: new Date().toISOString(),
+      };
+      state.memberships.unshift(m);
+      activateMembership(m);
+      n++;
+    }
+    return n;
+  },
+  async logMembershipExport(societyId) {
+    if (!isMember(societyId)) throw new Error('Only committee members can export the member list');
+  },
+  async checkMemberCard(societyId, code) {
+    await delay(200);
+    if (!isMember(societyId)) throw new Error('Only society committee members can check member cards');
+    const typed = code.trim().match(/^#?(\d{1,6})$/);
+    const m = typed
+      ? state.memberships
+          .filter((x) => x.society_id === societyId && x.member_no === Number(typed[1]))
+          .sort((a, b) => planUntil(b).localeCompare(planUntil(a)))[0]
+      : state.memberships.find((x) => x.card_code === code.trim().toLowerCase());
+    if (!m) return { ok: false, message: 'Member card not found' };
+    const plan = state.plans.find((p) => p.id === m.plan_id)!;
+    if (m.society_id !== societyId) return { ok: false, name: m.full_name, message: 'This card is for a different society' };
+    if (m.status !== 'active') return { ok: false, name: m.full_name, message: 'This membership is not active' };
+    if (todayHK() > plan.valid_until) return { ok: false, name: m.full_name, message: 'This membership has expired', valid_until: plan.valid_until };
+    return { ok: true, name: m.full_name, message: 'Active member', member_no: m.member_no ?? undefined, valid_until: plan.valid_until, plan: plan.name };
+  },
+
+  async getPaymentSettings(societyId) {
+    return state.paymentSettings.find((p) => p.society_id === societyId) ?? null;
+  },
+  async listProducts(societyId) {
+    await delay();
+    const now = new Date().toISOString();
+    return state.products
+      .filter((p) =>
+        societyId
+          ? p.society_id === societyId && (p.status !== 'draft' || isMember(societyId))
+          : p.status === 'published' && (!p.closes_at || p.closes_at > now),
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map((p) => ({ ...p, sold: productSold(p.id), society: societyCard(p.society_id) }));
+  },
+  async placeOrder(productId, items, method, note) {
+    await delay(300);
+    const user = requireUser();
+    const p = state.products.find((x) => x.id === productId);
+    const now = new Date().toISOString();
+    if (!p || p.status !== 'published') throw new Error('This item is not on sale');
+    if (p.opens_at && now < p.opens_at) throw new Error('Orders have not opened yet');
+    if (p.closes_at && now > p.closes_at) throw new Error('Orders have closed');
+    const lines = items.filter((i) => i.qty > 0);
+    if (!lines.length) throw new Error('Choose at least one item');
+    const member = p.member_price_hkd != null && isCurrentMember(p.society_id);
+    const unit = member ? p.member_price_hkd! : p.price_hkd;
+    const sold = productSold(p.id);
+    for (const i of lines) {
+      const v = p.variants.find((x) => x.name === i.variant);
+      if (!v) throw new Error('Choose a size');
+      if (v.stock != null && (sold[v.name] ?? 0) + i.qty > v.stock) throw new Error('Not enough stock left');
+    }
+    const qty = lines.reduce((n, i) => n + i.qty, 0);
+    if (qty > p.max_per_order) throw new Error('That is more than the limit per order');
+    const s = state.societies.find((x) => x.id === p.society_id)!;
+    const prefix = ((s.short_name ?? s.name).replace(/[^A-Za-z]/g, '') || 'CS').slice(0, 3).toUpperCase();
+    const total = qty * unit;
+    const order: Order & { buyer_name: string; buyer_email: string } = {
+      id: uid(),
+      society_id: p.society_id,
+      product_id: p.id,
+      user_id: user.id,
+      ref: `${prefix}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
+      product_title: p.title,
+      items: lines.map((i) => ({ variant: i.variant, qty: i.qty, unit_price: unit })),
+      total_hkd: total,
+      member_price: member,
+      status: total === 0 ? 'paid' : 'awaiting_payment',
+      payment_method: method,
+      buyer_note: note?.trim() || null,
+      pickup_code: uid().slice(5) + uid().slice(5) + uid().slice(5),
+      expires_at: total > 0 && method !== 'cash' ? new Date(Date.now() + p.payment_window_hours * 3600_000).toISOString() : null,
+      claimed_at: null,
+      paid_at: total === 0 ? now : null,
+      ready_at: null,
+      collected_at: null,
+      cancelled_at: null,
+      created_at: now,
+      buyer_name: state.profile?.display_name || user.email,
+      buyer_email: user.email,
+    };
+    state.orders.unshift(order);
+    const { buyer_name: _n, buyer_email: _e, ...plain } = order;
+    return plain;
+  },
+  async myOrders() {
+    await delay();
+    if (!state.user) return [];
+    return state.orders
+      .filter((o) => o.user_id === state.user!.id)
+      .map(({ buyer_name: _n, buyer_email: _e, ...o }) => ({ ...o, society: societyCard(o.society_id) }));
+  },
+  async claimOrderPaid(id, note) {
+    const o = state.orders.find((x) => x.id === id && x.user_id === state.user?.id);
+    if (!o) throw new Error('Order not found');
+    if (o.status !== 'awaiting_payment') throw new Error('This order is not waiting for payment');
+    if (!holdsStock(o)) throw new Error('This order expired. Please order again.');
+    o.status = 'payment_claimed';
+    o.claimed_at = new Date().toISOString();
+    if (note?.trim()) o.buyer_note = note.trim();
+  },
+  async cancelMyOrder(id) {
+    const o = state.orders.find((x) => x.id === id && x.user_id === state.user?.id);
+    if (!o || !['awaiting_payment', 'payment_claimed'].includes(o.status)) {
+      throw new Error('This order can no longer be cancelled here. Contact the society.');
+    }
+    o.status = 'cancelled';
+    o.cancelled_at = new Date().toISOString();
+  },
+  async setPaymentSettings(societyId, s) {
+    if (!isAdminOf(societyId)) throw new Error('Only society admins can change payment details');
+    const clean = (v: string | null) => v?.trim() || null;
+    const row: PaymentSettings = {
+      society_id: societyId,
+      fps_id: clean(s.fps_id),
+      payee_name: clean(s.payee_name),
+      payme_link: clean(s.payme_link),
+      instructions: clean(s.instructions),
+      updated_at: new Date().toISOString(),
+    };
+    state.paymentSettings = [...state.paymentSettings.filter((p) => p.society_id !== societyId), row];
+  },
+  async saveProduct(input) {
+    await delay(300);
+    if (!isMember(input.society_id)) throw new Error('Not allowed');
+    if (input.id) {
+      Object.assign(state.products.find((p) => p.id === input.id)!, input);
+      return input.id;
+    }
+    const id = uid();
+    state.products.push({ ...input, id, created_at: new Date().toISOString() });
+    return id;
+  },
+  async deleteProduct(id) {
+    state.products = state.products.filter((p) => p.id !== id);
+  },
+  async listOrders(societyId) {
+    await delay();
+    if (!isMember(societyId)) throw new Error('Only committee members can see orders');
+    return state.orders
+      .filter((o) => o.society_id === societyId)
+      .map((o) => ({ ...o, expired: o.status === 'awaiting_payment' && !holdsStock(o) })) as SocietyOrder[];
+  },
+  async setOrderStatus(ids, status) {
+    await delay(200);
+    let n = 0;
+    const now = new Date().toISOString();
+    for (const o of state.orders.filter((x) => ids.includes(x.id))) {
+      const payment = ['awaiting_payment', 'paid', 'cancelled', 'refunded'].includes(status);
+      if (!isMember(o.society_id) || (payment && !isAdminOf(o.society_id))) throw new Error('Only society admins can confirm payments');
+      if (o.status === status) continue;
+      const ok =
+        (status === 'paid' && ['awaiting_payment', 'payment_claimed'].includes(o.status)) ||
+        (status === 'awaiting_payment' && o.status === 'payment_claimed') ||
+        (status === 'ready' && o.status === 'paid') ||
+        (status === 'collected' && ['paid', 'ready'].includes(o.status)) ||
+        (status === 'cancelled' && ['awaiting_payment', 'payment_claimed', 'paid', 'ready'].includes(o.status)) ||
+        (status === 'refunded' && ['paid', 'ready', 'collected'].includes(o.status));
+      if (!ok) throw new Error('That change is not possible for this order');
+      o.status = status;
+      if (status === 'paid') o.paid_at = now;
+      if (status === 'ready') o.ready_at = now;
+      if (status === 'collected') o.collected_at = now;
+      if (status === 'cancelled' || status === 'refunded') o.cancelled_at = now;
+      if (status === 'awaiting_payment') {
+        o.claimed_at = null;
+        if (o.payment_method !== 'cash') o.expires_at = new Date(Date.now() + 48 * 3600_000).toISOString();
+      }
+      notifyOrder(o);
+      n++;
+    }
+    return n;
+  },
+  async collectOrder(societyId, code) {
+    await delay(200);
+    if (!isMember(societyId)) throw new Error('Only society committee members can hand out orders');
+    const o = state.orders.find(
+      (x) => x.pickup_code === code.trim().toLowerCase() || (x.society_id === societyId && x.ref === code.trim().toUpperCase()),
+    );
+    if (!o) return { ok: false, message: 'Order not found' };
+    const items = `${o.product_title} · ${o.items.map((i) => `${i.variant ? i.variant + ' ' : ''}×${i.qty}`).join(', ')}`;
+    const base = { name: o.buyer_name, ref: o.ref, items };
+    if (o.society_id !== societyId) return { ok: false, name: o.buyer_name, message: 'This order is for a different society' };
+    if (o.status === 'collected') return { ...base, ok: false, message: 'Already collected', collected_at: o.collected_at ?? undefined };
+    if (o.status !== 'paid' && o.status !== 'ready') return { ...base, ok: false, message: 'Not paid yet' };
+    o.status = 'collected';
+    o.collected_at = new Date().toISOString();
+    return { ...base, ok: true, message: 'Collected' };
   },
 
   async pendingSocieties() {

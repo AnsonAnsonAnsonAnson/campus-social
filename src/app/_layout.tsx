@@ -92,6 +92,16 @@ export default function RootLayout() {
           <Stack.Screen name="notifications" options={{ title: t('Notifications') }} />
           <Stack.Screen name="manage/members" options={{ title: t('Committee') }} />
           <Stack.Screen name="manage/edit-society" options={{ presentation: 'modal', title: t('Edit society') }} />
+          <Stack.Screen name="manage/roster" options={{ title: t('Members') }} />
+          <Stack.Screen name="manage/plan-form" options={{ presentation: 'modal', title: t('Membership plan') }} />
+          <Stack.Screen name="manage/import" options={{ presentation: 'modal', title: t('Import members') }} />
+          <Stack.Screen name="manage/orders" options={{ title: t('Orders') }} />
+          <Stack.Screen name="manage/product-form" options={{ presentation: 'modal', title: t('Product') }} />
+          <Stack.Screen name="manage/payment-settings" options={{ presentation: 'modal', title: t('Payment details') }} />
+          <Stack.Screen name="membership/join" options={{ presentation: 'modal', title: t('Join') }} />
+          <Stack.Screen name="membership/[id]" options={{ title: t('Member card') }} />
+          <Stack.Screen name="shop/[id]" options={{ title: '' }} />
+          <Stack.Screen name="order/[id]" options={{ title: t('Order') }} />
           <Stack.Screen name="welcome" options={{ presentation: 'modal', title: t('Welcome'), gestureEnabled: false }} />
         </Stack>
         <NotificationRouting />
