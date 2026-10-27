@@ -73,6 +73,7 @@ select tests.eq(:'fstatus', 'active', 'free auto-approved plan is active at once
 select card_code as card from public.memberships where id = :'mid' \gset
 select tests.login('00000000-0000-0000-0000-0000000000e4');
 select tests.throws(format('select public.check_member_card(%L, %L)', :'sid', :'card'), 'Only society committee', 'only committee scans cards');
+select tests.ok(not public.is_current_member(:'sid', '00000000-0000-0000-0000-0000000000e2'), 'outsiders cannot look up who is a member');
 select tests.login('00000000-0000-0000-0000-0000000000e3');
 select tests.eq((public.check_member_card(:'sid', :'card') ->> 'ok')::boolean, true, 'active card accepted');
 select tests.eq(public.check_member_card(:'sid', 'nope') ->> 'message', 'Member card not found', 'unknown card');

@@ -47,6 +47,8 @@ select tests.throws(format('select public.place_order(%L, %L, %L)', :'pid', '[{"
   'more than the limit', 'per-order limit enforced');
 select tests.throws(format('select public.place_order(%L, %L, %L)', :'pid', '[{"variant": "XS", "qty": 1}]', 'fps'),
   'Choose a size', 'unknown size rejected');
+select tests.throws(format('select public.place_order(%L, %L, %L)', :'pid', '[{"variant": "M", "qty": 2}, {"variant": "M", "qty": 1}]', 'fps'),
+  'Not enough stock left', 'a size repeated across lines counts once in total');
 select id as oid, ref, total_hkd, status as ostatus
   from public.place_order(:'pid', '[{"variant": "M", "qty": 2}, {"variant": "L", "qty": 1}]', 'fps', 'from Chan') \gset
 select tests.eq(:'total_hkd'::numeric, 540::numeric, 'non-members pay the full price');
