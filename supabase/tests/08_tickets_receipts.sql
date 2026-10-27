@@ -158,3 +158,21 @@ set role authenticated;
 select tests.login('00000000-0000-0000-0000-000000000082');
 select tests.throws('select public.receipts_to_purge()', 'permission denied', 'students cannot run the purge');
 reset role;
+
+-- a member moved up when someone else cancels still gets the member price
+set role authenticated;
+select tests.login('00000000-0000-0000-0000-000000000081');
+insert into public.events (society_id, title, starts_at, ends_at, status, registration_required, capacity,
+  waitlist_enabled, price_hkd, member_price_hkd)
+values (:'sid', 'Small trip', now() + interval '5 days', now() + interval '5 days 3 hours', 'published', true, 1, true, 200, 100)
+returning id as trip \gset
+select tests.login('00000000-0000-0000-0000-000000000082');
+select public.register_for_event(:'trip', null, 'fps');
+select tests.login('00000000-0000-0000-0000-000000000083');
+select public.register_for_event(:'trip', null, 'fps');
+select tests.login('00000000-0000-0000-0000-000000000082');
+select public.cancel_registration(:'trip');
+select tests.login('00000000-0000-0000-0000-000000000083');
+select tests.eq((select total_hkd from public.orders where event_id = :'trip' and status = 'awaiting_payment')::text, '100.00',
+  'member moved up from the waitlist pays the member price');
+reset role;

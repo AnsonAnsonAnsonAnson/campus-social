@@ -59,6 +59,24 @@ begin
 end;
 $$;
 
+-- Is this user a current member? Unlike is_current_member() this answers for anyone,
+-- because a ticket can be created for someone else (moved up from the waitlist when
+-- another person cancels). Internal only.
+create or replace function public._is_member_now(p_society_id uuid, p_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.memberships m
+    join public.membership_plans p on p.id = m.plan_id
+    where m.society_id = p_society_id and m.user_id = p_user and m.status = 'active'
+      and (now() at time zone 'Asia/Hong_Kong')::date between p.valid_from and p.valid_until
+  );
+$$;
+
 -- What this person pays for this event: null when it is free for them.
 create or replace function public._ticket_price(p_event public.events, p_user uuid)
 returns numeric
@@ -68,7 +86,7 @@ security definer
 set search_path = ''
 as $$
   select nullif(case
-    when p_event.member_price_hkd is not null and public.is_current_member(p_event.society_id, p_user)
+    when p_event.member_price_hkd is not null and public._is_member_now(p_event.society_id, p_user)
       then p_event.member_price_hkd
     else coalesce(p_event.price_hkd, 0)
   end, 0);
@@ -123,7 +141,7 @@ begin
         and (o.status in ('paid', 'payment_claimed') or (o.status = 'awaiting_payment' and public._order_holds_stock(o)))) then
       return null;
     end if;
-    v_member := v_event.member_price_hkd is not null and public.is_current_member(v_event.society_id, new.user_id);
+    v_member := v_event.member_price_hkd is not null and public._is_member_now(v_event.society_id, new.user_id);
     v_method := coalesce(new.payment_method, 'fps');
     insert into public.orders (society_id, event_id, registration_id, user_id, ref, product_title, items, total_hkd,
       member_price, status, payment_method, expires_at)
@@ -553,6 +571,7 @@ revoke execute on function public._drop_registration(uuid) from public, anon, au
 revoke execute on function public._release_unpaid_tickets(uuid) from public, anon, authenticated;
 revoke execute on function public._new_order_ref(uuid) from public, anon, authenticated;
 revoke execute on function public._receipt_record(text) from public, anon, authenticated;
+revoke execute on function public._is_member_now(uuid, uuid) from public, anon, authenticated;
 revoke execute on function public._ticket_price(public.events, uuid) from public, anon, authenticated;
 revoke execute on function public.release_expired_tickets() from public, anon, authenticated;
 revoke execute on function public.receipts_to_purge(int) from public, anon, authenticated;

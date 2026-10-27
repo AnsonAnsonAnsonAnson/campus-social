@@ -23,6 +23,7 @@ import {
   SegmentedControl,
   Sheet,
   SocietyAvatar,
+  type IconName,
 } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -201,42 +202,92 @@ export default function EventScreen() {
     }
   };
 
-  let primary: React.ReactNode;
-  if (event.removed_at) primary = <Button title={t('Removed by moderators')} disabled onPress={() => {}} />;
-  else if (event.status === 'cancelled') primary = <Button title={t('This event was cancelled')} disabled onPress={() => {}} />;
-  else if (past) primary = <Button title={t('This event has ended')} disabled onPress={() => {}} />;
-  else if (active)
+  // Bottom bar ("EventBar" in the hand-off): what's going on for you on the left, one action on the right.
+  const price = myPrice > 0 ? formatHkd(myPrice) : event.price_text || t('Free');
+  let bar: { icon?: IconName; iconBg?: string; iconFg?: string; title: string; sub?: string; subColor?: string } | null = null;
+  let primary: React.ReactNode = null;
+  let notice: string | null = null;
+  if (event.removed_at) notice = t('Removed by moderators');
+  else if (event.status === 'cancelled') notice = t('This event was cancelled');
+  else if (past) {
+    bar = { icon: 'flag-outline', iconBg: c.fill, iconFg: c.text, title: t('This event has ended'), sub: formatWhen(event.starts_at) };
+    primary = <Button small variant="secondary" title={t('Other events')} onPress={() => router.navigate('/discover')} />;
+  } else if (active && reg.status === 'confirmed' && reg.checked_in_at) {
+    bar = { icon: 'checkmark-circle', iconBg: c.successSoft, iconFg: c.successText, title: t('Checked in') };
+  } else if (active && reg.status === 'confirmed' && pay.key !== 'none' && pay.key !== 'paid') {
+    // Paid event: the place is held, the QR only works once the society confirms payment.
+    bar = {
+      icon: pay.key === 'claimed' ? 'hourglass-outline' : 'card-outline',
+      iconBg: pay.key === 'claimed' ? c.infoSoft : c.warningSoft,
+      iconFg: pay.key === 'claimed' ? c.infoText : c.warningText,
+      title: pay.key === 'claimed' ? t('Payment being checked') : t('Pay to get your ticket'),
+      sub: formatHkd(pay.order.total_hkd),
+    };
     primary = (
       <Button
-        title={reg.status === 'waitlisted' ? t('Leave waitlist') : t('Cancel my spot')}
-        variant="dangerText"
-        loading={busy}
-        onPress={cancel}
+        small
+        variant={pay.key === 'unpaid' ? 'primary' : 'secondary'}
+        title={pay.key === 'unpaid' ? t('Pay now') : t('View payment')}
+        onPress={() => router.push(`/order/${pay.order.id}`)}
       />
     );
-  else if (event.members_only && !q.data?.isMember && !q.data?.isCommittee && ['open', 'few', 'waitlist'].includes(avail.kind))
-    primary = (
-      <Button
-        title={t('Join {society} to sign up', { society: event.society.short_name ?? event.society.name })}
-        icon="card-outline"
-        onPress={join}
-      />
-    );
-  else if (avail.kind === 'open' || avail.kind === 'few')
-    primary = <Button title={t('Register')} icon="ticket-outline" loading={busy} onPress={startRegister} />;
-  else if (avail.kind === 'waitlist')
-    primary = <Button title={t('Join waitlist')} icon="hourglass-outline" loading={busy} onPress={startRegister} />;
-  else if (avail.kind === 'drop-in') primary = <Button title={t('Add to calendar')} icon="calendar-outline" onPress={addToCalendar} />;
-  else primary = <Button title={avail.label} disabled onPress={() => {}} />;
+  } else if (active && reg.status === 'confirmed') {
+    bar = {
+      icon: 'checkmark',
+      iconBg: c.tintSoft,
+      iconFg: c.tintText,
+      title: t("You're going"),
+      sub: t('Your ticket is saved on this phone'),
+    };
+    primary = <Button small title={t('Cancel my spot')} variant="dangerText" loading={busy} onPress={cancel} />;
+  } else if (active) {
+    bar = {
+      icon: 'time-outline',
+      iconBg: c.warningSoft,
+      iconFg: c.warningText,
+      title: t('You’re #{n} on the waitlist', { n: q.data?.position || '?' }),
+      sub: t("We'll let you know if a spot opens"),
+    };
+    primary = <Button small title={t('Leave waitlist')} variant="secondary" loading={busy} onPress={cancel} />;
+  } else {
+    const subColor = avail.kind === 'open' ? c.successText : avail.kind === 'drop-in' ? c.textSecondary : c.warningText;
+    bar = { title: price, sub: avail.label, subColor };
+    if (event.members_only && !q.data?.isMember && !q.data?.isCommittee && ['open', 'few', 'waitlist'].includes(avail.kind)) {
+      bar.sub = t('Members only');
+      primary = (
+        <Button
+          title={t('Join {society} to sign up', { society: event.society.short_name ?? event.society.name })}
+          icon="card-outline"
+          onPress={join}
+        />
+      );
+    } else if (avail.kind === 'open' || avail.kind === 'few')
+      primary = <Button title={t('Register')} icon="ticket-outline" loading={busy} onPress={startRegister} />;
+    else if (avail.kind === 'waitlist')
+      primary = <Button title={t('Join waitlist')} icon="hourglass-outline" loading={busy} onPress={startRegister} />;
+    else if (avail.kind === 'drop-in')
+      primary = <Button variant="secondary" title={t('Add to calendar')} icon="calendar-outline" onPress={addToCalendar} />;
+    else bar.subColor = c.dangerText;
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: c.backgroundPlain }}>
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Pressable onPress={more} hitSlop={12} accessibilityLabel={t('More options')} style={styles.headerButton}>
-              <Icon name="ellipsis-horizontal" size={20} color="#fff" />
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <Pressable onPress={share} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('Share')} style={styles.headerButton}>
+                <Icon name="share-outline" size={19} color="#0A0A0B" />
+              </Pressable>
+              <Pressable
+                onPress={more}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t('More options')}
+                style={styles.headerButton}>
+                <Icon name="ellipsis-horizontal" size={20} color="#0A0A0B" />
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -257,16 +308,19 @@ export default function EventScreen() {
             {event.title}
           </Text>
 
-          <Pressable onPress={() => router.push(`/society/${event.society_id}`)} accessibilityRole="button" style={styles.societyRow}>
-            <SocietyAvatar name={event.society.name} uri={event.society.logo_url} size={40} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: c.textSecondary, fontSize: 12 }}>{t('Hosted by')}</Text>
-              <Text style={{ color: c.text, fontWeight: '600' }} numberOfLines={1}>
-                {event.society.name}
-              </Text>
-            </View>
+          {/* Follow sits beside the link, not inside it: nested buttons are invalid on web and unreachable in VoiceOver. */}
+          <View style={styles.societyRow}>
+            <Pressable onPress={() => router.push(`/society/${event.society_id}`)} accessibilityRole="button" style={styles.hostLink}>
+              <SocietyAvatar name={event.society.name} uri={event.society.logo_url} size={40} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: c.textSecondary, fontSize: 12 }}>{t('Hosted by')}</Text>
+                <Text style={{ color: c.text, fontWeight: '600' }} numberOfLines={1}>
+                  {event.society.name}
+                </Text>
+              </View>
+            </Pressable>
             <FollowButton societyId={event.society_id} />
-          </Pressable>
+          </View>
 
           <View style={{ gap: space.md, marginTop: space.xs }}>
             <InfoRow
@@ -299,6 +353,7 @@ export default function EventScreen() {
             ) : (
               <InfoRow icon="cash-outline" title={event.price_text || t('Free')} />
             )}
+
             {event.registration_required && (
               <InfoRow
                 icon="people-outline"
@@ -395,7 +450,35 @@ export default function EventScreen() {
             onPress={() => router.push({ pathname: '/manage/attendees', params: { eventId: event.id } })}
           />
         )}
-        <View style={{ flex: 1 }}>{primary}</View>
+        {notice ? (
+          <View style={[styles.notice, { backgroundColor: c.dangerSoft }]}>
+            <Icon name="close-circle" size={20} color={c.dangerText} />
+            <Text style={{ color: c.dangerText, fontSize: 16, fontWeight: '600', flex: 1 }}>{notice}</Text>
+          </View>
+        ) : (
+          bar && (
+            <View style={styles.barStatus}>
+              {bar.icon && (
+                <View style={[styles.barIcon, { backgroundColor: bar.iconBg }]}>
+                  <Icon name={bar.icon} size={18} color={bar.iconFg} />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }} numberOfLines={1}>
+                  {bar.title}
+                </Text>
+                {!!bar.sub && (
+                  <Text
+                    style={{ color: bar.subColor ?? c.textSecondary, fontSize: 13, fontWeight: bar.subColor ? '600' : '400' }}
+                    numberOfLines={1}>
+                    {bar.sub}
+                  </Text>
+                )}
+              </View>
+            </View>
+          )
+        )}
+        {primary && <View style={{ minWidth: q.data?.isCommittee ? 110 : 150 }}>{primary}</View>}
       </View>
 
       <Sheet visible={asking} onClose={() => setAsking(false)}>
@@ -493,17 +576,22 @@ function EventSkeleton() {
 
 const styles = StyleSheet.create({
   heroScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.15)' },
+  // Hand-off: 40pt white circles on the cover.
   headerButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: { fontSize: 28, fontWeight: '800', lineHeight: 34 },
+  title: { fontSize: 25, fontWeight: '600', lineHeight: 31 },
   h2: { fontSize: 20, fontWeight: '700', marginTop: space.sm },
-  societyRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.lg },
+  societyRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.xs },
+  hostLink: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
+  barStatus: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 50 },
+  barIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  notice: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md },
   ticket: { alignItems: 'center', gap: space.md, padding: space.lg, borderRadius: radius.lg },
   bottomBar: {
     position: 'absolute',

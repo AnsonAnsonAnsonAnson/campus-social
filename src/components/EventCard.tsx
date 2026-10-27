@@ -61,37 +61,41 @@ export function EventRow({ event }: { event: EventWithSociety }) {
   const c = useColors();
   const a = availabilityTone(event);
   const toneColor = { warning: c.warningText, danger: c.dangerText, brand: c.tintText, success: c.successText }[a.tone];
+  // Share sits beside the row link, not inside it: nested buttons are invalid on web
+  // and VoiceOver can't reach the inner one.
   return (
-    <Pressable
-      onPress={() => router.push(`/event/${event.id}`)}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.row, { opacity: pressed ? 0.7 : 1 }]}>
-      <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={styles.rowArt} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ color: c.accentText, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
-          {formatWhen(event.starts_at)}
-        </Text>
-        <Text style={{ color: c.text, fontSize: 16, lineHeight: 21, fontWeight: '600' }} numberOfLines={2}>
-          {event.status === 'cancelled' ? t('Cancelled: {title}', { title: event.title }) : event.title}
-        </Text>
-        <Text style={{ color: c.textSecondary, fontSize: 14 }} numberOfLines={1}>
-          {event.location} · {event.society.short_name ?? event.society.name}
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
-          <Text style={{ color: toneColor, fontSize: 13, fontWeight: '600', flexShrink: 1 }} numberOfLines={1}>
+    <View style={styles.row}>
+      <Pressable
+        onPress={() => router.push(`/event/${event.id}`)}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.rowLink, { opacity: pressed ? 0.7 : 1 }]}>
+        <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={styles.rowArt} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: c.accentText, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+            {formatWhen(event.starts_at)}
+          </Text>
+          <Text style={{ color: c.text, fontSize: 16, lineHeight: 21, fontWeight: '600' }} numberOfLines={2}>
+            {event.status === 'cancelled' ? t('Cancelled: {title}', { title: event.title }) : event.title}
+          </Text>
+          <Text style={{ color: c.textSecondary, fontSize: 14 }} numberOfLines={1}>
+            {event.location} · {event.society.short_name ?? event.society.name}
+          </Text>
+          <Text
+            style={{ color: toneColor, fontSize: 13, lineHeight: 30, fontWeight: '600', marginTop: 2, paddingRight: 40 }}
+            numberOfLines={1}>
             {a.label}
           </Text>
-          <Pressable
-            onPress={() => shareEvent(event)}
-            hitSlop={6}
-            accessibilityRole="button"
-            accessibilityLabel={t('Share')}
-            style={({ pressed }) => [styles.rowAction, { backgroundColor: pressed ? c.fill : 'transparent' }]}>
-            <Icon name="share-outline" size={18} color={c.textSecondary} />
-          </Pressable>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+      <Pressable
+        onPress={() => shareEvent(event)}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={t('Share')}
+        style={({ pressed }) => [styles.rowAction, { backgroundColor: pressed ? c.fill : 'transparent' }]}>
+        <Icon name="share-outline" size={18} color={c.textSecondary} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -100,22 +104,24 @@ export function NextEventCard({ ticket }: { ticket: Ticket }) {
   const c = useColors();
   const e = ticket.event;
   return (
-    <Pressable
-      onPress={() => router.push(`/event/${e.id}`)}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.next, { backgroundColor: c.ink, opacity: pressed ? 0.9 : 1 }]}>
-      <Artwork seed={e.id} uri={e.cover_url} category={e.category} style={styles.nextArt} />
-      <View style={{ flex: 1, gap: 1 }}>
-        <Text style={{ color: palette.tangerine[300], fontSize: 12, fontWeight: '600' }} numberOfLines={1}>
-          {t('Your next event · {when}', { when: `${formatDay(e.starts_at)} ${formatTime(e.starts_at)}` })}
-        </Text>
-        <Text style={{ color: c.onInk, fontSize: 16, fontWeight: '600' }} numberOfLines={1}>
-          {e.title}
-        </Text>
-        <Text style={{ color: palette.neutral[400], fontSize: 13 }} numberOfLines={1}>
-          {e.location}
-        </Text>
-      </View>
+    <View style={[styles.next, { backgroundColor: c.ink }]}>
+      <Pressable
+        onPress={() => router.push(`/event/${e.id}`)}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.nextLink, { opacity: pressed ? 0.8 : 1 }]}>
+        <Artwork seed={e.id} uri={e.cover_url} category={e.category} style={styles.nextArt} />
+        <View style={{ flex: 1, gap: 1 }}>
+          <Text style={{ color: palette.tangerine[300], fontSize: 12, fontWeight: '600' }} numberOfLines={1}>
+            {t('Your next event · {when}', { when: `${formatDay(e.starts_at)} ${formatTime(e.starts_at)}` })}
+          </Text>
+          <Text style={{ color: c.onInk, fontSize: 16, fontWeight: '600' }} numberOfLines={1}>
+            {e.title}
+          </Text>
+          <Text style={{ color: palette.neutral[400], fontSize: 13 }} numberOfLines={1}>
+            {e.location}
+          </Text>
+        </View>
+      </Pressable>
       <Pressable
         onPress={() => router.navigate('/tickets')}
         accessibilityRole="button"
@@ -123,7 +129,7 @@ export function NextEventCard({ ticket }: { ticket: Ticket }) {
         <Icon name="qr-code-outline" size={15} color={c.ink} />
         <Text style={{ color: c.ink, fontSize: 14, fontWeight: '600' }}>{t('Ticket')}</Text>
       </Pressable>
-    </Pressable>
+    </View>
   );
 }
 
@@ -131,10 +137,21 @@ const styles = StyleSheet.create({
   large: { borderRadius: radius.lg },
   largeArt: { height: 140, borderRadius: 16 },
   title: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
-  row: { flexDirection: 'row', gap: space.md, paddingVertical: space.xs, marginHorizontal: space.lg },
+  row: { paddingVertical: space.xs, marginHorizontal: space.lg },
+  rowLink: { flexDirection: 'row', gap: space.md },
   rowArt: { width: 88, height: 88, borderRadius: 12 },
-  rowAction: { width: 36, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  rowAction: {
+    position: 'absolute',
+    right: 0,
+    bottom: space.xs,
+    width: 36,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   next: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: 12, borderRadius: 18 },
+  nextLink: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
   nextArt: { width: 56, height: 56, borderRadius: 12 },
   nextButton: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 32, paddingHorizontal: 12, borderRadius: radius.pill },
 });
