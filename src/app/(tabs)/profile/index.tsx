@@ -98,8 +98,10 @@ export default function Profile() {
           <View style={[styles.avatar, { backgroundColor: c.tint }]}>
             {profile?.avatar_url ? (
               <SocietyAvatar name={profile.display_name || user.email} uri={profile.avatar_url} size={88} />
+            ) : profile?.display_name ? (
+              <Text style={styles.avatarText}>{profile.display_name.slice(0, 1).toUpperCase()}</Text>
             ) : (
-              <Text style={styles.avatarText}>{(profile?.display_name || user.email).slice(0, 1).toUpperCase()}</Text>
+              <Icon name="person" size={40} color="#fff" />
             )}
           </View>
           <Pressable onPress={() => router.push('/edit-profile')} accessibilityRole="button" style={styles.nameRow}>

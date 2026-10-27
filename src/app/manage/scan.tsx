@@ -93,7 +93,7 @@ export default function Scan() {
     router.back();
   };
 
-  const tone = result ? (result.ok ? TONES.ok : WARNINGS.includes(result.message) ? TONES.warn : TONES.bad) : null;
+  const tone = result ? (result.ok ? TONES.ok : WARNINGS.some((w) => result.message.startsWith(w)) ? TONES.warn : TONES.bad) : null;
   const counter =
     mode === 'member'
       ? t('{n} cards checked', { n: count })
