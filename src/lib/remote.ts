@@ -167,6 +167,20 @@ export const remoteBackend: Backend = {
     return check(await db().from('campus_dates').select('*').lte('starts_on', to).gte('ends_on', from).order('starts_on')) as CampusDate[];
   },
 
+  async myHiddenSocietyIds() {
+    if (!(await currentUser())) return [];
+    const rows = check(await db().from('society_blocks').select('society_id'));
+    return (rows ?? []).map((r: { society_id: string }) => r.society_id);
+  },
+  async setSocietyHidden(societyId, hidden) {
+    await requireUserId();
+    if (hidden) {
+      const { error } = await db().from('society_blocks').insert({ society_id: societyId });
+      if (error && error.code !== '23505') throw new Error(error.message);
+    } else {
+      check(await db().from('society_blocks').delete().eq('society_id', societyId));
+    }
+  },
   async myFollowIds() {
     if (!(await currentUser())) return [];
     const rows = check(await db().from('follows').select('society_id'));

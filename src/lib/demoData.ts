@@ -115,6 +115,7 @@ type EventSeed = Omit<
   | 'confirmed_count'
   | 'waitlist_count'
   | 'signup_question'
+  | 'members_only'
   | 'removed_at'
 > &
   Partial<CampusEvent>;
@@ -130,6 +131,7 @@ function event(n: number, e: EventSeed): CampusEvent {
     confirmed_count: 0,
     waitlist_count: 0,
     signup_question: null,
+    members_only: false,
     removed_at: null,
     ...e,
   };
@@ -260,6 +262,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
     }),
     event(10, {
       society_id: sid(1),
+      members_only: true,
       title: 'MacLehose Section 2 day hike',
       description: 'A full day on one of the most beautiful sections of the MacLehose Trail. Moderate to hard.',
       category: 'Sports',

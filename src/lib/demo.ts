@@ -72,6 +72,7 @@ const state = {
   banners: makeDemoBanners() as Banner[],
   campusDates: makeDemoCampusDates(),
   follows: new Set<string>([demoSocieties[0].id, demoSocieties[1].id]),
+  hidden: new Set<string>(),
   registrations: [] as Registration[],
   // In demo mode you help run CU Coding Society, so committee tools are visible.
   members: [{ society_id: demoSocieties[1].id, role: 'owner' as SocietyRole }],
@@ -407,6 +408,17 @@ export const demoBackend: Backend = {
     return state.campusDates.filter((d) => d.ends_on >= from && d.starts_on <= to);
   },
 
+  async myHiddenSocietyIds() {
+    return state.user ? [...state.hidden] : [];
+  },
+  async setSocietyHidden(societyId, hidden) {
+    requireUser();
+    if (hidden) {
+      state.hidden.add(societyId);
+      // Mirrors unfollow_hidden_society().
+      await this.setFollow(societyId, false);
+    } else state.hidden.delete(societyId);
+  },
   async myFollowIds() {
     return state.user ? [...state.follows] : [];
   },
@@ -451,6 +463,10 @@ export const demoBackend: Backend = {
 
     let reg = state.registrations.find((r) => r.event_id === eventId && r.user_id === user.id);
     if (reg && reg.status !== 'cancelled') return reg;
+    // Mirrors enforce_members_only().
+    if (e.members_only && !isMember(e.society_id) && !isCurrentMember(e.society_id)) {
+      throw new Error('This event is for members only. Join the society first.');
+    }
 
     let status: Registration['status'];
     if (e.capacity == null || e.confirmed_count < e.capacity) status = 'confirmed';

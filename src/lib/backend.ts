@@ -76,6 +76,9 @@ export interface Backend {
 
   // Signed-in student
   myFollowIds(): Promise<string[]>;
+  /** Societies this person has hidden from Discover and the calendar. */
+  myHiddenSocietyIds(): Promise<string[]>;
+  setSocietyHidden(societyId: string, hidden: boolean): Promise<void>;
   setFollow(societyId: string, follow: boolean): Promise<void>;
   myTickets(): Promise<Ticket[]>;
   myRegistration(eventId: string): Promise<Registration | null>;

@@ -14,6 +14,7 @@ import { Artwork, Button, ErrorView, Field, Icon, InfoRow, Pill, ProgressBar, Sh
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { showAlert } from '@/lib/dialog';
+import { membershipState } from '@/lib/commerce';
 import { availability, formatWhen } from '@/lib/format';
 import { offerNotifications, refreshReminders } from '@/lib/notifications';
 import { radius, space, type, useColors } from '@/lib/theme';
@@ -33,7 +34,12 @@ export default function EventScreen() {
     const [event, registration, mine] = await Promise.all([api.getEvent(id), api.myRegistration(id), api.mySocieties()]);
     const position = registration?.status === 'waitlisted' ? await api.waitlistPosition(id) : 0;
     const isCommittee = !!event && mine.some((s) => s.id === event.society_id);
-    return { event, registration, position, isCommittee };
+    // Members-only: can this person sign up, or do they need to join first?
+    const isMember =
+      !!event?.members_only &&
+      !!user &&
+      (await api.myMemberships()).some((m) => m.society_id === event.society_id && membershipState(m, m.plan).key === 'active');
+    return { event, registration, position, isCommittee, isMember };
   }, [id, user?.id]);
 
   if (q.loading) return <EventSkeleton />;
@@ -160,6 +166,14 @@ export default function EventScreen() {
         onPress={cancel}
       />
     );
+  else if (event.members_only && !q.data?.isMember && !q.data?.isCommittee && ['open', 'few', 'waitlist'].includes(avail.kind))
+    primary = (
+      <Button
+        title={t('Join {society} to sign up', { society: event.society.short_name ?? event.society.name })}
+        icon="card-outline"
+        onPress={() => router.push(`/society/${event.society_id}`)}
+      />
+    );
   else if (avail.kind === 'open' || avail.kind === 'few')
     primary = <Button title={t('Register')} icon="ticket-outline" loading={busy} onPress={startRegister} />;
   else if (avail.kind === 'waitlist')
@@ -186,6 +200,7 @@ export default function EventScreen() {
         <View style={{ padding: space.lg, gap: space.md }}>
           <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
             <Pill label={t(event.category)} tone="brand" />
+            {event.members_only && <Pill label={t('Members only')} tone="ink" icon="card-outline" />}
             {event.status === 'draft' && <Pill label={t('Draft')} tone="warning" />}
             {event.status === 'cancelled' && <Pill label={t('Cancelled')} tone="danger" />}
             {!!event.removed_at && <Pill label={t('Hidden by moderators')} tone="danger" />}

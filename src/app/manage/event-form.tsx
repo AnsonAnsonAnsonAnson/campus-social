@@ -40,6 +40,7 @@ export default function EventForm() {
   const [waitlist, setWaitlist] = useState(true);
   const [priceText, setPriceText] = useState(() => t('Free'));
   const [question, setQuestion] = useState('');
+  const [membersOnly, setMembersOnly] = useState(false);
   const [opensAt, setOpensAt] = useState<Date | null>(null);
   const [closesAt, setClosesAt] = useState<Date | null>(null);
   const [status, setStatus] = useState<EventStatus>('draft');
@@ -66,6 +67,7 @@ export default function EventForm() {
         setWaitlist(e.waitlist_enabled);
         setPriceText(e.price_text ?? '');
         setQuestion(e.signup_question ?? '');
+        setMembersOnly(e.members_only);
         setOpensAt(e.registration_opens_at ? shift(e.registration_opens_at) : null);
         setClosesAt(e.registration_closes_at ? shift(e.registration_closes_at) : null);
         setStatus(copyFrom ? 'draft' : e.status);
@@ -114,6 +116,7 @@ export default function EventForm() {
       registration_closes_at: registrationRequired && closesAt ? closesAt.toISOString() : null,
       price_text: priceText.trim() || null,
       signup_question: registrationRequired ? question.trim() || null : null,
+      members_only: registrationRequired && membersOnly,
     };
     setBusy(true);
     try {
@@ -201,6 +204,12 @@ export default function EventForm() {
                 placeholder={t('Leave empty for unlimited')}
               />
               <Toggle label={t('Waitlist when full')} value={waitlist} onChange={setWaitlist} />
+              <Toggle label={t('Members only')} value={membersOnly} onChange={setMembersOnly} />
+              {membersOnly && (
+                <Text style={{ color: c.textSecondary, fontSize: 13, marginTop: -6 }}>
+                  {t('Everyone can see the event; only current members and your committee can sign up.')}
+                </Text>
+              )}
               <Toggle
                 label={t('Sign-up opens later')}
                 value={!!opensAt}

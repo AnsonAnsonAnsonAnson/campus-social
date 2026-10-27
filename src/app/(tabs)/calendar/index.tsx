@@ -39,7 +39,7 @@ const KIND_ICON = {
 export default function CalendarScreen() {
   const c = useColors();
   const zh = getLang() === 'zh-Hant';
-  const { user, followIds, profile } = useAuth();
+  const { user, followIds, hiddenIds, profile } = useAuth();
   const [selected, setSelected] = useState(todayHK());
   const [month, setMonth] = useState(todayHK().slice(0, 7));
   const [filter, setFilter] = useState<Filter>('all');
@@ -57,11 +57,11 @@ export default function CalendarScreen() {
   }, [month, user?.id]);
 
   const events = useMemo(() => {
-    const all = data.data?.events ?? [];
+    const all = (data.data?.events ?? []).filter((e) => !hiddenIds.has(e.society_id) || data.data?.goingIds.has(e.id));
     if (filter === 'following') return all.filter((e) => followIds.has(e.society_id));
     if (filter === 'going') return all.filter((e) => data.data?.goingIds.has(e.id));
     return all;
-  }, [data.data, filter, followIds]);
+  }, [data.data, filter, followIds, hiddenIds]);
 
   // Show university-wide dates plus the student's own college.
   const college = profile?.college;

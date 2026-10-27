@@ -59,6 +59,8 @@ export type CampusEvent = {
   price_text: string | null;
   /** Optional question attendees answer when they sign up. */
   signup_question: string | null;
+  /** Only current members (and the committee) can sign up; everyone can see it. */
+  members_only: boolean;
   confirmed_count: number;
   waitlist_count: number;
   /** Set when moderators take the event down; only its committee still sees it. */

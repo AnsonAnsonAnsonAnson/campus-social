@@ -21,7 +21,7 @@ const DAY = 86400_000;
 
 export default function Discover() {
   const c = useColors();
-  const { followIds, user } = useAuth();
+  const { followIds, hiddenIds, user } = useAuth();
   const [category, setCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
@@ -41,14 +41,18 @@ export default function Discover() {
   }, [user?.id]);
 
   const sections = useMemo(() => {
-    const events = feed.data?.events ?? [];
+    // Hidden societies drop out of the feed but still show in search.
+    const visible = <T extends { society_id: string }>(xs: T[]) => xs.filter((x) => !hiddenIds.has(x.society_id));
+    const events = visible(feed.data?.events ?? []);
     const weekEnd = feed.data?.weekEnd ?? '';
     return {
       following: events.filter((e) => followIds.has(e.society_id)).slice(0, 10),
       thisWeek: events.filter((e) => e.starts_at <= weekEnd).slice(0, 10),
       upcoming: events.filter((e) => !category || e.category === category),
+      banners: visible(feed.data?.banners ?? []),
+      products: visible(feed.data?.products ?? []),
     };
-  }, [feed.data, followIds, category]);
+  }, [feed.data, followIds, hiddenIds, category]);
 
   const query = useDebouncedValue(search.trim(), 250);
   const searching = query.length > 1;
@@ -83,7 +87,7 @@ export default function Discover() {
               <NextEventCard ticket={feed.data.next} />
             </View>
           )}
-          <BannerCarousel banners={feed.data?.banners ?? []} />
+          <BannerCarousel banners={sections.banners} />
 
           {sections.following.length > 0 && (
             <>
@@ -99,10 +103,10 @@ export default function Discover() {
             </>
           )}
 
-          {!!feed.data?.products.length && (
+          {!!sections.products.length && (
             <>
               <SectionHeader title={t('Society merch')} />
-              <ProductRow products={feed.data.products.slice(0, 10)} showSociety />
+              <ProductRow products={sections.products.slice(0, 10)} showSociety />
             </>
           )}
 

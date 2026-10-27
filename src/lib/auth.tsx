@@ -11,6 +11,9 @@ type AuthState = {
   user: AuthUser | null;
   profile: Profile | null;
   followIds: Set<string>;
+  /** Societies hidden from Discover and the calendar. */
+  hiddenIds: Set<string>;
+  setHidden: (societyId: string, hidden: boolean) => Promise<void>;
   refreshProfile: () => Promise<void>;
   toggleFollow: (societyId: string) => Promise<void>;
   /** Returns true when signed in; otherwise opens the sign-in sheet. */
@@ -24,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [followIds, setFollowIds] = useState<Set<string>>(new Set());
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
   const loadUserData = useCallback(async (u: AuthUser | null) => {
     setUser(u);
@@ -31,11 +35,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearSavedTickets();
       setProfile(null);
       setFollowIds(new Set());
+      setHiddenIds(new Set());
       return;
     }
-    const [p, f] = await Promise.all([api.getProfile(), api.myFollowIds()]);
+    const [p, f, h] = await Promise.all([api.getProfile(), api.myFollowIds(), api.myHiddenSocietyIds()]);
     setProfile(p);
     setFollowIds(new Set(f));
+    setHiddenIds(new Set(h));
   }, []);
 
   useEffect(() => {
@@ -91,9 +97,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [followIds, requireSignIn],
   );
 
+  const setHidden = useCallback(
+    async (societyId: string, hidden: boolean) => {
+      if (!requireSignIn()) return;
+      await api.setSocietyHidden(societyId, hidden);
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        if (hidden) next.add(societyId);
+        else next.delete(societyId);
+        return next;
+      });
+      // Hiding also unfollows (on the server too).
+      if (hidden) {
+        setFollowIds((prev) => {
+          const next = new Set(prev);
+          next.delete(societyId);
+          return next;
+        });
+      }
+      invalidate();
+    },
+    [requireSignIn],
+  );
+
   const value = useMemo(
-    () => ({ ready, user, profile, followIds, refreshProfile, toggleFollow, requireSignIn }),
-    [ready, user, profile, followIds, refreshProfile, toggleFollow, requireSignIn],
+    () => ({ ready, user, profile, followIds, hiddenIds, setHidden, refreshProfile, toggleFollow, requireSignIn }),
+    [ready, user, profile, followIds, hiddenIds, setHidden, refreshProfile, toggleFollow, requireSignIn],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

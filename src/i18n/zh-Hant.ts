@@ -935,6 +935,16 @@ const zhHant: Record<string, string> = {
   'Already checked in': '已經簽到',
   'Ticket not found': '找不到門票',
   'This ticket is for a different event': '此門票屬於另一個活動',
+  'Join {society} to sign up': '加入{society}以報名',
+  'Members only': '會員專屬',
+  'Everyone can see the event; only current members and your committee can sign up.':
+    '所有人都看到此活動，但只有現任會員及幹事會可以報名。',
+  '{name} is back in your feed': '{name} 已重新顯示',
+  'You won’t see {name} in Discover or your calendar': '你將不會在「探索」及日曆看到 {name}',
+  'Show this society again': '重新顯示此學會',
+  'Hide this society': '隱藏此學會',
+  'Hidden from your Discover and calendar. Tap to show again.': '已從你的「探索」及日曆隱藏。點按以重新顯示。',
+  'This event is for members only. Join the society first.': '此活動只限會員參加，請先加入學會。',
 };
 
 export default zhHant;

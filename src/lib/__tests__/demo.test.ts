@@ -90,3 +90,31 @@ it('hides an event once moderators remove it', async () => {
   expect((await api.openReports()).some((r) => r.target_id === target)).toBe(false);
   await expect(api.register(target)).rejects.toThrow();
 });
+
+it('lets only current members sign up for members-only events', async () => {
+  const hike = eid(10); // Hiking Club, members only; the demo user is not a member
+  await expect(api.register(hike)).rejects.toThrow('members only');
+  const plan = (await api.listPlans('10000000-0000-4000-8000-000000000001')).find((p) => p.is_open)!;
+  const m = await api.joinSociety({
+    plan_id: plan.id,
+    full_name: 'Tester',
+    student_id: '',
+    college: '',
+    major: '',
+    phone: '',
+    answers: [],
+    payment_method: 'cash',
+  });
+  // A paid membership only counts once the committee approves the payment.
+  expect(m.status).toBe('pending');
+  await expect(api.register(hike)).rejects.toThrow('members only');
+});
+
+it('hides a society and unfollows it', async () => {
+  await api.setFollow(CODING_SOCIETY, true);
+  await api.setSocietyHidden(CODING_SOCIETY, true);
+  expect(await api.myHiddenSocietyIds()).toContain(CODING_SOCIETY);
+  expect(await api.myFollowIds()).not.toContain(CODING_SOCIETY);
+  await api.setSocietyHidden(CODING_SOCIETY, false);
+  expect(await api.myHiddenSocietyIds()).not.toContain(CODING_SOCIETY);
+});

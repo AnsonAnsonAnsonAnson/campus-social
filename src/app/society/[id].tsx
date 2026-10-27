@@ -7,8 +7,21 @@ import { ActionSheetIOS, Platform, Pressable, RefreshControl, ScrollView, Share,
 import { EventRow } from '@/components/EventCard';
 import { ProductRow } from '@/components/ProductCard';
 import { FollowButton } from '@/components/SocietyRow';
-import { Artwork, Button, EmptyState, ErrorView, Icon, Loading, Pill, SectionHeader, SocietyAvatar, UnderlineTabs } from '@/components/ui';
-import { api } from '@/lib/api';
+import {
+  Artwork,
+  Banner,
+  Button,
+  EmptyState,
+  ErrorView,
+  Icon,
+  Loading,
+  Pill,
+  SectionHeader,
+  SocietyAvatar,
+  UnderlineTabs,
+} from '@/components/ui';
+import { toast } from '@/components/Toast';
+import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { membershipState } from '@/lib/commerce';
 import { showAlert } from '@/lib/dialog';
@@ -22,7 +35,7 @@ export default function SocietyScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const c = useColors();
   const lang = useLang();
-  const { user, requireSignIn } = useAuth();
+  const { user, requireSignIn, hiddenIds, setHidden } = useAuth();
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
   const [expanded, setExpanded] = useState(false);
 
@@ -61,14 +74,26 @@ export default function SocietyScreen() {
   const instagram = s.instagram?.replace(/^@/, '');
   const share = () => Share.share({ message: `${s.name}\n${Linking.createURL(`/society/${s.id}`)}` });
   const report = () => requireSignIn() && router.push({ pathname: '/report', params: { type: 'society', id: s.id, name: s.name } });
+  const hidden = hiddenIds.has(s.id);
+  const toggleHidden = () =>
+    setHidden(s.id, !hidden)
+      .then(() =>
+        toast(
+          hidden
+            ? t('{name} is back in your feed', { name: s.short_name ?? s.name })
+            : t('You won’t see {name} in Discover or your calendar', { name: s.short_name ?? s.name }),
+        ),
+      )
+      .catch((e) => showAlert(t('Could not update'), errorMessage(e)));
   const more = () => {
-    const options = [t('Share'), t('Report society'), t('Cancel')];
-    const run = (i: number) => (i === 0 ? share() : i === 1 ? report() : undefined);
-    if (Platform.OS === 'ios') ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 2, destructiveButtonIndex: 1 }, run);
+    const options = [t('Share'), hidden ? t('Show this society again') : t('Hide this society'), t('Report society'), t('Cancel')];
+    const run = (i: number) => (i === 0 ? share() : i === 1 ? toggleHidden() : i === 2 ? report() : undefined);
+    if (Platform.OS === 'ios') ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 3, destructiveButtonIndex: 2 }, run);
     else
       showAlert(s.name, undefined, [
         { text: options[0], onPress: () => run(0) },
         { text: options[1], onPress: () => run(1) },
+        { text: options[2], onPress: () => run(2) },
         { text: t('Cancel'), style: 'cancel' },
       ]);
   };
@@ -103,6 +128,11 @@ export default function SocietyScreen() {
           {t(s.category)}
           {s.college ? ` · ${t('{college} College', { college: t(s.college) })}` : ''}
         </Text>
+        {hidden && (
+          <Pressable onPress={toggleHidden} accessibilityRole="button" style={{ marginTop: space.xs, marginHorizontal: -space.lg }}>
+            <Banner icon="eye-off-outline" text={t('Hidden from your Discover and calendar. Tap to show again.')} />
+          </Pressable>
+        )}
         {s.status !== 'approved' && <Pill label={t('Pending review: only your committee can see this')} tone="warning" />}
 
         <View style={styles.stats}>
