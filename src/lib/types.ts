@@ -61,6 +61,12 @@ export type CampusEvent = {
   signup_question: string | null;
   /** Only current members (and the committee) can sign up; everyone can see it. */
   members_only: boolean;
+  /** Ticket price; null or 0 is free. Paid the society directly, like shop orders. */
+  price_hkd: number | null;
+  /** Price for current members, if different (0 = free for members). */
+  member_price_hkd: number | null;
+  /** Unpaid FPS / PayMe tickets give up their place after this many hours. */
+  payment_window_hours: number;
   confirmed_count: number;
   waitlist_count: number;
   /** Set when moderators take the event down; only its committee still sees it. */
@@ -78,11 +84,22 @@ export type Registration = {
   status: RegistrationStatus;
   ticket_code: string;
   answer: string | null;
+  /** Chosen at sign-up for paid events. */
+  payment_method: PaymentMethod | null;
   checked_in_at: string | null;
   created_at: string;
 };
 
-export type Ticket = Registration & { event: EventWithSociety };
+/** The order behind a paid ticket. */
+export type TicketOrder = Pick<
+  Order,
+  'id' | 'ref' | 'status' | 'total_hkd' | 'expires_at' | 'payment_method' | 'member_price' | 'receipt_at' | 'created_at'
+>;
+
+/** Your own sign-up, with the order to pay when the event is paid (null when free for you). */
+export type MyRegistration = Registration & { order: TicketOrder | null };
+
+export type Ticket = MyRegistration & { event: EventWithSociety };
 
 export type Banner = {
   id: string;
@@ -124,7 +141,8 @@ export type Attendee = {
   created_at: string;
 };
 
-export type CheckInResult = { ok: boolean; name?: string; message: string };
+/** `ref` is the unpaid ticket's order reference when the message is "Not paid yet". */
+export type CheckInResult = { ok: boolean; name?: string; message: string; ref?: string };
 
 export type MySociety = Society & { role: SocietyRole };
 
@@ -246,6 +264,9 @@ export type Membership = {
   claimed_paid_at: string | null;
   paid_at: string | null;
   imported: boolean;
+  /** Payment screenshot in the private receipts bucket; cleared once it's deleted after review. */
+  receipt_path: string | null;
+  receipt_at: string | null;
   created_at: string;
 };
 
@@ -329,6 +350,9 @@ export type Order = {
   id: string;
   society_id: string;
   product_id: string | null;
+  /** Set for event tickets (product_id is then null). */
+  event_id: string | null;
+  registration_id: string | null;
   user_id: string | null;
   ref: string;
   product_title: string;
@@ -345,6 +369,8 @@ export type Order = {
   ready_at: string | null;
   collected_at: string | null;
   cancelled_at: string | null;
+  receipt_path: string | null;
+  receipt_at: string | null;
   created_at: string;
 };
 
@@ -355,3 +381,6 @@ export type MyOrder = Order & { society: SocietySummary & { category: string } }
 export type SocietyOrder = Order & { buyer_name: string; buyer_email: string; expired: boolean };
 
 export type PickupResult = CheckInResult & { ref?: string; items?: string; collected_at?: string };
+
+/** Which record a payment screenshot belongs to. */
+export type ReceiptKind = 'order' | 'membership';

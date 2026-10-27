@@ -41,6 +41,9 @@ export default function EventForm() {
   const [priceText, setPriceText] = useState(() => t('Free'));
   const [question, setQuestion] = useState('');
   const [membersOnly, setMembersOnly] = useState(false);
+  const [ticketPrice, setTicketPrice] = useState('');
+  const [memberPrice, setMemberPrice] = useState('');
+  const [windowHours, setWindowHours] = useState('48');
   const [opensAt, setOpensAt] = useState<Date | null>(null);
   const [closesAt, setClosesAt] = useState<Date | null>(null);
   const [status, setStatus] = useState<EventStatus>('draft');
@@ -68,6 +71,9 @@ export default function EventForm() {
         setPriceText(e.price_text ?? '');
         setQuestion(e.signup_question ?? '');
         setMembersOnly(e.members_only);
+        setTicketPrice(e.price_hkd ? String(e.price_hkd) : '');
+        setMemberPrice(e.member_price_hkd != null ? String(e.member_price_hkd) : '');
+        setWindowHours(String(e.payment_window_hours));
         setOpensAt(e.registration_opens_at ? shift(e.registration_opens_at) : null);
         setClosesAt(e.registration_closes_at ? shift(e.registration_closes_at) : null);
         setStatus(copyFrom ? 'draft' : e.status);
@@ -78,6 +84,19 @@ export default function EventForm() {
   }, [eventId, copyFrom]);
 
   if (loading) return <Loading />;
+
+  const priceN = Number(ticketPrice.trim());
+  const memberN = Number(memberPrice.trim());
+  const hoursN = parseInt(windowHours, 10);
+  const priceError = ticketPrice.trim() && !(priceN >= 0 && priceN <= 10000) ? t('Enter an amount in HK$, like 50') : null;
+  const memberError =
+    memberPrice.trim() && !(memberN >= 0 && memberN <= 10000)
+      ? t('Enter an amount in HK$, like 50')
+      : memberPrice.trim() && priceN > 0 && memberN >= priceN
+        ? t('Should be less than the normal price')
+        : null;
+  const hoursError = !(hoursN >= 1 && hoursN <= 336) ? t('Between 1 and 336 hours') : null;
+  const paid = registrationRequired && priceN > 0;
 
   const pickCover = async () => {
     try {
@@ -117,6 +136,9 @@ export default function EventForm() {
       price_text: priceText.trim() || null,
       signup_question: registrationRequired ? question.trim() || null : null,
       members_only: registrationRequired && membersOnly,
+      price_hkd: paid ? priceN : null,
+      member_price_hkd: paid && memberPrice.trim() ? memberN : null,
+      payment_window_hours: hoursN >= 1 && hoursN <= 336 ? hoursN : 48,
     };
     setBusy(true);
     try {
@@ -146,7 +168,7 @@ export default function EventForm() {
       { text: t('Cancel event'), style: 'destructive', onPress: () => save('cancelled') },
     ]);
 
-  const valid = title.trim().length >= 3 && location.trim().length > 0;
+  const valid = title.trim().length >= 3 && location.trim().length > 0 && !priceError && !memberError && !(paid && hoursError);
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -234,12 +256,57 @@ export default function EventForm() {
           )}
         </View>
 
+        {registrationRequired && (
+          <View style={[styles.group, { backgroundColor: c.card }]}>
+            <View style={{ flexDirection: 'row', gap: space.md }}>
+              <View style={{ flex: 1 }}>
+                <Field
+                  label={t('Ticket price (HK$)')}
+                  value={ticketPrice}
+                  onChangeText={setTicketPrice}
+                  keyboardType="decimal-pad"
+                  placeholder={t('Free')}
+                  error={priceError}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Field
+                  label={t('Member price')}
+                  value={memberPrice}
+                  onChangeText={setMemberPrice}
+                  keyboardType="decimal-pad"
+                  placeholder={t('Optional')}
+                  error={memberError}
+                  editable={priceN > 0}
+                />
+              </View>
+            </View>
+            {paid && (
+              <Field
+                label={t('Hours to pay')}
+                hint={t('Unpaid FPS and PayMe tickets give up their place after this, and the waitlist moves up.')}
+                value={windowHours}
+                onChangeText={(v) => setWindowHours(v.replace(/\D/g, ''))}
+                keyboardType="number-pad"
+                error={hoursError}
+              />
+            )}
+            <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19 }}>
+              {paid
+                ? t(
+                    'People pay your society directly by FPS, PayMe or cash, using a reference the app gives them. You confirm payments in Orders; the QR ticket only works at the door once it is paid.',
+                  )
+                : t('Leave the price empty for a free event. A member price of 0 makes it free for members only.')}
+            </Text>
+          </View>
+        )}
+
         <Field
-          label={t('Price')}
+          label={paid ? t('Price note (optional)') : t('Price')}
           value={priceText}
           onChangeText={setPriceText}
-          placeholder={t('Free / HK$50 at the door')}
-          hint={t('Payments are handled outside the app for now.')}
+          placeholder={paid ? t('e.g. Includes dinner and coach') : t('Free / HK$50 at the door')}
+          hint={paid ? undefined : t('Shown on the event page as written.')}
         />
 
         <View style={{ gap: space.sm }}>

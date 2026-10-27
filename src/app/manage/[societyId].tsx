@@ -400,7 +400,7 @@ function ShopSection({ societyId, data, isAdmin }: { societyId: string; data: Da
   const c = useColors();
   const orders = data.orders.filter((o) => !isExpired(o));
   const toCheck = orders.filter((o) => o.status === 'payment_claimed').length;
-  const toHandOut = orders.filter((o) => o.status === 'paid' || o.status === 'ready').length;
+  const toHandOut = orders.filter((o) => !o.event_id && (o.status === 'paid' || o.status === 'ready')).length;
   const takings = orders.filter((o) => ['paid', 'ready', 'collected'].includes(o.status)).reduce((n, o) => n + o.total_hkd, 0);
   const noPayment = !data.payment?.fps_id && !data.payment?.payme_link;
 
@@ -448,6 +448,14 @@ function ShopSection({ societyId, data, isAdmin }: { societyId: string; data: Da
               onPress={() => router.push({ pathname: '/manage/payment-settings', params: { societyId } })}
             />
           )}
+          {isAdmin && (
+            <ListRow
+              icon="git-compare-outline"
+              title={t('Match bank statement')}
+              subtitle={t('Tick off payments by pasting your bank’s list')}
+              onPress={() => router.push({ pathname: '/manage/match', params: { societyId } })}
+            />
+          )}
           <ListRow
             icon="scan-outline"
             title={t('Pickup scanner')}
@@ -455,7 +463,9 @@ function ShopSection({ societyId, data, isAdmin }: { societyId: string; data: Da
           />
         </ListGroup>
         <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19, marginHorizontal: space.lg }}>
-          {t('Buyers pay your society directly by FPS, PayMe or cash. The app never holds money; refunds happen outside the app.')}
+          {t(
+            'Buyers and ticket holders pay your society directly by FPS, PayMe or cash. The app never holds money; refunds happen outside the app.',
+          )}
         </Text>
       </View>
     </View>

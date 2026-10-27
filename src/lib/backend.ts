@@ -8,6 +8,8 @@ import type {
   MembershipStatus,
   MyMembership,
   MyOrder,
+  MyRegistration,
+  ReceiptKind,
   Order,
   OrderStatus,
   PaymentMethod,
@@ -81,10 +83,10 @@ export interface Backend {
   setSocietyHidden(societyId: string, hidden: boolean): Promise<void>;
   setFollow(societyId: string, follow: boolean): Promise<void>;
   myTickets(): Promise<Ticket[]>;
-  myRegistration(eventId: string): Promise<Registration | null>;
+  myRegistration(eventId: string): Promise<MyRegistration | null>;
   waitlistPosition(eventId: string): Promise<number>;
-  /** `answer` replies to the event's sign-up question, if it has one. */
-  register(eventId: string, answer?: string): Promise<Registration>;
+  /** `answer` replies to the event's sign-up question, if it has one; `method` is needed for paid events. */
+  register(eventId: string, answer?: string, method?: PaymentMethod): Promise<Registration>;
   cancelRegistration(eventId: string): Promise<void>;
   report(targetType: ReportTarget, targetId: string, reason: string): Promise<void>;
 
@@ -143,6 +145,13 @@ export interface Backend {
   myOrders(): Promise<MyOrder[]>;
   claimOrderPaid(id: string, note?: string): Promise<void>;
   cancelMyOrder(id: string): Promise<void>;
+  /**
+   * Optional payment screenshot for an order or a membership (an already compressed
+   * JPEG). Replaces any earlier one and tells the treasurer, like "I've paid".
+   */
+  uploadReceipt(kind: ReceiptKind, record: { id: string; society_id: string }, jpegUri: string): Promise<void>;
+  /** A short-lived link to a screenshot, for the payer or the society's admins. */
+  receiptUrl(path: string): Promise<string>;
 
   // Shop: committee
   setPaymentSettings(societyId: string, s: Pick<PaymentSettings, 'fps_id' | 'payee_name' | 'payme_link' | 'instructions'>): Promise<void>;

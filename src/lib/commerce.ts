@@ -3,7 +3,17 @@
 // import and export. Kept here (not in screens) so they can be unit tested.
 import { todayHK } from './format';
 import { t } from './i18n';
-import type { ImportRow, Membership, MembershipPlan, Order, OrderStatus, ProductWithStock } from './types';
+import type {
+  ImportRow,
+  Membership,
+  MembershipPlan,
+  MyRegistration,
+  Order,
+  OrderStatus,
+  ProductWithStock,
+  ReceiptKind,
+  TicketOrder,
+} from './types';
 
 export const MEMBER_QR_PREFIX = 'campussocial:member:';
 export const ORDER_QR_PREFIX = 'campussocial:order:';
@@ -52,6 +62,69 @@ export function orderStatus(o: Pick<Order, 'status' | 'expires_at'>): { label: s
     refunded: { label: t('Refunded'), tone: 'neutral' },
   };
   return map[o.status];
+}
+
+/** Where a payment screenshot lives in the private receipts bucket: one file per record, replaced on re-upload. */
+export function receiptPath(kind: ReceiptKind, societyId: string, id: string) {
+  return `${societyId}/${kind}/${id}.jpg`;
+}
+
+/** The order that decides whether a paid ticket works: the newest one not cancelled or refunded. */
+export function liveTicketOrder(orders: TicketOrder[] | null | undefined): TicketOrder | null {
+  return (
+    [...(orders ?? [])]
+      .filter((o) => o.status !== 'cancelled' && o.status !== 'refunded')
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null
+  );
+}
+
+/**
+ * What a sign-up needs before the QR works at the door. Free events (and tickets
+ * free for members) have no order. Unpaid FPS / PayMe tickets past their window
+ * lose the place the next time anyone signs up.
+ */
+export function ticketPayment(reg: Pick<MyRegistration, 'status' | 'order'>, now = new Date().toISOString()) {
+  const o = reg.order;
+  if (reg.status !== 'confirmed' || !o) return { key: 'none' as const };
+  if (o.status === 'paid' || o.status === 'ready' || o.status === 'collected') return { key: 'paid' as const, order: o };
+  if (o.status === 'payment_claimed') return { key: 'claimed' as const, order: o };
+  if (isExpired(o, now)) return { key: 'expired' as const, order: o };
+  return { key: 'unpaid' as const, order: o };
+}
+
+// ---------------------------------------------------------------------------
+// Bank statement matching. Treasurers paste the transaction list from their
+// bank or PayMe business export; any line that mentions an outstanding
+// reference is proposed as paid. Banks often drop the hyphen or change the
+// case, so "ssm1234" still matches SSM-1234.
+// ---------------------------------------------------------------------------
+
+export type PaymentToMatch = { kind: ReceiptKind; id: string; ref: string; amount: number; name: string };
+export type StatementMatch = PaymentToMatch & { line: string; amountMatches: boolean };
+
+const refKey = (ref: string) => ref.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
+/** Amounts on a statement line: "1,234.50", "HK$180", "180.00". */
+export function amountsIn(line: string) {
+  return (line.match(/\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?/g) ?? []).map((n) => Number(n.replace(/,/g, '')));
+}
+
+export function matchStatement(text: string, outstanding: PaymentToMatch[]): StatementMatch[] {
+  const byKey = new Map(outstanding.map((p) => [refKey(p.ref), p]));
+  const found = new Map<string, StatementMatch>();
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    for (const m of line.matchAll(/\b([A-Za-z]{1,3})[-\s]?([0-9A-Fa-f]{4,6})\b/g)) {
+      const p = byKey.get(refKey(m[1] + m[2]));
+      if (!p) continue;
+      const amountMatches = amountsIn(line.replace(m[0], ' ')).some((a) => Math.abs(a - p.amount) < 0.005);
+      const prev = found.get(p.id);
+      // Keep the line whose amount agrees, if the reference appears more than once.
+      if (!prev || (!prev.amountMatches && amountMatches)) found.set(p.id, { ...p, line, amountMatches });
+    }
+  }
+  return [...found.values()];
 }
 
 /** Units left of each variant; null means no limit. */

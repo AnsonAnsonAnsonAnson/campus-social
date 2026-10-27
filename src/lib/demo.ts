@@ -2,7 +2,9 @@
 // App Store screenshots, UI work). Mirrors the rules in the SQL migration.
 import type { AuthUser, Backend } from './backend';
 import { isCuhkEmail } from './backend';
+import { liveTicketOrder, receiptPath } from './commerce';
 import {
+  DEMO_DINNER,
   demoPaymentSettings,
   demoSocieties,
   makeDemoBanners,
@@ -12,6 +14,7 @@ import {
   makeDemoPlans,
   makeDemoProducts,
 } from './demoData';
+import { DEMO_RECEIPT_MEMBERSHIP, DEMO_RECEIPT_TICKET } from './demoReceipts';
 import { t } from './i18n';
 import type {
   AppNotification,
@@ -21,6 +24,7 @@ import type {
   EventWithSociety,
   Membership,
   MembershipPlan,
+  MyRegistration,
   MySociety,
   Order,
   OrderStatus,
@@ -34,6 +38,7 @@ import type {
   Society,
   SocietyMember,
   SocietyRole,
+  TicketOrder,
 } from './types';
 
 export const DEMO_CODE = '123456';
@@ -103,13 +108,18 @@ const state = {
   paymentSettings: demoPaymentSettings.map((p) => ({ ...p })) as PaymentSettings[],
   products: makeDemoProducts() as Product[],
   orders: makeDemoOrders() as (Order & { buyer_name: string; buyer_email: string })[],
+  // Payment screenshots by storage path. In demo mode they only live in memory.
+  receipts: new Map<string, string>([
+    [`${demoSocieties[1].id}/membership/demo-receipt.jpg`, DEMO_RECEIPT_MEMBERSHIP],
+    [`${demoSocieties[1].id}/order/demo-ticket-receipt.jpg`, DEMO_RECEIPT_TICKET],
+  ]),
 };
 
 /** Orders other students placed with CUCS, so the committee's orders table has something in it. */
 function makeDemoOrders() {
   const statuses: OrderStatus[] = ['payment_claimed', 'payment_claimed', 'awaiting_payment', 'paid', 'paid', 'ready', 'collected'];
   const product = makeDemoProducts().find((p) => p.title === 'Sticker pack')!;
-  return statuses.map((status, i) => {
+  const shop = statuses.map((status, i) => {
     const qty = (i % 3) + 1;
     const created = new Date(Date.now() - (i + 1) * 5 * 3600_000).toISOString();
     return {
@@ -132,11 +142,49 @@ function makeDemoOrders() {
       ready_at: status === 'ready' ? created : null,
       collected_at: status === 'collected' ? created : null,
       cancelled_at: null,
+      event_id: null,
+      registration_id: null,
+      receipt_path: null,
+      receipt_at: null,
       created_at: created,
       buyer_name: FAKE_NAMES[i],
       buyer_email: `student${1155200000 + i}@link.cuhk.edu.hk`,
     };
   });
+  // Tickets for the year-end dinner: one sent a screenshot, one hasn't paid yet, one is paid.
+  const dinner = makeDemoEvents().find((e) => e.id === DEMO_DINNER)!;
+  const tickets = (['payment_claimed', 'awaiting_payment', 'paid'] as OrderStatus[]).map((status, i) => {
+    const created = new Date(Date.now() - (i + 2) * 7 * 3600_000).toISOString();
+    const member = i === 2;
+    const total = member ? dinner.member_price_hkd! : dinner.price_hkd!;
+    return {
+      ...shop[0],
+      id: `80000000-0000-4000-8000-${String(101 + i).padStart(12, '0')}`,
+      product_id: null,
+      event_id: dinner.id,
+      registration_id: `demo-reg-${i}`,
+      user_id: `demo-buyer-${10 + i}`,
+      ref: ['CUC-5120', 'CUC-7342', 'CUC-2209'][i],
+      product_title: dinner.title,
+      items: [{ variant: '', qty: 1, unit_price: total }],
+      total_hkd: total,
+      member_price: member,
+      status,
+      payment_method: 'fps' as const,
+      pickup_code: `demoticket${i}`.padEnd(32, '0'),
+      expires_at: new Date(Date.parse(created) + dinner.payment_window_hours * 3600_000).toISOString(),
+      claimed_at: status === 'awaiting_payment' ? null : created,
+      paid_at: status === 'paid' ? created : null,
+      ready_at: null,
+      collected_at: null,
+      receipt_path: status === 'payment_claimed' ? `${dinner.society_id}/order/demo-ticket-receipt.jpg` : null,
+      receipt_at: status === 'payment_claimed' ? created : null,
+      created_at: created,
+      buyer_name: FAKE_NAMES[8 + i],
+      buyer_email: `student${1155210000 + i}@link.cuhk.edu.hk`,
+    };
+  });
+  return [...tickets, ...shop];
 }
 
 function todayHK() {
@@ -294,6 +342,7 @@ function fillFromWaitlist(e: CampusEvent) {
       break;
     }
     next.status = 'confirmed';
+    ensureTicketOrder(next);
     e.confirmed_count++;
     e.waitlist_count = Math.max(0, e.waitlist_count - 1);
     notify(
@@ -303,6 +352,108 @@ function fillFromWaitlist(e: CampusEvent) {
       e.id,
     );
   }
+}
+
+/** Mirrors _ticket_price(): null when this event is free for the demo user. */
+function ticketPrice(e: CampusEvent) {
+  const price = e.member_price_hkd != null && isCurrentMember(e.society_id) ? e.member_price_hkd : (e.price_hkd ?? 0);
+  return price > 0 ? price : null;
+}
+
+function ticketOrders(regId: string) {
+  return state.orders.filter((o) => o.registration_id === regId);
+}
+
+function toTicketOrder(o: Order): TicketOrder {
+  const { id, ref, status, total_hkd, expires_at, payment_method, member_price, receipt_at, created_at } = o;
+  return { id, ref, status, total_hkd, expires_at, payment_method, member_price, receipt_at, created_at };
+}
+
+function withOrder(r: Registration): MyRegistration {
+  return { ...r, order: liveTicketOrder(ticketOrders(r.id).map(toTicketOrder)) };
+}
+
+/** Mirrors sync_ticket_order(): a confirmed place on a paid event gets an order to pay. */
+function ensureTicketOrder(reg: Registration) {
+  const e = state.events.find((x) => x.id === reg.event_id)!;
+  const price = ticketPrice(e);
+  if (reg.status !== 'confirmed' || price == null) return;
+  const held = ticketOrders(reg.id).some(
+    (o) => o.status === 'paid' || o.status === 'payment_claimed' || (o.status === 'awaiting_payment' && holdsStock(o)),
+  );
+  if (held) return;
+  const s = state.societies.find((x) => x.id === e.society_id)!;
+  const prefix = ((s.short_name ?? s.name).replace(/[^A-Za-z]/g, '') || 'CS').slice(0, 3).toUpperCase();
+  const method = reg.payment_method ?? 'fps';
+  const now = new Date();
+  const window = new Date(now.getTime() + e.payment_window_hours * 3600_000).toISOString();
+  state.orders.unshift({
+    id: uid(),
+    society_id: e.society_id,
+    product_id: null,
+    event_id: e.id,
+    registration_id: reg.id,
+    user_id: reg.user_id,
+    ref: `${prefix}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
+    product_title: e.title,
+    items: [{ variant: '', qty: 1, unit_price: price }],
+    total_hkd: price,
+    member_price: e.member_price_hkd != null && isCurrentMember(e.society_id),
+    status: 'awaiting_payment',
+    payment_method: method,
+    buyer_note: null,
+    pickup_code: uid().slice(5) + uid().slice(5) + uid().slice(5),
+    expires_at: method === 'cash' ? null : window < e.starts_at ? window : e.starts_at,
+    claimed_at: null,
+    paid_at: null,
+    ready_at: null,
+    collected_at: null,
+    cancelled_at: null,
+    receipt_path: null,
+    receipt_at: null,
+    created_at: now.toISOString(),
+    buyer_name: state.profile?.display_name || state.user?.email || '',
+    buyer_email: state.user?.email ?? '',
+  });
+}
+
+/** Mirrors _drop_registration(): frees the place and moves the waitlist up. */
+function dropRegistration(regId: string | null) {
+  const reg = state.registrations.find((r) => r.id === regId);
+  if (!reg || reg.status === 'cancelled') return;
+  const e = state.events.find((x) => x.id === reg.event_id)!;
+  const was = reg.status;
+  reg.status = 'cancelled';
+  cancelUnpaidTicket(reg.id);
+  if (was === 'confirmed') {
+    e.confirmed_count = Math.max(0, e.confirmed_count - 1);
+    fillFromWaitlist(e);
+  } else {
+    e.waitlist_count = Math.max(0, e.waitlist_count - 1);
+  }
+}
+
+function cancelUnpaidTicket(regId: string) {
+  for (const o of ticketOrders(regId)) {
+    if (o.status === 'awaiting_payment' || o.status === 'payment_claimed') {
+      o.status = 'cancelled';
+      o.cancelled_at = new Date().toISOString();
+    }
+  }
+}
+
+/** Mirrors _release_unpaid_tickets(). */
+function releaseUnpaidTickets(eventId: string) {
+  for (const o of state.orders.filter((x) => x.event_id === eventId && x.status === 'awaiting_payment' && !holdsStock(x))) {
+    o.status = 'cancelled';
+    o.cancelled_at = new Date().toISOString();
+    notifyOrder(o);
+    dropRegistration(o.registration_id);
+  }
+}
+
+function unpaidTicket(regId: string) {
+  return ticketOrders(regId).find((o) => o.status === 'awaiting_payment' || o.status === 'payment_claimed');
 }
 
 export const demoBackend: Backend = {
@@ -438,10 +589,11 @@ export const demoBackend: Backend = {
     if (!state.user) return [];
     return state.registrations
       .filter((r) => r.status !== 'cancelled')
-      .map((r) => ({ ...r, event: withSociety(state.events.find((e) => e.id === r.event_id)!) }));
+      .map((r) => ({ ...withOrder(r), event: withSociety(state.events.find((e) => e.id === r.event_id)!) }));
   },
   async myRegistration(eventId) {
-    return state.registrations.find((r) => r.event_id === eventId && r.user_id === state.user?.id) ?? null;
+    const reg = state.registrations.find((r) => r.event_id === eventId && r.user_id === state.user?.id);
+    return reg ? withOrder(reg) : null;
   },
   async waitlistPosition(eventId) {
     const e = state.events.find((x) => x.id === eventId)!;
@@ -451,7 +603,7 @@ export const demoBackend: Backend = {
     const simulated = e.waitlist_count - state.registrations.filter((r) => r.event_id === eventId && r.status === 'waitlisted').length;
     return simulated + 1;
   },
-  async register(eventId, answer) {
+  async register(eventId, answer, method) {
     await delay(300);
     const user = requireUser();
     const e = state.events.find((x) => x.id === eventId);
@@ -468,13 +620,17 @@ export const demoBackend: Backend = {
       throw new Error('This event is for members only. Join the society first.');
     }
 
+    const paymentMethod = ticketPrice(e) == null ? null : (method ?? null);
+    if (ticketPrice(e) != null && !paymentMethod) throw new Error('Choose how you will pay');
+    releaseUnpaidTickets(e.id);
+
     let status: Registration['status'];
     if (e.capacity == null || e.confirmed_count < e.capacity) status = 'confirmed';
     else if (e.waitlist_enabled) status = 'waitlisted';
     else throw new Error('Sorry, this event is full');
 
     if (reg) {
-      Object.assign(reg, { status, answer: answer?.trim() || null, checked_in_at: null, created_at: now });
+      Object.assign(reg, { status, answer: answer?.trim() || null, payment_method: paymentMethod, checked_in_at: null, created_at: now });
     } else {
       reg = {
         id: uid(),
@@ -483,6 +639,7 @@ export const demoBackend: Backend = {
         status,
         ticket_code: uid().slice(5) + uid().slice(5),
         answer: answer?.trim() || null,
+        payment_method: paymentMethod,
         checked_in_at: null,
         created_at: now,
       };
@@ -490,21 +647,13 @@ export const demoBackend: Backend = {
     }
     if (status === 'confirmed') e.confirmed_count++;
     else e.waitlist_count++;
+    ensureTicketOrder(reg);
     return reg;
   },
   async cancelRegistration(eventId) {
     await delay(200);
     const reg = state.registrations.find((r) => r.event_id === eventId && r.user_id === state.user?.id);
-    if (!reg || reg.status === 'cancelled') return;
-    const e = state.events.find((x) => x.id === eventId)!;
-    const was = reg.status;
-    reg.status = 'cancelled';
-    if (was === 'confirmed') {
-      e.confirmed_count = Math.max(0, e.confirmed_count - 1);
-      fillFromWaitlist(e);
-    } else {
-      e.waitlist_count = Math.max(0, e.waitlist_count - 1);
-    }
+    dropRegistration(reg?.id ?? null);
   },
   async report(targetType, targetId, reason) {
     requireUser();
@@ -665,6 +814,8 @@ export const demoBackend: Backend = {
     const name = state.profile?.display_name ?? 'Student';
     if (reg.event_id !== eventId) return { ok: false, name, message: 'This ticket is for a different event' };
     if (reg.status !== 'confirmed') return { ok: false, name, message: `Ticket is ${reg.status}, not confirmed` };
+    const unpaid = unpaidTicket(reg.id);
+    if (unpaid) return { ok: false, name, ref: unpaid.ref, message: 'Not paid yet' };
     if (reg.checked_in_at) return { ok: false, name, message: 'Already checked in' };
     reg.checked_in_at = new Date().toISOString();
     return { ok: true, name, message: 'Checked in' };
@@ -682,6 +833,7 @@ export const demoBackend: Backend = {
     const reg = state.registrations.find((r) => r.id === registrationId);
     if (!reg) throw new Error('Registration not found');
     if (checked && reg.status !== 'confirmed') throw new Error('Only confirmed attendees can be checked in');
+    if (checked && !reg.checked_in_at && unpaidTicket(reg.id)) throw new Error('Not paid yet');
     reg.checked_in_at = checked ? (reg.checked_in_at ?? new Date().toISOString()) : null;
   },
   async listMembers(societyId) {
@@ -790,6 +942,8 @@ export const demoBackend: Backend = {
       consent_at: new Date().toISOString(),
       claimed_paid_at: null,
       paid_at: null,
+      receipt_path: null,
+      receipt_at: null,
       created_at: new Date().toISOString(),
     };
     if (m) Object.assign(m, fields);
@@ -910,6 +1064,8 @@ export const demoBackend: Backend = {
         claimed_paid_at: null,
         paid_at: null,
         imported: true,
+        receipt_path: null,
+        receipt_at: null,
         created_at: new Date().toISOString(),
       };
       state.memberships.unshift(m);
@@ -1004,6 +1160,10 @@ export const demoBackend: Backend = {
       ready_at: null,
       collected_at: null,
       cancelled_at: null,
+      event_id: null,
+      registration_id: null,
+      receipt_path: null,
+      receipt_at: null,
       created_at: now,
       buyer_name: state.profile?.display_name || user.email,
       buyer_email: user.email,
@@ -1035,6 +1195,30 @@ export const demoBackend: Backend = {
     }
     o.status = 'cancelled';
     o.cancelled_at = new Date().toISOString();
+    dropRegistration(o.registration_id);
+  },
+  async uploadReceipt(kind, record, jpegUri) {
+    await delay(400);
+    const user = requireUser();
+    const path = receiptPath(kind, record.society_id, record.id);
+    const now = new Date().toISOString();
+    if (kind === 'order') {
+      const o = state.orders.find((x) => x.id === record.id && x.user_id === user.id);
+      if (!o) throw new Error('Order not found');
+      if (o.status !== 'awaiting_payment' && o.status !== 'payment_claimed') throw new Error('This order is not waiting for payment');
+      if (!holdsStock(o)) throw new Error('This order expired. Please order again.');
+      Object.assign(o, { receipt_path: path, receipt_at: now, status: 'payment_claimed', claimed_at: o.claimed_at ?? now });
+    } else {
+      const m = state.memberships.find((x) => x.id === record.id && x.user_id === user.id && x.status === 'pending');
+      if (!m) throw new Error('Membership not found');
+      Object.assign(m, { receipt_path: path, receipt_at: now, claimed_paid_at: m.claimed_paid_at ?? now });
+    }
+    state.receipts.set(path, jpegUri);
+  },
+  async receiptUrl(path) {
+    const uri = state.receipts.get(path);
+    if (!uri) throw new Error('This screenshot was deleted after the payment was settled.');
+    return uri;
   },
   async setPaymentSettings(societyId, s) {
     if (!isAdminOf(societyId)) throw new Error('Only society admins can change payment details');
@@ -1089,6 +1273,9 @@ export const demoBackend: Backend = {
         (status === 'cancelled' && ['awaiting_payment', 'payment_claimed', 'paid', 'ready'].includes(o.status)) ||
         (status === 'refunded' && ['paid', 'ready', 'collected'].includes(o.status));
       if (!ok) throw new Error('That change is not possible for this order');
+      if (o.event_id && (status === 'ready' || status === 'collected')) {
+        throw new Error('This is an event ticket. Check it in from the event instead.');
+      }
       o.status = status;
       if (status === 'paid') o.paid_at = now;
       if (status === 'ready') o.ready_at = now;
@@ -1099,6 +1286,7 @@ export const demoBackend: Backend = {
         if (o.payment_method !== 'cash') o.expires_at = new Date(Date.now() + 48 * 3600_000).toISOString();
       }
       notifyOrder(o);
+      if (status === 'cancelled' || status === 'refunded') dropRegistration(o.registration_id);
       n++;
     }
     return n;
@@ -1115,6 +1303,7 @@ export const demoBackend: Backend = {
     if (o.society_id !== societyId) return { ok: false, name: o.buyer_name, message: 'This order is for a different society' };
     if (o.status === 'collected') return { ...base, ok: false, message: 'Already collected', collected_at: o.collected_at ?? undefined };
     if (o.status !== 'paid' && o.status !== 'ready') return { ...base, ok: false, message: 'Not paid yet' };
+    if (o.event_id) throw new Error('This is an event ticket. Check it in from the event instead.');
     o.status = 'collected';
     o.collected_at = new Date().toISOString();
     return { ...base, ok: true, message: 'Collected' };

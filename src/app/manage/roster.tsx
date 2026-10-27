@@ -4,6 +4,7 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View 
 
 import { ListSkeleton } from '@/components/Skeleton';
 import { toast } from '@/components/Toast';
+import { ReceiptButton } from '@/components/Receipt';
 import { Button, Chip, ChipRow, EmptyState, ErrorView, Icon, InfoRow, Pill, Sheet } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { membersCsv, membershipRef, membershipState } from '@/lib/commerce';
@@ -316,6 +317,7 @@ function MemberSheet({
             m.answers[i] ? <InfoRow key={i} icon="chatbubble-ellipses-outline" title={m.answers[i]} sub={qu} /> : null,
           )}
         </View>
+        {isAdmin && <ReceiptButton path={m.receipt_path} at={m.receipt_at} />}
         {isAdmin ? (
           <View style={{ gap: space.sm }}>
             {(state.key === 'claimed' || state.key === 'pending' || state.key === 'unpaid') && (

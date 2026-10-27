@@ -118,3 +118,42 @@ it('hides a society and unfollows it', async () => {
   await api.setSocietyHidden(CODING_SOCIETY, false);
   expect(await api.myHiddenSocietyIds()).not.toContain(CODING_SOCIETY);
 });
+
+it('runs a paid ticket through payment, screenshot and check-in', async () => {
+  const dinner = eid(14); // Coding Society year-end dinner, HK$180 (members HK$150)
+  await expect(api.register(dinner)).rejects.toThrow('Choose how you will pay');
+  await api.register(dinner, 'Vegetarian', 'fps');
+  const mine = (await api.myRegistration(dinner))!;
+  expect(mine.order).toMatchObject({ status: 'awaiting_payment', total_hkd: 180, payment_method: 'fps' });
+  expect(mine.order!.expires_at).not.toBeNull();
+
+  // Unpaid tickets don't get in at the door.
+  const scan = await api.checkIn(dinner, mine.ticket_code);
+  expect(scan).toMatchObject({ ok: false, message: 'Not paid yet', ref: mine.order!.ref });
+
+  // A screenshot counts as "I've paid"; the committee sees it in Orders.
+  await api.uploadReceipt('order', { id: mine.order!.id, society_id: CODING_SOCIETY }, 'data:image/jpeg;base64,AAAA');
+  const listed = (await api.listOrders(CODING_SOCIETY)).find((o) => o.id === mine.order!.id)!;
+  expect(listed).toMatchObject({ status: 'payment_claimed', event_id: dinner });
+  expect(await api.receiptUrl(listed.receipt_path!)).toBe('data:image/jpeg;base64,AAAA');
+
+  await api.setOrderStatus([listed.id], 'paid');
+  await expect(api.setOrderStatus([listed.id], 'ready')).rejects.toThrow('event ticket');
+  expect((await api.checkIn(dinner, mine.ticket_code)).ok).toBe(true);
+
+  // Refunding gives the place up.
+  const going = (await api.getEvent(dinner))!.confirmed_count;
+  await api.setOrderStatus([listed.id], 'refunded');
+  expect((await api.myRegistration(dinner))?.status).toBe('cancelled');
+  expect((await api.getEvent(dinner))!.confirmed_count).toBe(going - 1);
+});
+
+it('cancelling a paid sign-up cancels its unpaid order', async () => {
+  const dinner = eid(14);
+  await api.register(dinner, '', 'cash');
+  const mine = (await api.myRegistration(dinner))!;
+  expect(mine.order).toMatchObject({ status: 'awaiting_payment', expires_at: null });
+  await api.cancelRegistration(dinner);
+  const order = (await api.myOrders()).find((o) => o.id === mine.order!.id)!;
+  expect(order.status).toBe('cancelled');
+});

@@ -1,7 +1,8 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { ReceiptButton } from '@/components/Receipt';
 import { ListSkeleton } from '@/components/Skeleton';
 import { toast } from '@/components/Toast';
 import { Button, Chip, ChipRow, EmptyState, ErrorView, Icon, InfoRow, Pill, Sheet } from '@/components/ui';
@@ -25,7 +26,8 @@ function bucket(o: SocietyOrder): Exclude<Filter, 'all' | 'summary'> {
   if (isExpired(o)) return 'done';
   if (o.status === 'payment_claimed') return 'check';
   if (o.status === 'awaiting_payment') return 'unpaid';
-  if (o.status === 'paid' || o.status === 'ready') return 'handout';
+  // Tickets are checked in at the event, so a paid ticket is done here.
+  if ((o.status === 'paid' && !o.event_id) || o.status === 'ready') return 'handout';
   return 'done';
 }
 
@@ -146,14 +148,26 @@ export default function Orders() {
         options={{
           title: t('Orders'),
           headerRight: () => (
-            <Pressable
-              onPress={exportCsv}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel={t('Export orders')}
-              style={styles.headerButton}>
-              <Icon name="download-outline" size={22} color={c.tint} />
-            </Pressable>
+            <View style={{ flexDirection: 'row' }}>
+              {isAdmin && (
+                <Pressable
+                  onPress={() => router.push({ pathname: '/manage/match', params: { societyId } })}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('Match bank statement')}
+                  style={styles.headerButton}>
+                  <Icon name="git-compare-outline" size={22} color={c.tint} />
+                </Pressable>
+              )}
+              <Pressable
+                onPress={exportCsv}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={t('Export orders')}
+                style={styles.headerButton}>
+                <Icon name="download-outline" size={22} color={c.tint} />
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -208,12 +222,18 @@ export default function Orders() {
                   </Text>
                 </View>
                 <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
-                  {o.product_title} · {itemsSummary(o.items)}
+                  {o.event_id ? `${t('Ticket')} · ${o.product_title}` : `${o.product_title} · ${itemsSummary(o.items)}`}
                 </Text>
                 <Text style={{ color: c.textSecondary, fontSize: 13 }}>
                   {formatHkd(o.total_hkd)} · {methodLabel(o.payment_method)}
                   {o.member_price ? ` · ${t('Member price')}` : ''}
                 </Text>
+                {!!o.receipt_path && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Icon name="image-outline" size={14} color={c.infoText} />
+                    <Text style={{ color: c.infoText, fontSize: 13 }}>{t('Screenshot attached')}</Text>
+                  </View>
+                )}
               </View>
               <Pill label={st.label} tone={st.tone} />
             </Pressable>
@@ -301,7 +321,11 @@ function OrderSheet({
           <Pill label={st.label} tone={st.tone} />
         </View>
         <View style={{ gap: space.sm }}>
-          <InfoRow icon="bag-handle-outline" title={o.product_title} sub={itemsSummary(o.items)} />
+          <InfoRow
+            icon={o.event_id ? 'ticket-outline' : 'bag-handle-outline'}
+            title={o.product_title}
+            sub={o.event_id ? t('Event ticket') : itemsSummary(o.items)}
+          />
           <InfoRow
             icon="cash-outline"
             title={`${formatHkd(o.total_hkd)} · ${methodLabel(o.payment_method)}`}
@@ -321,6 +345,7 @@ function OrderSheet({
           />
           {o.buyer_note && <InfoRow icon="chatbubble-ellipses-outline" title={o.buyer_note} sub={t('Note from buyer')} />}
         </View>
+        {isAdmin && <ReceiptButton path={o.receipt_path} at={o.receipt_at} />}
 
         <View style={{ gap: space.sm }}>
           {isAdmin && (o.status === 'payment_claimed' || (o.status === 'awaiting_payment' && !expired)) && (
@@ -340,7 +365,7 @@ function OrderSheet({
               onPress={() => onChange([o.id], 'awaiting_payment', t('Buyer asked to check their payment'))}
             />
           )}
-          {o.status === 'paid' && (
+          {o.status === 'paid' && !o.event_id && (
             <Button
               variant="secondary"
               icon="notifications-outline"
@@ -349,7 +374,7 @@ function OrderSheet({
               onPress={() => onChange([o.id], 'ready', t('Buyer told'))}
             />
           )}
-          {(o.status === 'paid' || o.status === 'ready') && (
+          {!o.event_id && (o.status === 'paid' || o.status === 'ready') && (
             <Button
               variant="secondary"
               icon="hand-left-outline"
@@ -368,7 +393,9 @@ function OrderSheet({
                   t('Cancel {ref}?', { ref: o.ref }),
                   o.paid_at
                     ? t('This order was paid. Refund the buyer yourself, then mark it refunded.')
-                    : t('The buyer is told and the stock goes back on sale.'),
+                    : o.event_id
+                      ? t('The buyer is told and their place goes to the next person on the waitlist.')
+                      : t('The buyer is told and the stock goes back on sale.'),
                   t('Cancel order'),
                   'cancelled',
                   t('Order cancelled'),

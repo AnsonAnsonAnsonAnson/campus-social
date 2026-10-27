@@ -96,6 +96,7 @@ export default function RootLayout() {
           <Stack.Screen name="manage/plan-form" options={{ presentation: 'modal', title: t('Membership plan') }} />
           <Stack.Screen name="manage/import" options={{ presentation: 'modal', title: t('Import members') }} />
           <Stack.Screen name="manage/orders" options={{ title: t('Orders') }} />
+          <Stack.Screen name="manage/match" options={{ title: t('Match bank statement') }} />
           <Stack.Screen name="manage/product-form" options={{ presentation: 'modal', title: t('Product') }} />
           <Stack.Screen name="manage/payment-settings" options={{ presentation: 'modal', title: t('Payment details') }} />
           <Stack.Screen name="membership/join" options={{ presentation: 'modal', title: t('Join') }} />

@@ -219,6 +219,8 @@ function resultMeta(mode: Mode, r: Result) {
       .filter(Boolean)
       .join(' · ');
   }
+  // Unpaid ticket: the ref to look up (or mark paid after taking cash) in Orders.
+  if (r.ref) return t('Order {ref}. Take payment, mark it paid in Orders, then scan again.', { ref: r.ref });
   return null;
 }
 

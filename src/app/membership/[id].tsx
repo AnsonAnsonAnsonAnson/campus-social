@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, View } from 'react-native';
 
 import { PaymentPanel } from '@/components/Payment';
+import { ReceiptUpload } from '@/components/Receipt';
 import { toast } from '@/components/Toast';
 import { Banner, Button, ErrorView, Loading } from '@/components/ui';
 import { MemberCard } from '@/components/Wallet';
@@ -97,6 +98,11 @@ export default function MembershipScreen() {
       )}
       {state.key === 'claimed' && (
         <Banner icon="hourglass-outline" text={t('Thanks! The treasurer will check your payment and confirm your membership.')} />
+      )}
+      {(state.key === 'unpaid' || state.key === 'claimed') && m.payment_method !== 'cash' && !q.data?.offline && (
+        <View style={{ marginHorizontal: space.lg }}>
+          <ReceiptUpload kind="membership" record={m} />
+        </View>
       )}
       {state.key === 'pending' && <Banner icon="hourglass-outline" text={t('The committee will review your application soon.')} />}
 

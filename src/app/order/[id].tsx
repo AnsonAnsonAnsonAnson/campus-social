@@ -4,6 +4,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import QRCode from 'react-native-qrcode-svg';
 
 import { PaymentPanel } from '@/components/Payment';
+import { ReceiptUpload } from '@/components/Receipt';
 import { toast } from '@/components/Toast';
 import { Banner, Button, ErrorView, Icon, Loading, Pill, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
@@ -23,6 +24,13 @@ const STEPS: { key: OrderStatus[]; label: () => string }[] = [
   { key: ['paid'], label: () => t('Paid') },
   { key: ['ready'], label: () => t('Ready') },
   { key: ['collected'], label: () => t('Collected') },
+];
+
+// Event tickets: no pickup, the QR in Tickets works once paid.
+const TICKET_STEPS: { key: OrderStatus[]; label: () => string }[] = [
+  { key: ['awaiting_payment'], label: () => t('Signed up') },
+  { key: ['payment_claimed'], label: () => t('Payment to check') },
+  { key: ['paid'], label: () => t('Paid') },
 ];
 
 export default function OrderScreen() {
@@ -49,7 +57,9 @@ export default function OrderScreen() {
 
   const status = orderStatus(o);
   const expired = isExpired(o);
-  const stepIndex = STEPS.findIndex((s) => s.key.includes(o.status));
+  const ticket = !!o.event_id;
+  const steps = ticket ? TICKET_STEPS : STEPS;
+  const stepIndex = steps.findIndex((s) => s.key.includes(o.status));
   const live = !['cancelled', 'refunded'].includes(o.status) && !expired;
 
   const claim = async () => {
@@ -67,7 +77,14 @@ export default function OrderScreen() {
 
   const cancel = async () => {
     if (
-      !(await confirmAsync(t('Cancel this order?'), t('If you already paid, contact the society for a refund.'), t('Cancel order'), true))
+      !(await confirmAsync(
+        ticket ? t('Give up your place?') : t('Cancel this order?'),
+        ticket
+          ? t('Your place goes to the next person on the waitlist. If you already paid, contact the society for a refund.')
+          : t('If you already paid, contact the society for a refund.'),
+        ticket ? t('Give up place') : t('Cancel order'),
+        true,
+      ))
     )
       return;
     try {
@@ -99,7 +116,7 @@ export default function OrderScreen() {
 
       {live && (
         <View style={styles.steps} accessibilityLabel={status.label}>
-          {STEPS.map((s, i) => {
+          {steps.map((s, i) => {
             const done = i <= stepIndex;
             return (
               <View key={i} style={{ flex: 1, gap: 6 }}>
@@ -116,7 +133,11 @@ export default function OrderScreen() {
         <Banner
           tone="warning"
           icon="time-outline"
-          text={t('This order expired before it was paid, so the items were released. Order again if you still want them.')}
+          text={
+            ticket
+              ? t('This ticket was not paid in time, so the place is being given to someone else. Sign up again if there is still room.')
+              : t('This order expired before it was paid, so the items were released. Order again if you still want them.')
+          }
         />
       )}
       {o.status === 'payment_claimed' && (
@@ -126,7 +147,15 @@ export default function OrderScreen() {
         />
       )}
 
-      {(o.status === 'paid' || o.status === 'ready') && (
+      {ticket && o.status === 'paid' && (
+        <View style={[styles.pickup, { backgroundColor: c.card }]}>
+          <Icon name="ticket" size={32} color={c.success} />
+          <Text style={{ color: c.text, fontSize: 17, fontWeight: '600', textAlign: 'center' }}>{t('Paid. Your QR ticket is ready.')}</Text>
+          <Button small variant="ink" icon="ticket-outline" title={t('Show ticket')} onPress={() => router.push(`/event/${o.event_id}`)} />
+        </View>
+      )}
+
+      {!ticket && (o.status === 'paid' || o.status === 'ready') && (
         <View style={[styles.pickup, { backgroundColor: c.card }]}>
           <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>
             {o.status === 'ready' ? t('Ready for pickup') : t('Paid. We will tell you when it is ready.')}
@@ -143,18 +172,25 @@ export default function OrderScreen() {
           <PaymentPanel settings={q.data?.settings ?? null} amount={o.total_hkd} reference={o.ref} method={o.payment_method} />
           {o.expires_at && (
             <Text style={{ color: c.textSecondary, fontSize: 13, textAlign: 'center' }}>
-              {t('Pay by {when}, or the items go back on sale.', { when: formatWhen(o.expires_at) })}
+              {ticket
+                ? t('Pay by {when}, or your place goes to the next person.', { when: formatWhen(o.expires_at) })
+                : t('Pay by {when}, or the items go back on sale.', { when: formatWhen(o.expires_at) })}
             </Text>
           )}
           {o.payment_method !== 'cash' && <Button title={t("I've paid")} icon="checkmark" loading={busy} onPress={claim} />}
         </View>
       )}
 
+      {o.payment_method !== 'cash' &&
+        (o.status === 'awaiting_payment' || o.status === 'payment_claimed') &&
+        !expired &&
+        !q.data?.offline && <ReceiptUpload kind="order" record={o} />}
+
       <View style={[styles.items, { backgroundColor: c.card }]}>
         {o.items.map((i, n) => (
           <View key={n} style={styles.itemRow}>
             <Text style={{ color: c.text, fontSize: 16, flex: 1 }}>
-              {i.variant || t('One size')} × {i.qty}
+              {ticket ? t('Ticket') : `${i.variant || t('One size')} × ${i.qty}`}
             </Text>
             <Text style={{ color: c.text, fontSize: 16, fontVariant: ['tabular-nums'] }}>{formatHkd(i.qty * i.unit_price)}</Text>
           </View>
@@ -173,7 +209,7 @@ export default function OrderScreen() {
       </View>
 
       {(o.status === 'awaiting_payment' || o.status === 'payment_claimed') && !expired && (
-        <Button variant="dangerText" title={t('Cancel order')} onPress={cancel} />
+        <Button variant="dangerText" title={ticket ? t('Give up my place') : t('Cancel order')} onPress={cancel} />
       )}
     </ScrollView>
   );

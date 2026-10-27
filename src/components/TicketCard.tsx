@@ -2,7 +2,9 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
+import { ticketPayment } from '@/lib/commerce';
 import { TICKET_QR_PREFIX } from '@/lib/constants';
+import { formatHkd } from '@/lib/fps';
 import { formatWhen, hkDate } from '@/lib/format';
 import { coverFor, palette, radius, space, useColors, useIsDark } from '@/lib/theme';
 import type { Ticket } from '@/lib/types';
@@ -21,6 +23,10 @@ export function TicketQR({ code, size = 180 }: { code: string; size?: number }) 
 function TicketStatus({ ticket }: { ticket: Ticket }) {
   if (ticket.event.status === 'cancelled') return <Pill label={t('Event cancelled')} tone="danger" />;
   if (ticket.checked_in_at) return <Pill label={t('Checked in')} tone="ink" />;
+  const pay = ticketPayment(ticket).key;
+  if (pay === 'unpaid') return <Pill label={t('Pay to get your ticket')} tone="warning" icon="card-outline" />;
+  if (pay === 'claimed') return <Pill label={t('Payment being checked')} tone="info" icon="hourglass-outline" />;
+  if (pay === 'expired') return <Pill label={t('Not paid in time')} tone="danger" />;
   if (ticket.status === 'confirmed') return <Pill label={t('Going')} tone="brand" icon="checkmark" />;
   return <Pill label={t('Waitlist')} tone="warning" />;
 }
@@ -43,10 +49,11 @@ export function TicketCard({ ticket, showQR }: { ticket: Ticket; showQR: boolean
   const dark = useIsDark();
   const e = ticket.event;
   const cover = e.status === 'cancelled' ? '#76767C' : coverFor(e.category, e.id, dark).color;
-  const qr = showQR && ticket.status === 'confirmed' && e.status !== 'cancelled';
+  const pay = ticketPayment(ticket);
+  const qr = showQR && ticket.status === 'confirmed' && e.status !== 'cancelled' && (pay.key === 'none' || pay.key === 'paid');
   return (
     <Pressable
-      onPress={() => router.push(`/event/${e.id}`)}
+      onPress={() => router.push(pay.key === 'unpaid' ? `/order/${pay.order.id}` : `/event/${e.id}`)}
       accessibilityRole="button"
       style={[styles.hero, { backgroundColor: c.background === c.backgroundPlain ? c.card : c.background }]}>
       <View style={[styles.band, { backgroundColor: cover }]}>
@@ -74,6 +81,21 @@ export function TicketCard({ ticket, showQR }: { ticket: Ticket; showQR: boolean
             <TicketStatus ticket={ticket} />
             {ticket.status === 'waitlisted' && (
               <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('If someone cancels, you’ll be moved up automatically.')}</Text>
+            )}
+            {pay.key === 'unpaid' && (
+              <Text style={{ color: c.textSecondary, fontSize: 13 }}>
+                {pay.order.expires_at
+                  ? t('{amount} · Pay by {when}, or your place goes to the next person.', {
+                      amount: formatHkd(pay.order.total_hkd),
+                      when: formatWhen(pay.order.expires_at),
+                    })
+                  : t('{amount} · Pay in cash before the event.', { amount: formatHkd(pay.order.total_hkd) })}
+              </Text>
+            )}
+            {pay.key === 'claimed' && (
+              <Text style={{ color: c.textSecondary, fontSize: 13 }}>
+                {t('Your QR ticket appears here once the society confirms your payment.')}
+              </Text>
             )}
           </View>
         )}

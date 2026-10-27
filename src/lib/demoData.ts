@@ -116,6 +116,9 @@ type EventSeed = Omit<
   | 'waitlist_count'
   | 'signup_question'
   | 'members_only'
+  | 'price_hkd'
+  | 'member_price_hkd'
+  | 'payment_window_hours'
   | 'removed_at'
 > &
   Partial<CampusEvent>;
@@ -132,10 +135,15 @@ function event(n: number, e: EventSeed): CampusEvent {
     waitlist_count: 0,
     signup_question: null,
     members_only: false,
+    price_hkd: null,
+    member_price_hkd: null,
+    payment_window_hours: 48,
     removed_at: null,
     ...e,
   };
 }
+
+export const DEMO_DINNER = eid(14);
 
 export function makeDemoEvents(now = new Date()): CampusEvent[] {
   const at = (d: number, h: number, m = 0) => hkAt(d, h, m, now);
@@ -271,7 +279,8 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       ends_at: at(13, 17),
       registration_required: true,
       capacity: 25,
-      price_text: 'Free',
+      price_text: 'Coach to Pak Tam Chung and back',
+      price_hkd: 60,
       confirmed_count: 9,
     }),
     event(11, {
@@ -312,6 +321,23 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 8,
       price_text: 'HK$50 materials',
       confirmed_count: 8,
+    }),
+    event(14, {
+      society_id: sid(2),
+      title: 'CUCS year-end dinner',
+      description: 'Eight courses, lucky draw and the Hack Night awards. Vegetarian option: tell us when you sign up.',
+      category: 'Social',
+      location: 'Tai Po Mega Mall, Jade Garden',
+      starts_at: at(20, 19),
+      ends_at: at(20, 22),
+      registration_required: true,
+      capacity: 80,
+      price_text: null,
+      price_hkd: 180,
+      member_price_hkd: 150,
+      payment_window_hours: 72,
+      signup_question: 'Any dietary needs?',
+      confirmed_count: 41,
     }),
   ];
 }
@@ -442,6 +468,8 @@ export function makeDemoMemberships(now = new Date()): Membership[] {
       claimed_paid_at: i === 6 ? hkAt(-1, 21, 0, now) : pending ? null : hkAt(-30 + i, 12, 5, now),
       paid_at: pending ? null : hkAt(-29 + i, 10, 0, now),
       imported: i < 3,
+      receipt_path: i === 6 ? `${sid(2)}/membership/demo-receipt.jpg` : null,
+      receipt_at: i === 6 ? hkAt(-1, 21, 0, now) : null,
       created_at: hkAt(-30 + i, 12, 0, now),
     };
   });

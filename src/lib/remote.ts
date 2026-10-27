@@ -3,6 +3,7 @@ import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 
 import type { AuthUser, Backend } from './backend';
+import { liveTicketOrder, receiptPath } from './commerce';
 import type {
   AppNotification,
   Attendee,
@@ -16,6 +17,7 @@ import type {
   MembershipPlan,
   MyMembership,
   MyOrder,
+  MyRegistration,
   MySociety,
   Order,
   PaymentSettings,
@@ -28,6 +30,7 @@ import type {
   Society,
   SocietyMember,
   Ticket,
+  TicketOrder,
 } from './types';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -57,6 +60,13 @@ if (supabase && Platform.OS !== 'web') {
 const SOCIETY_SUMMARY = 'id, name, short_name, logo_url, verified';
 const SOCIETY_CARD = `${SOCIETY_SUMMARY}, category`;
 const EVENT_WITH_SOCIETY = `*, society:societies!inner(${SOCIETY_SUMMARY})`;
+const TICKET_ORDER = 'orders(id, ref, status, total_hkd, expires_at, payment_method, member_price, receipt_at, created_at)';
+
+/** Registrations come back with every order they ever had; keep the one that counts. */
+function withTicketOrder<T extends Registration>(r: T & { orders?: TicketOrder[] }): T & { order: TicketOrder | null } {
+  const { orders, ...rest } = r;
+  return { ...(rest as unknown as T), order: liveTicketOrder(orders) };
+}
 
 function db() {
   if (!supabase) throw new Error('Supabase is not configured');
@@ -197,21 +207,26 @@ export const remoteBackend: Backend = {
   },
   async myTickets() {
     if (!(await currentUser())) return [];
-    const rows = check(await db().from('registrations').select(`*, event:events(${EVENT_WITH_SOCIETY})`).neq('status', 'cancelled'));
-    return (rows as Ticket[]).filter((t) => t.event);
+    const rows = check(
+      await db().from('registrations').select(`*, event:events(${EVENT_WITH_SOCIETY}), ${TICKET_ORDER}`).neq('status', 'cancelled'),
+    );
+    return (rows as (Ticket & { orders: TicketOrder[] })[]).filter((t) => t.event).map(withTicketOrder);
   },
   async myRegistration(eventId) {
     const u = await currentUser();
     if (!u) return null;
-    return check(
-      await db().from('registrations').select('*').eq('event_id', eventId).eq('user_id', u.id).maybeSingle(),
-    ) as Registration | null;
+    const row = check(
+      await db().from('registrations').select(`*, ${TICKET_ORDER}`).eq('event_id', eventId).eq('user_id', u.id).maybeSingle(),
+    ) as (MyRegistration & { orders: TicketOrder[] }) | null;
+    return row && withTicketOrder(row);
   },
   async waitlistPosition(eventId) {
     return check(await db().rpc('waitlist_position', { p_event_id: eventId })) as number;
   },
-  async register(eventId, answer) {
-    return check(await db().rpc('register_for_event', { p_event_id: eventId, p_answer: answer ?? null })) as Registration;
+  async register(eventId, answer, method) {
+    return check(
+      await db().rpc('register_for_event', { p_event_id: eventId, p_answer: answer ?? null, p_payment_method: method ?? null }),
+    ) as Registration;
   },
   async cancelRegistration(eventId) {
     check(await db().rpc('cancel_registration', { p_event_id: eventId }));
@@ -434,6 +449,21 @@ export const remoteBackend: Backend = {
   },
   async cancelMyOrder(id) {
     check(await db().rpc('cancel_my_order', { p_order_id: id }));
+  },
+  async uploadReceipt(kind, record, jpegUri) {
+    await requireUserId();
+    const body = await (await fetch(jpegUri)).arrayBuffer();
+    // Fixed path per record, so a second upload replaces the first instead of adding a file.
+    const { error } = await db()
+      .storage.from('receipts')
+      .upload(receiptPath(kind, record.society_id, record.id), body, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw new Error(error.message);
+    check(await db().rpc('attach_receipt', { p_kind: kind, p_id: record.id }));
+  },
+  async receiptUrl(path) {
+    const { data, error } = await db().storage.from('receipts').createSignedUrl(path, 300);
+    if (error) throw new Error(error.message);
+    return data.signedUrl;
   },
   async setPaymentSettings(societyId, s) {
     check(

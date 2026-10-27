@@ -10,14 +10,29 @@ import { Skeleton } from '@/components/Skeleton';
 import { FollowButton } from '@/components/SocietyRow';
 import { TicketQR } from '@/components/TicketCard';
 import { toast } from '@/components/Toast';
-import { Artwork, Button, ErrorView, Field, Icon, InfoRow, Pill, ProgressBar, Sheet, SocietyAvatar } from '@/components/ui';
+import {
+  Artwork,
+  Banner,
+  Button,
+  ErrorView,
+  Field,
+  Icon,
+  InfoRow,
+  Pill,
+  ProgressBar,
+  SegmentedControl,
+  Sheet,
+  SocietyAvatar,
+} from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { showAlert } from '@/lib/dialog';
-import { membershipState } from '@/lib/commerce';
-import { availability, formatWhen } from '@/lib/format';
+import { membershipState, ticketPayment } from '@/lib/commerce';
+import { formatHkd } from '@/lib/fps';
+import { availability, formatWhen, todayHK } from '@/lib/format';
 import { offerNotifications, refreshReminders } from '@/lib/notifications';
 import { radius, space, type, useColors } from '@/lib/theme';
+import type { PaymentMethod } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
 import { t } from '@/lib/i18n';
 
@@ -29,17 +44,25 @@ export default function EventScreen() {
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState('');
+  const [method, setMethod] = useState<PaymentMethod | null>(null);
 
   const q = useQuery(async () => {
     const [event, registration, mine] = await Promise.all([api.getEvent(id), api.myRegistration(id), api.mySocieties()]);
     const position = registration?.status === 'waitlisted' ? await api.waitlistPosition(id) : 0;
     const isCommittee = !!event && mine.some((s) => s.id === event.society_id);
-    // Members-only: can this person sign up, or do they need to join first?
+    // Members-only and member prices: is this person a current member?
+    const needsMembership = !!event && (event.members_only || event.member_price_hkd != null);
     const isMember =
-      !!event?.members_only &&
+      needsMembership &&
       !!user &&
       (await api.myMemberships()).some((m) => m.society_id === event.society_id && membershipState(m, m.plan).key === 'active');
-    return { event, registration, position, isCommittee, isMember };
+    // The plan to join straight from the event, so the "join first" step is one tap.
+    const plan =
+      event && needsMembership && !isMember
+        ? ((await api.listPlans(event.society_id)).find((p) => p.is_open && p.valid_until >= todayHK()) ?? null)
+        : null;
+    const settings = event?.price_hkd ? await api.getPaymentSettings(event.society_id) : null;
+    return { event, registration, position, isCommittee, isMember, plan, settings };
   }, [id, user?.id]);
 
   if (q.loading) return <EventSkeleton />;
@@ -51,20 +74,45 @@ export default function EventScreen() {
   const active = reg && reg.status !== 'cancelled';
   const avail = availability(event);
   const past = event.ends_at < new Date().toISOString();
+  // What this person would pay: the member price applies to current members.
+  const myPrice = (q.data?.isMember && event.member_price_hkd != null ? event.member_price_hkd : event.price_hkd) ?? 0;
+  const settings = q.data?.settings ?? null;
+  const methods: { value: PaymentMethod; label: string }[] = [
+    ...(settings?.fps_id ? [{ value: 'fps' as const, label: 'FPS 轉數快' }] : []),
+    ...(settings?.payme_link ? [{ value: 'payme' as const, label: 'PayMe' }] : []),
+    { value: 'cash', label: t('Cash') },
+  ];
+  const chosen = method ?? methods[0].value;
+  const pay = active ? ticketPayment(reg) : { key: 'none' as const };
+  const joinPlan = q.data?.plan;
 
   const startRegister = () => {
     if (!requireSignIn()) return;
-    if (event.signup_question) setAsking(true);
+    if (event.signup_question || myPrice > 0) setAsking(true);
     else register();
+  };
+
+  const join = () => {
+    if (!requireSignIn()) return;
+    if (joinPlan)
+      router.push({ pathname: '/membership/join', params: { planId: joinPlan.id, societyId: event.society_id, eventId: event.id } });
+    else router.push(`/society/${event.society_id}`);
   };
 
   const register = async () => {
     setBusy(true);
     try {
-      const r = await api.register(event.id, answer);
+      const r = await api.register(event.id, answer, myPrice > 0 ? chosen : undefined);
       setAsking(false);
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       invalidate();
+      const order = r.status === 'confirmed' && myPrice > 0 ? (await api.myRegistration(event.id))?.order : null;
+      if (order) {
+        // Straight to paying: the place is held for the payment window.
+        router.push(`/order/${order.id}`);
+        toast(t('Your place is held. Pay to get your ticket.'), { icon: 'ticket' });
+        return;
+      }
       toast(
         r.status === 'confirmed' ? t("You're in! Your QR ticket is ready.") : t("You're on the waitlist. We'll move you up automatically."),
         {
@@ -171,7 +219,7 @@ export default function EventScreen() {
       <Button
         title={t('Join {society} to sign up', { society: event.society.short_name ?? event.society.name })}
         icon="card-outline"
-        onPress={() => router.push(`/society/${event.society_id}`)}
+        onPress={join}
       />
     );
   else if (avail.kind === 'open' || avail.kind === 'few')
@@ -233,7 +281,24 @@ export default function EventScreen() {
               action={event.location ? t('Map') : undefined}
               onAction={openMap}
             />
-            <InfoRow icon="cash-outline" title={event.price_text || t('Free')} />
+            {event.price_hkd ? (
+              <InfoRow
+                icon="cash-outline"
+                title={
+                  event.member_price_hkd != null
+                    ? t('{price} · Members {member}', {
+                        price: formatHkd(event.price_hkd),
+                        member: event.member_price_hkd ? formatHkd(event.member_price_hkd) : t('Free'),
+                      })
+                    : formatHkd(event.price_hkd)
+                }
+                sub={[event.price_text, t('Pay the society by FPS, PayMe or cash')].filter(Boolean).join(' · ')}
+                action={event.member_price_hkd != null && !q.data?.isMember && joinPlan ? t('Join') : undefined}
+                onAction={join}
+              />
+            ) : (
+              <InfoRow icon="cash-outline" title={event.price_text || t('Free')} />
+            )}
             {event.registration_required && (
               <InfoRow
                 icon="people-outline"
@@ -261,7 +326,34 @@ export default function EventScreen() {
 
           {active && (
             <View style={[styles.ticket, { backgroundColor: c.background }]}>
-              {reg.status === 'confirmed' ? (
+              {reg.status === 'confirmed' && pay.key !== 'none' && pay.key !== 'paid' ? (
+                <>
+                  <Text style={{ color: pay.key === 'claimed' ? c.info : c.warning, fontWeight: '700', fontSize: 17 }}>
+                    {pay.key === 'claimed' ? t('Payment being checked') : t('Pay to get your ticket')}
+                  </Text>
+                  <Text style={{ color: c.textSecondary, textAlign: 'center' }}>
+                    {pay.key === 'claimed'
+                      ? t('Your QR ticket appears here once the society confirms your payment.')
+                      : pay.key === 'expired'
+                        ? t(
+                            'This ticket was not paid in time, so the place is being given to someone else. Sign up again if there is still room.',
+                          )
+                        : pay.order.expires_at
+                          ? t('{amount} · Pay by {when}, or your place goes to the next person.', {
+                              amount: formatHkd(pay.order.total_hkd),
+                              when: formatWhen(pay.order.expires_at),
+                            })
+                          : t('{amount} · Pay in cash before the event.', { amount: formatHkd(pay.order.total_hkd) })}
+                  </Text>
+                  <Button
+                    small
+                    variant={pay.key === 'unpaid' ? 'ink' : 'secondary'}
+                    icon="card-outline"
+                    title={pay.key === 'unpaid' ? t('Pay now') : t('View payment')}
+                    onPress={() => router.push(`/order/${pay.order.id}`)}
+                  />
+                </>
+              ) : reg.status === 'confirmed' ? (
                 <>
                   <Text style={{ color: c.success, fontWeight: '700', fontSize: 17 }}>
                     {reg.checked_in_at ? t('Checked in ✓') : t("You're going")}
@@ -308,24 +400,59 @@ export default function EventScreen() {
 
       <Sheet visible={asking} onClose={() => setAsking(false)}>
         <View style={{ gap: space.md, paddingHorizontal: space.lg }}>
-          <Text style={[type.title, { color: c.text }]}>{t('One quick question')}</Text>
-          <Text style={[type.subhead, { color: c.textSecondary }]}>
-            {t('{society} asks everyone who signs up:', { society: event.society.name })}
-          </Text>
-          <Text style={[type.headline, { color: c.text }]}>{event.signup_question}</Text>
-          <Field
-            label={t('Your answer')}
-            value={answer}
-            onChangeText={setAnswer}
-            maxLength={500}
-            multiline
-            autoFocus
-            placeholder={t('Your answer (optional)')}
-            hint={t('Only the committee sees your answer.')}
-            style={{ minHeight: 90 }}
-          />
+          {event.signup_question ? (
+            <>
+              <Text style={[type.title, { color: c.text }]}>{t('One quick question')}</Text>
+              <Text style={[type.subhead, { color: c.textSecondary }]}>
+                {t('{society} asks everyone who signs up:', { society: event.society.name })}
+              </Text>
+              <Text style={[type.headline, { color: c.text }]}>{event.signup_question}</Text>
+              <Field
+                label={t('Your answer')}
+                value={answer}
+                onChangeText={setAnswer}
+                maxLength={500}
+                multiline
+                autoFocus={myPrice === 0}
+                placeholder={t('Your answer (optional)')}
+                hint={t('Only the committee sees your answer.')}
+                style={{ minHeight: 90 }}
+              />
+            </>
+          ) : (
+            <Text style={[type.title, { color: c.text }]}>{t('Sign up for {title}', { title: event.title })}</Text>
+          )}
+          {myPrice > 0 && (
+            <View style={{ gap: 6 }}>
+              <Text style={[type.label, { color: c.textSecondary }]}>{t('How will you pay?')}</Text>
+              <SegmentedControl grey options={methods} value={chosen} onChange={setMethod} />
+              <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19 }}>
+                {avail.kind === 'waitlist'
+                  ? t('Nothing to pay unless you get a place. We’ll tell you when you do.')
+                  : chosen === 'cash'
+                    ? t('Pay {society} in cash before the event. Your QR ticket works once they mark it paid.', {
+                        society: event.society.short_name ?? event.society.name,
+                      })
+                    : t(
+                        'Next you’ll see the amount and a reference to pay {society} directly. Your QR ticket works once they confirm it.',
+                        {
+                          society: event.society.short_name ?? event.society.name,
+                        },
+                      )}
+              </Text>
+            </View>
+          )}
+          {myPrice > 0 && q.data?.isMember && event.member_price_hkd != null && (
+            <Banner icon="card-outline" tone="success" text={t('Member price applied')} />
+          )}
           <Button
-            title={avail.kind === 'waitlist' ? t('Join waitlist') : t('Confirm registration')}
+            title={
+              avail.kind === 'waitlist'
+                ? t('Join waitlist')
+                : myPrice > 0
+                  ? t('Sign up · {amount}', { amount: formatHkd(myPrice) })
+                  : t('Confirm registration')
+            }
             icon="ticket-outline"
             loading={busy}
             onPress={register}

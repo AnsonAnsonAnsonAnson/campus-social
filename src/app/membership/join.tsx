@@ -2,6 +2,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 
+import { toast } from '@/components/Toast';
 import { Button, Chip, ChipRow, ErrorView, Field, Icon, Loading, SegmentedControl, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -20,7 +21,8 @@ import { t } from '@/lib/i18n';
  * give their details once instead of in every society's Google Form.
  */
 export default function JoinSociety() {
-  const { planId, societyId } = useLocalSearchParams<{ planId: string; societyId: string }>();
+  // `eventId`: joining to sign up for a members-only event; go back there once it's done.
+  const { planId, societyId, eventId } = useLocalSearchParams<{ planId: string; societyId: string; eventId?: string }>();
   const c = useColors();
   const { user, profile, refreshProfile } = useAuth();
   const q = useQuery(async () => {
@@ -75,7 +77,10 @@ export default function JoinSociety() {
         await refreshProfile();
       }
       invalidate();
-      router.replace(`/membership/${m.id}`);
+      if (eventId && m.status === 'active') {
+        router.replace(`/event/${eventId}`);
+        toast(t("You're a member now. Sign up below."), { icon: 'card' });
+      } else router.replace(`/membership/${m.id}`);
     } catch (e) {
       showAlert(t('Could not join'), errorMessage(e));
     } finally {

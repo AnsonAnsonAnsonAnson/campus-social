@@ -1,7 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
 
 import {
+  amountsIn,
   guessColumns,
+  liveTicketOrder,
+  matchStatement,
+  receiptPath,
+  ticketPayment,
   isSoldOut,
   itemsSummary,
   membershipState,
@@ -13,7 +18,7 @@ import {
   toCsv,
 } from '../commerce';
 import { setLang } from '../i18n';
-import type { Order } from '../types';
+import type { Order, TicketOrder } from '../types';
 
 setLang('en');
 
@@ -124,5 +129,78 @@ describe('spreadsheets', () => {
   it('reads student IDs from student emails only', () => {
     expect(studentIdFromEmail('1155123456@link.cuhk.edu.hk')).toBe('1155123456');
     expect(studentIdFromEmail('chan.tm@link.cuhk.edu.hk')).toBe('');
+  });
+});
+
+describe('paid tickets', () => {
+  const order = (o: Partial<TicketOrder>): TicketOrder => ({
+    id: 'o1',
+    ref: 'TKS-1234',
+    status: 'awaiting_payment',
+    total_hkd: 180,
+    expires_at: '2099-01-01T00:00:00Z',
+    payment_method: 'fps',
+    member_price: false,
+    receipt_at: null,
+    created_at: '2026-10-27T00:00:00Z',
+    ...o,
+  });
+
+  it('uses the newest order that is still live', () => {
+    const old = order({ id: 'old', status: 'refunded', created_at: '2026-10-01T00:00:00Z' });
+    const live = order({ id: 'live' });
+    expect(liveTicketOrder([old, live])?.id).toBe('live');
+    expect(liveTicketOrder([old])).toBeNull();
+    expect(liveTicketOrder(undefined)).toBeNull();
+  });
+
+  it('only shows the QR once paid', () => {
+    expect(ticketPayment({ status: 'confirmed', order: null }).key).toBe('none');
+    expect(ticketPayment({ status: 'confirmed', order: order({}) }).key).toBe('unpaid');
+    expect(ticketPayment({ status: 'confirmed', order: order({ status: 'payment_claimed' }) }).key).toBe('claimed');
+    expect(ticketPayment({ status: 'confirmed', order: order({ status: 'paid' }) }).key).toBe('paid');
+    expect(ticketPayment({ status: 'confirmed', order: order({ expires_at: '2020-01-01T00:00:00Z' }) }).key).toBe('expired');
+    expect(ticketPayment({ status: 'waitlisted', order: null }).key).toBe('none');
+  });
+
+  it('puts each receipt at one fixed path per record', () => {
+    expect(receiptPath('order', 's1', 'o1')).toBe('s1/order/o1.jpg');
+    expect(receiptPath('membership', 's1', 'm1')).toBe('s1/membership/m1.jpg');
+  });
+});
+
+describe('matchStatement', () => {
+  const waiting = [
+    { kind: 'order' as const, id: 'a', ref: 'SSM-4821', amount: 540, name: 'Chan' },
+    { kind: 'order' as const, id: 'b', ref: 'SSM-0007', amount: 120, name: 'Lee' },
+    { kind: 'membership' as const, id: 'c', ref: 'M-3F9A2C', amount: 50, name: 'Wong' },
+  ];
+
+  it('reads amounts with commas and currency signs', () => {
+    expect(amountsIn('HK$1,234.50 and 80')).toEqual([1234.5, 80]);
+  });
+
+  it('finds references however the bank writes them, and checks the amount', () => {
+    const text = [
+      'Date,Description,Amount',
+      '27/10/2026,FPS CHAN T** M** ssm4821,540.00',
+      '27/10/2026,PAYME m-3f9a2c,HK$40.00',
+      '27/10/2026,FPS SOMEONE ELSE,99.00',
+    ].join('\n');
+    const found = matchStatement(text, waiting);
+    expect(found.map((f) => [f.id, f.amountMatches])).toEqual([
+      ['a', true],
+      ['c', false],
+    ]);
+  });
+
+  it('prefers the line whose amount agrees when a reference appears twice', () => {
+    const found = matchStatement('SSM-0007 10.00\nSSM 0007 120.00', waiting);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ id: 'b', amountMatches: true, line: 'SSM 0007 120.00' });
+  });
+
+  it('does not read the reference digits as the amount', () => {
+    expect(matchStatement('SSM-0120', [{ ...waiting[1], ref: 'SSM-0120' }])[0].amountMatches).toBe(false);
   });
 });
