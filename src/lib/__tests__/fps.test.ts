@@ -38,3 +38,22 @@ describe('FPS QR', () => {
     expect(fpsPayload({ proxy: '91234567', amount: 0 })).toBeNull();
   });
 });
+
+describe('cross-check with hkqr-fps (independent HKICL implementation)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { FPS } = require('hkqr-fps');
+  it.each([
+    ['91234567', '26', '03', '+852-91234567'],
+    ['1234567', '26', '02', '1234567'],
+    ['treasurer@cucs.org.hk', '26', '04', 'treasurer@cucs.org.hk'],
+  ])('reads back what we generate for %s', (proxy, tag, sub, value) => {
+    const payload = fpsPayload({ proxy, amount: 88.5, reference: 'SSM-1234' })!;
+    const fps = new FPS();
+    fps.parse(payload);
+    const data = fps.extract().data;
+    expect(data[tag][sub]).toBe(value);
+    expect(Number(data['54'])).toBe(88.5);
+    expect(data['62']['05']).toBe('SSM-1234');
+    expect(data['63']).toBe(payload.slice(-4));
+  });
+});
