@@ -24,7 +24,7 @@ import { confirmAsync, showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { compactNumber, formatLongDay, formatWhen, todayHK } from '@/lib/format';
 import { pickAndUploadImage } from '@/lib/pickImage';
-import { radius, space, textStyle, useColors } from '@/lib/theme';
+import { coverFor, radius, space, textStyle, useColors, useIsDark } from '@/lib/theme';
 import type {
   EventWithSociety,
   Membership,
@@ -89,7 +89,7 @@ export default function ManageSociety() {
       style={{ backgroundColor: c.background }}
       contentContainerStyle={{ paddingBottom: 48 }}
       refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}>
-      <Stack.Screen options={{ title: s.short_name ?? s.name }} />
+      <Stack.Screen options={{ title: '' }} />
 
       <View style={styles.header}>
         <Pressable onPress={changeLogo} disabled={!isAdmin} accessibilityLabel={t('Change logo')}>
@@ -274,6 +274,7 @@ function EventsSection({
 
 function ManageEventRow({ event: e }: { event: EventWithSociety }) {
   const c = useColors();
+  const dark = useIsDark();
   const missing = e.status === 'draft' ? [!e.location && t('location'), !e.description && t('description')].filter(Boolean) : [];
   return (
     <Pressable
@@ -282,9 +283,12 @@ function ManageEventRow({ event: e }: { event: EventWithSociety }) {
           ? router.push({ pathname: '/manage/event-form', params: { societyId: e.society_id, eventId: e.id } })
           : router.push({ pathname: '/manage/attendees', params: { eventId: e.id } })
       }
-      style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.card }]}>
+      style={({ pressed }) => [
+        styles.row,
+        { backgroundColor: pressed ? c.fill : c.card, borderLeftWidth: 4, borderLeftColor: coverFor(e.category, e.id, dark).color },
+      ]}>
       <View style={{ flex: 1, gap: 4 }}>
-        <Text style={{ color: c.text, fontWeight: '600', fontSize: 16 }} numberOfLines={2}>
+        <Text style={{ color: c.text, fontWeight: '600', fontSize: 17 }} numberOfLines={2}>
           {e.title}
         </Text>
         <Text style={{ color: c.accentText, fontSize: 13, fontWeight: '600' }}>{formatWhen(e.starts_at)}</Text>

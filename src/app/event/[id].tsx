@@ -8,6 +8,7 @@ import { ActionSheetIOS, Platform, Pressable, ScrollView, Share, StyleSheet, Tex
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SaveButton } from '@/components/EventCard';
+import { VerifiedBadge } from '@/components/Glyph';
 import { Skeleton } from '@/components/Skeleton';
 import { FollowButton } from '@/components/SocietyRow';
 import { TicketQR } from '@/components/TicketCard';
@@ -32,9 +33,9 @@ import { useAuth } from '@/lib/auth';
 import { showAlert } from '@/lib/dialog';
 import { membershipState, ticketPayment } from '@/lib/commerce';
 import { formatHkd } from '@/lib/fps';
-import { availability, formatWhen, todayHK } from '@/lib/format';
+import { availability, compactNumber, formatDay, formatTime, formatWhen, hkDate, todayHK } from '@/lib/format';
 import { offerNotifications, refreshReminders } from '@/lib/notifications';
-import { palette, radius, space, type, useColors } from '@/lib/theme';
+import { coverFor, palette, radius, space, type, useColors, useIsDark } from '@/lib/theme';
 import type { PaymentMethod } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
 import { getLang, t } from '@/lib/i18n';
@@ -44,6 +45,7 @@ export default function EventScreen() {
   const c = useColors();
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
+  const dark = useIsDark();
   const { user, requireSignIn } = useAuth();
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -66,7 +68,8 @@ export default function EventScreen() {
         ? ((await api.listPlans(event.society_id)).find((p) => p.is_open && p.valid_until >= todayHK()) ?? null)
         : null;
     const settings = event?.price_hkd ? await api.getPaymentSettings(event.society_id) : null;
-    return { event, registration, position, isCommittee, isMember, plan, settings };
+    const host = event ? await api.getSociety(event.society_id).catch(() => null) : null;
+    return { event, registration, position, isCommittee, isMember, plan, settings, host };
   }, [id, user?.id]);
 
   if (q.loading) return <EventSkeleton />;
@@ -254,7 +257,11 @@ export default function EventScreen() {
     primary = <Button small title={t('Leave waitlist')} variant="secondary" loading={busy} onPress={cancel} />;
   } else {
     const subColor = avail.kind === 'open' ? c.successText : avail.kind === 'drop-in' ? c.textSecondary : c.warningText;
-    bar = { title: price, sub: avail.label, subColor };
+    const going =
+      event.registration_required && event.capacity
+        ? `${t('{n}/{capacity} going', { n: event.confirmed_count, capacity: event.capacity })} · `
+        : '';
+    bar = { title: price, sub: `${going}${avail.label}`, subColor };
     if (event.members_only && !q.data?.isMember && !q.data?.isCommittee && ['open', 'few', 'waitlist'].includes(avail.kind)) {
       bar.sub = t('Members only');
       primary = (
@@ -265,9 +272,8 @@ export default function EventScreen() {
         />
       );
     } else if (avail.kind === 'open' || avail.kind === 'few')
-      primary = <Button title={t('Register')} icon="ticket-outline" loading={busy} onPress={startRegister} />;
-    else if (avail.kind === 'waitlist')
-      primary = <Button title={t('Join waitlist')} icon="hourglass-outline" loading={busy} onPress={startRegister} />;
+      primary = <Button title={t('Register')} loading={busy} onPress={startRegister} />;
+    else if (avail.kind === 'waitlist') primary = <Button title={t('Join waitlist')} loading={busy} onPress={startRegister} />;
     else if (avail.kind === 'drop-in')
       primary = <Button variant="secondary" title={t('Add to calendar')} icon="calendar-outline" onPress={addToCalendar} />;
     else bar.subColor = c.dangerText;
@@ -277,11 +283,20 @@ export default function EventScreen() {
     <View style={{ flex: 1, backgroundColor: c.backgroundPlain }}>
       {/* White clock and battery over the coloured cover, only while this screen is on top. */}
       {focused && <StatusBar style="light" />}
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Pressable onPress={share} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('Share')} style={styles.headerButton}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
+        <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={{ height: 192 + insets.top }}>
+          <View style={[styles.floating, { top: insets.top + 6 }]}>
+            <Pressable
+              onPress={() => (router.canGoBack() ? router.back() : router.navigate('/discover'))}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={t('Back')}
+              style={styles.headerButton}>
+              <Icon name="chevron-back" size={20} color="#0A0A0B" />
+            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable onPress={share} hitSlop={6} accessibilityRole="button" accessibilityLabel={t('Share')} style={styles.headerButton}>
                 <Icon name="share-outline" size={19} color="#0A0A0B" />
               </Pressable>
               {event.status !== 'draft' && (
@@ -291,32 +306,41 @@ export default function EventScreen() {
               )}
               <Pressable
                 onPress={more}
-                hitSlop={8}
+                hitSlop={6}
                 accessibilityRole="button"
                 accessibilityLabel={t('More options')}
                 style={styles.headerButton}>
                 <Icon name="ellipsis-horizontal" size={20} color="#0A0A0B" />
               </Pressable>
             </View>
-          ),
-        }}
-      />
-      <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
-        <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={{ height: 236 + insets.top * 0.4 }}>
-          <View style={styles.heroScrim} />
+          </View>
           <View style={styles.heroBottom}>
             <View style={styles.heroTag}>
+              <Icon name={coverFor(event.category, event.id, dark).icon} size={14} color="#FFFFFF" />
               <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{t(event.category)}</Text>
             </View>
             <View style={styles.dateBadge} accessibilityElementsHidden importantForAccessibility="no">
-              <Text style={{ color: palette.tangerine[700], fontSize: 11, fontWeight: '700' }}>{monthShort(event.starts_at)}</Text>
-              <Text style={{ color: '#0A0A0B', fontSize: 24, lineHeight: 26, fontWeight: '700' }}>{dayOfMonth(event.starts_at)}</Text>
-              <Text style={{ color: '#6E6E73', fontSize: 11, fontWeight: '600' }}>{weekdayShort(event.starts_at)}</Text>
+              <Text style={{ color: palette.tangerine[700], fontSize: 11, lineHeight: 13, fontWeight: '700' }}>
+                {monthShort(event.starts_at)}
+              </Text>
+              <Text
+                style={{
+                  color: '#0A0A0B',
+                  fontSize: 24,
+                  lineHeight: 26,
+                  fontWeight: '700',
+                  letterSpacing: -0.5,
+                  marginTop: 3,
+                  marginBottom: 2,
+                }}>
+                {dayOfMonth(event.starts_at)}
+              </Text>
+              <Text style={{ color: '#6E6E73', fontSize: 11, lineHeight: 13, fontWeight: '600' }}>{weekdayShort(event.starts_at)}</Text>
             </View>
           </View>
         </Artwork>
 
-        <View style={{ padding: space.lg, gap: space.md }}>
+        <View style={{ padding: space.lg, gap: 14 }}>
           <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
             {event.members_only && <Pill label={t('Members only')} tone="ink" icon="card-outline" />}
             {event.status === 'draft' && <Pill label={t('Draft')} tone="warning" />}
@@ -330,21 +354,29 @@ export default function EventScreen() {
           {/* Follow sits beside the link, not inside it: nested buttons are invalid on web and unreachable in VoiceOver. */}
           <View style={styles.societyRow}>
             <Pressable onPress={() => router.push(`/society/${event.society_id}`)} accessibilityRole="button" style={styles.hostLink}>
-              <SocietyAvatar name={event.society.name} uri={event.society.logo_url} size={40} />
+              <SocietyAvatar name={event.society.name} uri={event.society.logo_url} size={40} category={q.data?.host?.category} />
               <View style={{ flex: 1 }}>
-                <Text style={{ color: c.textSecondary, fontSize: 12 }}>{t('Hosted by')}</Text>
-                <Text style={{ color: c.text, fontWeight: '600' }} numberOfLines={1}>
-                  {event.society.name}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ color: c.text, fontSize: 15, lineHeight: 20, fontWeight: '600', flexShrink: 1 }} numberOfLines={1}>
+                    {event.society.name}
+                  </Text>
+                  {event.society.verified && <VerifiedBadge size={15} color={c.tint} />}
+                </View>
+                <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 18 }} numberOfLines={1}>
+                  {q.data?.host
+                    ? t('{n} followers', { n: compactNumber(q.data.host.follower_count) })
+                    : t('Hosted by {society}', { society: event.society.short_name ?? event.society.name })}
                 </Text>
               </View>
             </Pressable>
             <FollowButton societyId={event.society_id} />
           </View>
 
-          <View style={{ gap: space.md, marginTop: space.xs }}>
+          <View style={{ gap: 4 }}>
             <InfoRow
               icon="calendar-outline"
-              title={formatWhen(event.starts_at, event.ends_at)}
+              title={formatDay(event.starts_at)}
+              sub={timeRange(event.starts_at, event.ends_at)}
               action={past ? undefined : t('Add to calendar')}
               onAction={addToCalendar}
             />
@@ -356,7 +388,7 @@ export default function EventScreen() {
             />
             {event.price_hkd ? (
               <InfoRow
-                icon="cash-outline"
+                icon="ticket-outline"
                 title={
                   event.member_price_hkd != null
                     ? t('{price} · Members {member}', {
@@ -370,7 +402,11 @@ export default function EventScreen() {
                 onAction={join}
               />
             ) : (
-              <InfoRow icon="cash-outline" title={event.price_text || t('Free')} />
+              <InfoRow
+                icon="ticket-outline"
+                title={event.price_text || t('Free')}
+                sub={event.registration_required ? t('Sign-up needed · 1 ticket each') : t('No sign-up needed. Just turn up.')}
+              />
             )}
 
             {event.registration_required && (
@@ -387,7 +423,9 @@ export default function EventScreen() {
                     ? c.warningText
                     : avail.kind === 'full' || avail.kind === 'closed'
                       ? c.dangerText
-                      : undefined
+                      : avail.kind === 'open'
+                        ? c.successText
+                        : undefined
                 }>
                 {!!event.capacity && (
                   <View style={{ marginTop: 6 }}>
@@ -450,15 +488,20 @@ export default function EventScreen() {
             </View>
           )}
 
-          <Text style={[styles.h2, { color: c.text }]}>{t('About')}</Text>
-          <Text style={{ color: c.text, fontSize: 16, lineHeight: 24 }}>{event.description || t('No description yet.')}</Text>
+          <View style={{ height: StyleSheet.hairlineWidth * 2, backgroundColor: c.border }} />
+          <Text style={[styles.h2, { color: c.text }]} accessibilityRole="header">
+            {t('About')}
+          </Text>
+          <Text style={{ color: c.textSecondary, fontSize: 15, lineHeight: 22, marginTop: -6 }}>
+            {event.description || t('No description yet.')}
+          </Text>
         </View>
       </ScrollView>
 
       <View
         style={[
           styles.bottomBar,
-          { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: c.backgroundPlain, borderTopColor: c.border },
+          { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: c.elevated, borderTopColor: c.border },
         ]}>
         {q.data?.isCommittee && (
           <Button
@@ -483,7 +526,7 @@ export default function EventScreen() {
                 </View>
               )}
               <View style={{ flex: 1 }}>
-                <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }} numberOfLines={1}>
+                <Text style={{ color: c.text, fontSize: 17, lineHeight: 22, fontWeight: '600' }} numberOfLines={1}>
                   {bar.title}
                 </Text>
                 {!!bar.sub && (
@@ -594,29 +637,43 @@ function EventSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  heroScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.15)' },
+  floating: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between' },
   heroBottom: {
     position: 'absolute',
     left: space.lg,
     right: space.lg,
-    bottom: space.md,
+    bottom: space.lg,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
   },
-  heroTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.32)' },
-  dateBadge: { width: 54, paddingVertical: 6, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center' },
+  heroTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 9,
+    paddingRight: 11,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  dateBadge: { width: 58, paddingTop: 7, paddingBottom: 8, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center' },
   // Hand-off: 40pt white circles on the cover.
   headerButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
-  title: { fontSize: 25, fontWeight: '600', lineHeight: 31 },
-  h2: { fontSize: 20, fontWeight: '700', marginTop: space.sm },
+  title: { fontSize: 25, fontWeight: '600', lineHeight: 31, letterSpacing: -0.4, marginTop: -4 },
+  h2: { fontSize: 20, lineHeight: 28, fontWeight: '600' },
   societyRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.xs },
   hostLink: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
   barStatus: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 50 },
@@ -636,6 +693,12 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
 });
+
+/** "6:30pm – 9:30pm", with the end day when it runs past midnight. */
+function timeRange(starts: string, ends: string) {
+  const end = hkDate(starts) === hkDate(ends) ? formatTime(ends) : `${formatDay(ends)} ${formatTime(ends)}`;
+  return `${formatTime(starts)} – ${end}`;
+}
 
 const hkParts = (iso: string, opts: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat(getLang() === 'zh-Hant' ? 'zh-HK' : 'en-GB', { timeZone: 'Asia/Hong_Kong', ...opts }).format(new Date(iso));

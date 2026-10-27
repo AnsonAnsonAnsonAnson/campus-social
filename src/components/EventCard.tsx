@@ -120,6 +120,7 @@ export function EventRow({ event, compact }: { event: EventWithSociety; compact?
           seed={event.id}
           uri={event.cover_url}
           category={event.category}
+          mark={!compact}
           style={{ width: thumb, height: thumb, borderRadius: compact ? 12 : 14 }}
         />
         <View style={{ flex: 1, gap: 2, minHeight: thumb }}>

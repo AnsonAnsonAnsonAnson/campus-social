@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { EventRow } from '@/components/EventCard';
-import { CircleButton, EmptyState, Icon, PageHeader, SegmentedControl, tap } from '@/components/ui';
+import { EmptyState, Icon, PageHeader, SegmentedControl, tap } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { addDays, formatDay, formatDayRange, formatLongDay, formatTime, hkDate, todayHK } from '@/lib/format';
@@ -99,7 +99,13 @@ export default function CalendarScreen() {
       contentContainerStyle={{ paddingBottom: 40 }}
       refreshControl={<RefreshControl refreshing={data.refreshing} onRefresh={data.refresh} />}>
       <PageHeader title={t('Calendar')}>
-        <CircleButton text={t('Today')} label={t('Go to today')} onPress={goToday} />
+        <Pressable
+          onPress={goToday}
+          accessibilityRole="button"
+          accessibilityLabel={t('Go to today')}
+          style={({ pressed }) => [styles.todayButton, { borderColor: c.border, backgroundColor: pressed ? c.fill : c.backgroundPlain }]}>
+          <Text style={{ color: c.text, fontSize: 15, fontWeight: '600' }}>{t('Today')}</Text>
+        </Pressable>
       </PageHeader>
 
       {(highlights.next || highlights.popular || highlights.campus) && (
@@ -150,7 +156,7 @@ export default function CalendarScreen() {
         options={[
           { value: 'all', label: t('All events') },
           { value: 'following', label: t('Following') },
-          { value: 'going', label: t('Going') },
+          { value: 'going', label: t('Signed up') },
         ]}
       />
 
@@ -158,13 +164,13 @@ export default function CalendarScreen() {
 
       <View style={styles.legend}>
         <View style={{ flexDirection: 'row', gap: 2 }}>
-          {[palette.cobalt[100], palette.cobalt[200], palette.cobalt[300]].map((col) => (
+          {[c.fill, '#DCE4FF', palette.cobalt[200]].map((col) => (
             <View key={col} style={{ width: 8, height: 12, borderRadius: 2, backgroundColor: dark ? c.tintSoft : col }} />
           ))}
         </View>
         <Text style={[styles.legendText, { color: c.textSecondary }]}>{t('More events, darker day')}</Text>
         <Icon name="checkmark-circle" size={13} color={c.tint} />
-        <Text style={[styles.legendText, { color: c.textSecondary }]}>{t('Going')}</Text>
+        <Text style={[styles.legendText, { color: c.textSecondary }]}>{t('Signed up')}</Text>
         <View style={{ width: 14, height: 6, borderRadius: 3, backgroundColor: c.accent }} />
         <Text style={[styles.legendText, { color: c.textSecondary }]}>{t('Campus dates')}</Text>
       </View>
@@ -282,7 +288,7 @@ function MonthGrid({
       ? 'transparent'
       : dark
         ? [c.tintSoft, palette.cobalt[800], palette.cobalt[700]][Math.min(n, 3) - 1]
-        : [palette.cobalt[50], palette.cobalt[100], palette.cobalt[200]][Math.min(n, 3) - 1];
+        : [c.fill, '#DCE4FF', palette.cobalt[200]][Math.min(n, 3) - 1];
 
   return (
     <View style={{ paddingHorizontal: 13, marginTop: space.lg }}>
@@ -381,6 +387,7 @@ function CampusDateRow({ item }: { item: CampusDate }) {
 }
 
 const styles = StyleSheet.create({
+  todayButton: { height: 36, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   kicker: { fontSize: 15, lineHeight: 22, fontWeight: '600', paddingHorizontal: space.lg },
   countdown: { width: 226, height: 112, padding: 12, paddingHorizontal: 14, borderRadius: 18, justifyContent: 'space-between' },
   monthHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 3 },

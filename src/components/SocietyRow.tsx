@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -9,9 +9,10 @@ import type { Society } from '@/lib/types';
 import { showAlert } from '@/lib/dialog';
 import { t } from '@/lib/i18n';
 
-import { Button, Icon, SocietyAvatar } from './ui';
+import { VerifiedBadge } from './Glyph';
+import { Button, SocietyAvatar } from './ui';
 
-export function FollowButton({ societyId, small = true }: { societyId: string; small?: boolean }) {
+export function FollowButton({ societyId, small = true, style }: { societyId: string; small?: boolean; style?: StyleProp<ViewStyle> }) {
   const { followIds, toggleFollow } = useAuth();
   const following = followIds.has(societyId);
   // In lists a tinted pill, so a list of societies isn't a wall of filled buttons;
@@ -21,8 +22,9 @@ export function FollowButton({ societyId, small = true }: { societyId: string; s
     <Button
       small={small}
       title={following ? t('Following') : t('Follow')}
-      icon={following ? 'checkmark' : 'add'}
+      icon={following ? 'checkmark' : undefined}
       variant={variant}
+      style={style}
       onPress={() => toggleFollow(societyId).catch((e) => showAlert(t('Could not update'), errorMessage(e)))}
     />
   );
@@ -45,7 +47,7 @@ export function SocietyRow({ society, next }: { society: Society; next?: { start
             <Text style={{ color: c.text, fontSize: 16, lineHeight: 21, fontWeight: '600', flexShrink: 1 }} numberOfLines={2}>
               {society.name}
             </Text>
-            {society.verified && <Icon name="checkmark-circle" size={14} color={c.tintText} />}
+            {society.verified && <VerifiedBadge size={15} color={c.tint} />}
           </View>
           <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
             {t(society.category)}

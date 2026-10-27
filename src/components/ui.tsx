@@ -1,4 +1,4 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
+import RawIonicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { Children, useState, type ComponentProps, type ReactNode } from 'react';
@@ -34,9 +34,19 @@ import {
   useIsDark,
 } from '@/lib/theme';
 import { t, useLang } from '@/lib/i18n';
+
+import { FilledHeart, Glyph, IONICON_TO_GLYPH } from './Glyph';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export type IconName = ComponentProps<typeof Ionicons>['name'];
+export type IconName = ComponentProps<typeof RawIonicons>['name'];
+
+/** Ionicons names, drawn with the design's own line glyph when it has one. */
+function Ionicons({ name, size = 18, color, style }: { name: IconName; size?: number; color: string; style?: object }) {
+  if (name === 'heart') return <FilledHeart size={size} color={color} />;
+  const glyph = IONICON_TO_GLYPH[name];
+  if (glyph) return <Glyph name={glyph} size={size} color={color} style={style} />;
+  return <RawIonicons name={name} size={size} color={color} style={style} />;
+}
 
 export function Icon({ name, size = 18, color }: { name: IconName; size?: number; color?: string }) {
   const c = useColors();
@@ -153,6 +163,77 @@ export function Chip({ label, selected, onPress, icon }: { label: string; select
   );
 }
 
+/** Grey filter pill that opens a menu (Search): label plus a chevron; ink when a value is picked. */
+export function DropChip({ label, selected, onPress, icon }: { label: string; selected?: boolean; onPress: () => void; icon?: IconName }) {
+  const c = useColors();
+  const fg = selected ? c.onInk : c.text;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      hitSlop={4}
+      onPress={() => {
+        tap();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.dropChip,
+        icon ? { paddingLeft: 12, paddingRight: 12, gap: 6 } : null,
+        { backgroundColor: selected ? c.ink : pressed ? c.fillStrong : c.fill },
+      ]}>
+      {icon && <Ionicons name={icon} size={17} color={fg} />}
+      <Text style={[styles.chipText, { color: fg }]}>{label}</Text>
+      {!icon && <Ionicons name="chevron-down" size={15} color={fg} />}
+    </Pressable>
+  );
+}
+
+/** Bottom sheet with a title and a list of choices, the current one ticked. */
+export function OptionSheet<T extends string>({
+  visible,
+  title,
+  options,
+  value,
+  onChange,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  onClose: () => void;
+}) {
+  const c = useColors();
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      <Text style={[type.headline, { color: c.text }]} accessibilityRole="header">
+        {title}
+      </Text>
+      <View>
+        {options.map((o) => {
+          const selected = o.value === value;
+          return (
+            <Pressable
+              key={o.value}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              onPress={() => {
+                tap();
+                onChange(o.value);
+                onClose();
+              }}
+              style={({ pressed }) => [styles.option, { borderBottomColor: c.border, opacity: pressed ? 0.6 : 1 }]}>
+              <Text style={{ flex: 1, color: c.text, fontSize: 17, fontWeight: selected ? '600' : '400' }}>{o.label}</Text>
+              {selected && <Ionicons name="checkmark" size={20} color={c.tint} />}
+            </Pressable>
+          );
+        })}
+      </View>
+    </Sheet>
+  );
+}
+
 export function ChipRow({ children }: { children: ReactNode }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -166,7 +247,7 @@ export type PillTone = 'neutral' | 'success' | 'warning' | 'danger' | 'brand' | 
 // brand and neutral are also used for plain labels (category, role), so they have no default icon.
 const PILL_ICON: Record<PillTone, IconName | null> = {
   neutral: null,
-  success: 'ellipse',
+  success: 'radio-button-on-outline',
   warning: 'time-outline',
   danger: 'close',
   brand: null,
@@ -378,9 +459,13 @@ export function InfoRow({
       <View style={[styles.infoIcon, { backgroundColor: c.fill }]}>
         <Ionicons name={icon} size={20} color={c.text} />
       </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }}>{title}</Text>
-        {sub && <Text style={{ color: subColor ?? c.textSecondary, fontSize: 14, fontWeight: subColor ? '600' : '400' }}>{sub}</Text>}
+      <View style={{ flex: 1, gap: 1 }}>
+        <Text style={{ color: c.text, fontSize: 16, lineHeight: 21, fontWeight: '600' }}>{title}</Text>
+        {sub && (
+          <Text style={{ color: subColor ?? c.textSecondary, fontSize: 14, lineHeight: 19, fontWeight: subColor ? '600' : '400' }}>
+            {sub}
+          </Text>
+        )}
         {children}
       </View>
       {action && (
@@ -508,9 +593,12 @@ export function Artwork({
   uri,
   category,
   style,
+  mark,
   children,
 }: {
   seed: string;
+  /** Small category icon in the top-left corner, as on list thumbnails. */
+  mark?: boolean;
   uri?: string | null;
   /** Event or society category; picks the cover colour and icon. */
   category?: string | null;
@@ -533,16 +621,19 @@ export function Artwork({
           color="#FFFFFF"
           style={{
             position: 'absolute',
-            opacity: 0.22,
+            opacity: 0.28,
             right: place.right * iconSize,
             ...('top' in place ? { top: place.top * iconSize } : { bottom: place.bottom * iconSize }),
             transform: [{ rotate: place.rotate }],
           }}
-          accessibilityElementsHidden
-          importantForAccessibility="no"
         />
       )}
       {uri && <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />}
+      {mark && !uri && (
+        <View style={styles.artMark} pointerEvents="none">
+          <Ionicons name={cover.icon} size={16} color="#FFFFFF" />
+        </View>
+      )}
       {children}
     </View>
   );
@@ -836,6 +927,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: { fontSize: 15, fontWeight: '600' },
+  dropChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 36,
+    paddingLeft: 14,
+    paddingRight: 10,
+    borderRadius: radius.pill,
+  },
+  option: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth },
   chipRow: { gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.xs },
   pill: {
     flexDirection: 'row',
@@ -875,7 +976,7 @@ const styles = StyleSheet.create({
   tabCount: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   stat: { flex: 1, borderRadius: 14, paddingVertical: space.md, paddingHorizontal: space.md, gap: 2 },
   statValue: { fontSize: 24, lineHeight: 30, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.sm },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 56, paddingVertical: 4 },
   infoIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   progress: { height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 6 },
   sheetBackdrop: { flex: 1, justifyContent: 'flex-end' },
@@ -892,6 +993,7 @@ const styles = StyleSheet.create({
   badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 48 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  artMark: { position: 'absolute', left: 10, top: 10 },
   avatarCenter: { alignItems: 'center', justifyContent: 'center' },
   inputRing: { borderWidth: 3, borderRadius: radius.md + 3, margin: -3 },
   // The focus ring is drawn by inputRing; turn off the browser's own outline on web.

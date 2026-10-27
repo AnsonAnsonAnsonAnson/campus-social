@@ -1,8 +1,10 @@
+import { router } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
+import { t } from '@/lib/i18n';
 import { palette, useColors } from '@/lib/theme';
 
 import { tap } from './ui';
@@ -17,11 +19,20 @@ const ICONS: Record<string, string> = {
   profile: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 3.6-7 8-7s8 3 8 7',
 };
 
+const TABS = ['discover', 'calendar', 'societies', 'tickets', 'profile'] as const;
+export type TabName = (typeof TABS)[number];
+
+const tabTitle = (name: string) =>
+  ({ discover: t('Discover'), calendar: t('Calendar'), societies: t('Societies'), tickets: t('Tickets'), profile: t('Profile') })[name] ??
+  name;
+
+type Item = { key: string; name: string; label: string; focused: boolean; badge?: boolean; onPress: () => void; onLongPress?: () => void };
+
 /**
  * The bottom tab bar from the design: five line icons with labels, cobalt for
  * the current tab, translucent white with a hairline on top.
  */
-export function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) {
+function TabBarView({ items }: { items: Item[] }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
   return (
@@ -35,42 +46,31 @@ export function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTab
           paddingBottom: Math.max(insets.bottom, Platform.OS === 'web' ? 10 : 6),
         },
       ]}>
-      {state.routes.map((route, index) => {
-        const { options } = descriptors[route.key];
-        const focused = state.index === index;
-        const color = focused ? c.tint : palette.neutral[450];
-        const label = typeof options.title === 'string' ? options.title : route.name;
-        const badge = options.tabBarBadge;
-        const onPress = () => {
-          const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!focused && !event.defaultPrevented) {
-            tap();
-            navigateToTab(route.key);
-          }
-        };
+      {items.map((item) => {
+        const color = item.focused ? c.tint : palette.neutral[450];
         return (
           <Pressable
-            key={route.key}
-            onPress={onPress}
-            onLongPress={() => emitter.emit({ type: 'tabLongPress', target: route.key })}
+            key={item.key}
+            onPress={item.onPress}
+            onLongPress={item.onLongPress}
             accessibilityRole="tab"
-            accessibilityState={{ selected: focused }}
-            accessibilityLabel={options.tabBarAccessibilityLabel ?? label}
+            accessibilityState={{ selected: item.focused }}
+            accessibilityLabel={item.label}
             style={styles.item}>
             <View>
-              <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+              <Svg width={25} height={25} viewBox="0 0 24 24" fill="none">
                 <Path
-                  d={ICONS[route.name] ?? ICONS.discover}
+                  d={ICONS[item.name] ?? ICONS.discover}
                   stroke={color}
-                  strokeWidth={focused ? 2.2 : 1.8}
+                  strokeWidth={item.focused ? 2.2 : 1.8}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               </Svg>
-              {badge != null && <View style={[styles.dot, { backgroundColor: c.danger, borderColor: c.tabBar }]} />}
+              {item.badge && <View style={[styles.dot, { backgroundColor: c.danger, borderColor: c.tabBar }]} />}
             </View>
             <Text style={[styles.label, { color }]} numberOfLines={1}>
-              {label}
+              {item.label}
             </Text>
           </Pressable>
         );
@@ -79,6 +79,53 @@ export function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTab
   );
 }
 
+/** The tab navigator's bar. */
+export function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) {
+  return (
+    <TabBarView
+      items={state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const focused = state.index === index;
+        return {
+          key: route.key,
+          name: route.name,
+          label: typeof options.title === 'string' ? options.title : tabTitle(route.name),
+          focused,
+          badge: options.tabBarBadge != null,
+          onPress: () => {
+            const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!focused && !event.defaultPrevented) {
+              tap();
+              navigateToTab(route.key);
+            }
+          },
+          onLongPress: () => emitter.emit({ type: 'tabLongPress', target: route.key }),
+        };
+      })}
+    />
+  );
+}
+
+/**
+ * The same bar under screens pushed on top of the tabs (Search, a society page),
+ * as the design shows it there. Tapping a tab goes back to the tabs.
+ */
+export function StackTabBar({ current }: { current: TabName }) {
+  return (
+    <TabBarView
+      items={TABS.map((name) => ({
+        key: name,
+        name,
+        label: tabTitle(name),
+        focused: name === current,
+        onPress: () => {
+          tap();
+          router.navigate(`/${name}`);
+        },
+      }))}
+    />
+  );
+}
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',

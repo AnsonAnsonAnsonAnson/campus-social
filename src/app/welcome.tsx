@@ -1,18 +1,19 @@
 import { router, Stack } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Skeleton } from '@/components/Skeleton';
 import { SocietyRow } from '@/components/SocietyRow';
-import { Button, Chip, ChipRow, Field, ProgressBar } from '@/components/ui';
+import { Button, Chip, Field, Icon } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { COLLEGES, SOCIETY_CATEGORIES } from '@/lib/constants';
 import { showAlert } from '@/lib/dialog';
 import { markOnboarded } from '@/lib/onboarding';
-import { radius, space, textStyle, type, useColors } from '@/lib/theme';
+import { space, textStyle, type, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
-import { changeLanguage, LANGUAGES, t, useLang } from '@/lib/i18n';
+import { changeLanguage, t, useLang } from '@/lib/i18n';
 
 /**
  * First-run setup in two steps: who you are (name, college), then what you're
@@ -26,8 +27,10 @@ export default function Welcome() {
   const [step, setStep] = useState<1 | 2>(1);
   const [college, setCollege] = useState<string | null>(profile?.college ?? null);
   const [interests, setInterests] = useState<Set<string>>(new Set());
+  const [noCollege, setNoCollege] = useState(false);
   const [busy, setBusy] = useState(false);
   const lang = useLang();
+  const insets = useSafeAreaInsets();
 
   const societies = useQuery(() => api.listSocieties({}));
 
@@ -63,72 +66,96 @@ export default function Welcome() {
     }
   };
 
+  const next = step === 1 ? () => setStep(2) : () => finish(true);
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <Pressable onPress={() => finish(false)} hitSlop={10} accessibilityRole="button">
-              <Text style={{ color: c.tint, fontSize: 17 }}>{t('Skip')}</Text>
-            </Pressable>
-          ),
-        }}
-      />
-      <View style={{ paddingHorizontal: space.lg, paddingTop: space.sm }}>
-        <ProgressBar value={step / 2} />
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.backgroundPlain }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={[styles.top, { paddingTop: Math.max(insets.top, space.md) }]}>
+        {step === 2 && (
+          <Pressable
+            onPress={() => setStep(1)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('Back')}
+            style={{ marginLeft: -6 }}>
+            <Icon name="chevron-back" size={22} color={c.text} />
+          </Pressable>
+        )}
+        <View style={{ flexDirection: 'row', gap: 4 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {[1, 2].map((n) => (
+            <View key={n} style={[styles.stepBar, { backgroundColor: n <= step ? c.tint : c.border }]} />
+          ))}
+        </View>
+        <Text style={{ flex: 1, fontSize: 13, color: c.textSecondary }}>{t('Step {n} of {total}', { n: step, total: 2 })}</Text>
+        <Pressable
+          onPress={() => changeLanguage(lang === 'en' ? 'zh-Hant' : 'en', '/welcome')}
+          accessibilityRole="button"
+          accessibilityLabel={t('Language')}
+          style={styles.topLink}>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: c.textSecondary }}>{lang === 'en' ? '中文' : 'English'}</Text>
+        </Pressable>
+        <Pressable onPress={() => finish(false)} accessibilityRole="button" style={styles.topLink}>
+          <Text style={{ fontSize: 16, fontWeight: '600', color: c.textSecondary }}>{t('Skip')}</Text>
+        </Pressable>
       </View>
       <ScrollView
-        contentContainerStyle={{ paddingVertical: space.lg, gap: space.lg, paddingBottom: 60 }}
+        contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: 14, paddingBottom: space.xl, gap: 22 }}
         keyboardShouldPersistTaps="handled">
         {step === 1 ? (
           <>
-            <ChipRow>
-              {LANGUAGES.map((l) => (
-                <Chip key={l.code} label={l.label} selected={lang === l.code} onPress={() => changeLanguage(l.code, '/welcome')} />
-              ))}
-            </ChipRow>
-
-            <View style={{ paddingHorizontal: space.lg, gap: space.xs }}>
-              <Text style={[textStyle('largeTitle', lang), { color: c.text }]}>{t('Welcome to Campus Social')}</Text>
-              <Text style={[type.subhead, { color: c.textSecondary, lineHeight: 21 }]}>{t('First, tell committees who you are.')}</Text>
+            <View style={{ gap: 10 }}>
+              <View style={[styles.appIcon, { backgroundColor: c.tint }]}>
+                <Icon name="ticket-outline" size={28} color="#FFFFFF" />
+              </View>
+              <Text style={[textStyle('title1', lang), { color: c.text, marginTop: 4, letterSpacing: -0.3 }]} accessibilityRole="header">
+                {t('Welcome to Campus Social')}
+              </Text>
+              <Text style={{ color: c.textSecondary, fontSize: 16, lineHeight: 24 }}>
+                {t('Follow societies, sign up in one tap, keep your tickets on your phone. First, tell us who you are.')}
+              </Text>
             </View>
-
-            <View style={{ paddingHorizontal: space.lg }}>
-              <Field
-                label={t('Your name')}
-                value={name}
-                onChangeText={setName}
-                maxLength={60}
-                autoComplete="name"
-                textContentType="name"
-                placeholder={t('e.g. Chan Tai Man')}
-                hint={t('Committees see this when you sign up for events.')}
-              />
-            </View>
-
-            <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg, marginBottom: -8 }]}>
-              {t('Your college')}
-            </Text>
-            <ChipRow>
-              {COLLEGES.map((col) => (
-                <Chip key={col} label={t(col)} selected={college === col} onPress={() => setCollege(col === college ? null : col)} />
-              ))}
-            </ChipRow>
-
-            <View style={{ paddingHorizontal: space.lg }}>
-              <Button title={t('Next')} disabled={!name.trim()} hint={t('Add your name to continue')} onPress={() => setStep(2)} />
+            <Field
+              label={t('What should we call you?')}
+              value={name}
+              onChangeText={setName}
+              maxLength={60}
+              autoComplete="name"
+              textContentType="name"
+              placeholder={t('e.g. Chan Tai Man')}
+              hint={t('Committees see this when you sign up for events.')}
+            />
+            <View style={{ gap: space.sm }}>
+              <Text style={[type.label, { color: c.textSecondary }]}>{t('Which college are you in?')}</Text>
+              <View style={styles.wrap} accessibilityRole="radiogroup">
+                {[...COLLEGES, 'none' as const].map((col) => {
+                  const value = col === 'none' ? null : col;
+                  return (
+                    <Chip
+                      key={col}
+                      label={col === 'none' ? t('Not applicable') : t(col)}
+                      selected={college === value && (value !== null || noCollege)}
+                      onPress={() => {
+                        setNoCollege(value === null);
+                        setCollege(value);
+                      }}
+                    />
+                  );
+                })}
+              </View>
             </View>
           </>
         ) : (
           <>
-            <View style={{ paddingHorizontal: space.lg, gap: space.xs }}>
-              <Text style={[textStyle('largeTitle', lang), { color: c.text }]}>{t('What are you into?')}</Text>
-              <Text style={[type.subhead, { color: c.textSecondary, lineHeight: 21 }]}>
-                {t('Pick a few and we’ll suggest societies to follow.')}
+            <View style={{ gap: space.sm }}>
+              <Text style={[textStyle('title1', lang), { color: c.text, letterSpacing: -0.3 }]} accessibilityRole="header">
+                {t('What are you into?')}
+              </Text>
+              <Text style={{ color: c.textSecondary, fontSize: 16, lineHeight: 24 }}>
+                {t('Pick a few and we’ll suggest societies you’ll like.')}
               </Text>
             </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, paddingHorizontal: space.lg }}>
-              {SOCIETY_CATEGORIES.filter((cat) => cat !== 'Other').map((cat) => (
+            <View style={styles.wrap}>
+              {SOCIETY_CATEGORIES.map((cat) => (
                 <Chip
                   key={cat}
                   label={t(cat)}
@@ -139,26 +166,49 @@ export default function Welcome() {
               ))}
             </View>
 
-            <View style={{ gap: space.sm }}>
-              <Text style={[type.overline, { color: c.textSecondary, marginHorizontal: space.lg }]}>{t('Societies to follow')}</Text>
-              <View style={{ marginHorizontal: space.lg, borderRadius: radius.md, overflow: 'hidden' }}>
+            <View>
+              <Text style={[textStyle('title2', lang), { color: c.text, marginBottom: 4 }]} accessibilityRole="header">
+                {t('Suggested societies')}
+              </Text>
+              <View style={{ marginHorizontal: -space.lg }}>
                 {societies.loading && !societies.data
                   ? Array.from({ length: 4 }, (_, i) => <Skeleton key={i} height={64} round={0} style={{ marginBottom: 1 }} />)
-                  : suggestions.map((s) => <SocietyRow key={s.id} society={s} />)}
+                  : suggestions.map((s, i) => (
+                      <View key={s.id}>
+                        {i > 0 && <View style={[styles.rule, { backgroundColor: c.border }]} />}
+                        <SocietyRow society={s} />
+                      </View>
+                    ))}
               </View>
-            </View>
-
-            <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>
-              <Button
-                title={followIds.size ? t('Done · following {n}', { n: followIds.size }) : t('Done')}
-                loading={busy}
-                onPress={() => finish(true)}
-              />
-              <Button title={t('Back')} variant="plain" disabled={busy} onPress={() => setStep(1)} />
             </View>
           </>
         )}
       </ScrollView>
+      <View
+        style={[
+          styles.footer,
+          { paddingBottom: Math.max(insets.bottom, space.lg), borderTopColor: step === 2 ? c.border : 'transparent' },
+        ]}>
+        <Button
+          title={step === 1 ? t('Continue') : followIds.size ? t('Done · following {n}', { n: followIds.size }) : t('Done')}
+          loading={busy}
+          disabled={step === 1 && !name.trim()}
+          hint={step === 1 ? t('Add your name to continue') : undefined}
+          onPress={next}
+          style={{ alignSelf: 'stretch' }}
+        />
+        {step === 1 && <Text style={{ fontSize: 13, color: c.textTertiary }}>{t('You can change all of this later in Profile')}</Text>}
+      </View>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  top: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: space.lg, minHeight: 44 },
+  topLink: { minHeight: 44, justifyContent: 'center' },
+  stepBar: { width: 36, height: 4, borderRadius: 2 },
+  appIcon: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  rule: { height: StyleSheet.hairlineWidth, marginLeft: 76 },
+  footer: { gap: 10, alignItems: 'center', paddingHorizontal: space.lg, paddingTop: space.md, borderTopWidth: StyleSheet.hairlineWidth },
+});

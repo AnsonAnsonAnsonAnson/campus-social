@@ -312,7 +312,7 @@ function requireUser() {
 }
 
 function summary(s: Society) {
-  return { id: s.id, name: s.name, short_name: s.short_name, logo_url: s.logo_url, verified: s.verified };
+  return { id: s.id, name: s.name, short_name: s.short_name, logo_url: s.logo_url, verified: s.verified, college: s.college };
 }
 
 function withSociety(e: CampusEvent): EventWithSociety {

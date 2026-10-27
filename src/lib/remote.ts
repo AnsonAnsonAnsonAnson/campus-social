@@ -57,7 +57,7 @@ if (supabase && Platform.OS !== 'web') {
   });
 }
 
-const SOCIETY_SUMMARY = 'id, name, short_name, logo_url, verified';
+const SOCIETY_SUMMARY = 'id, name, short_name, logo_url, verified, college';
 const SOCIETY_CARD = `${SOCIETY_SUMMARY}, category`;
 const EVENT_WITH_SOCIETY = `*, society:societies!inner(${SOCIETY_SUMMARY})`;
 const TICKET_ORDER = 'orders(id, ref, status, total_hkd, expires_at, payment_method, member_price, receipt_at, created_at)';

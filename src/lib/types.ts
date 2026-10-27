@@ -38,7 +38,7 @@ export type Society = {
   follower_count: number;
 };
 
-export type SocietySummary = Pick<Society, 'id' | 'name' | 'short_name' | 'logo_url' | 'verified'>;
+export type SocietySummary = Pick<Society, 'id' | 'name' | 'short_name' | 'logo_url' | 'verified' | 'college'>;
 
 export type CampusEvent = {
   id: string;

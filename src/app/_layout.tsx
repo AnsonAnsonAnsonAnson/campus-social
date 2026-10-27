@@ -77,8 +77,8 @@ export default function RootLayout() {
       <AuthProvider>
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="event/[id]" options={{ title: '', headerTransparent: true, headerTintColor: '#fff' }} />
-          <Stack.Screen name="society/[id]" options={{ title: '' }} />
+          <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="society/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="sign-in" options={{ presentation: 'modal', title: t('Sign in') }} />
           <Stack.Screen name="edit-profile" options={{ presentation: 'modal', title: t('Edit profile') }} />
           <Stack.Screen name="new-society" options={{ presentation: 'modal', title: t('Register a society') }} />

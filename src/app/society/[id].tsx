@@ -1,12 +1,15 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EventRow } from '@/components/EventCard';
 import { ProductRow } from '@/components/ProductCard';
+import { VerifiedBadge } from '@/components/Glyph';
 import { FollowButton } from '@/components/SocietyRow';
+import { StackTabBar } from '@/components/TabBar';
 import {
   Artwork,
   Banner,
@@ -27,17 +30,17 @@ import { membershipState } from '@/lib/commerce';
 import { showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { compactNumber, formatLongDay, todayHK } from '@/lib/format';
-import { radius, space, textStyle, useColors } from '@/lib/theme';
+import { radius, space, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
-import { t, useLang } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
 
 export default function SocietyScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const c = useColors();
-  const lang = useLang();
   const { user, requireSignIn, hiddenIds, setHidden } = useAuth();
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
   const [expanded, setExpanded] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const q = useQuery(async () => {
     const now = new Date().toISOString();
@@ -65,10 +68,17 @@ export default function SocietyScreen() {
     };
   }, [id, user?.id]);
 
-  if (q.loading) return <Loading />;
-  if (q.error) return <ErrorView message={q.error} onRetry={q.refresh} />;
+  const shell = (body: ReactNode) => (
+    <View style={{ flex: 1, backgroundColor: c.backgroundPlain }}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={{ flex: 1 }}>{body}</View>
+      <StackTabBar current="societies" />
+    </View>
+  );
+  if (q.loading) return shell(<Loading />);
+  if (q.error) return shell(<ErrorView message={q.error} onRetry={q.refresh} />);
   const s = q.data?.society;
-  if (!s) return <ErrorView message={t('This society could not be found.')} />;
+  if (!s) return shell(<ErrorView message={t('This society could not be found.')} />);
   const { plan, membership, products } = q.data!;
 
   const instagram = s.instagram?.replace(/^@/, '');
@@ -100,79 +110,87 @@ export default function SocietyScreen() {
 
   const list = tab === 'upcoming' ? q.data!.upcoming : q.data!.past;
 
-  return (
+  return shell(
     <ScrollView
       style={{ backgroundColor: c.backgroundPlain }}
-      contentContainerStyle={{ paddingBottom: 48 }}
+      contentContainerStyle={{ paddingBottom: 32 }}
       refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}>
-      <Stack.Screen
-        options={{
-          title: s.short_name ?? s.name,
-          headerRight: () => (
-            <Pressable hitSlop={12} accessibilityLabel={t('More options')} onPress={more} style={styles.headerButton}>
-              <Icon name="ellipsis-horizontal" size={20} color={c.text} />
-            </Pressable>
-          ),
-        }}
-      />
       <Artwork seed={s.id} uri={s.cover_url} category={s.category} style={styles.cover} />
+      <View style={[styles.floating, { top: insets.top + 6 }]}>
+        <FloatingButton
+          icon="chevron-back"
+          label={t('Back')}
+          onPress={() => (router.canGoBack() ? router.back() : router.navigate('/societies'))}
+        />
+        <FloatingButton icon="ellipsis-horizontal" label={t('More options')} onPress={more} />
+      </View>
+      <View style={[styles.avatarRing, { backgroundColor: c.backgroundPlain }]}>
+        <SocietyAvatar name={s.name} uri={s.logo_url} size={76} category={s.category} />
+      </View>
       <View style={styles.headerBody}>
-        <View style={[styles.avatarRing, { backgroundColor: c.backgroundPlain }]}>
-          <SocietyAvatar name={s.name} uri={s.logo_url} size={84} category={s.category} />
+        <View style={{ gap: 3 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={[styles.name, { color: c.text }]} accessibilityRole="header">
+              {s.name}
+            </Text>
+            {s.verified && <VerifiedBadge size={20} color={c.tint} />}
+          </View>
+          <Text style={{ color: c.textSecondary, fontSize: 14 }}>
+            {t(s.category)}
+            {s.college ? ` · ${t('{college} College', { college: t(s.college) })}` : ''}
+          </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={[textStyle('title1', lang), { color: c.text, flexShrink: 1 }]}>{s.name}</Text>
-          {s.verified && <Icon name="checkmark-circle" size={20} color={c.tintText} />}
-        </View>
-        <Text style={{ color: c.textSecondary, fontSize: 15 }}>
-          {t(s.category)}
-          {s.college ? ` · ${t('{college} College', { college: t(s.college) })}` : ''}
-        </Text>
         {hidden && (
-          <Pressable onPress={toggleHidden} accessibilityRole="button" style={{ marginTop: space.xs, marginHorizontal: -space.lg }}>
+          <Pressable onPress={toggleHidden} accessibilityRole="button" style={{ marginHorizontal: -space.lg }}>
             <Banner icon="eye-off-outline" text={t('Hidden from your Discover and calendar. Tap to show again.')} />
           </Pressable>
         )}
         {s.status !== 'approved' && <Pill label={t('Pending review: only your committee can see this')} tone="warning" />}
 
         <View style={styles.stats}>
-          <Stat value={compactNumber(s.follower_count)} label={t('Followers')} />
-          <Stat value={String(q.data!.upcoming.length)} label={t('Upcoming')} />
-          <Stat value={String(q.data!.past.length)} label={t('Past events')} />
+          <Stat value={compactNumber(s.follower_count)} label={t('followers')} />
+          <Stat value={String(q.data!.upcoming.length)} label={t('upcoming')} />
+          <Stat value={String(q.data!.past.length)} label={t('past events')} />
         </View>
 
         <View style={{ flexDirection: 'row', gap: space.sm }}>
           <View style={{ flex: 1 }}>
-            <FollowButton societyId={s.id} small={false} />
+            <FollowButton societyId={s.id} small={false} style={styles.headerAction} />
           </View>
           {q.data?.isCommittee && (
-            <Button title={t('Manage')} icon="options-outline" variant="secondary" onPress={() => router.push(`/manage/${s.id}`)} />
+            <Button
+              title={t('Manage')}
+              icon="options-outline"
+              variant="secondary"
+              style={styles.headerAction}
+              onPress={() => router.push(`/manage/${s.id}`)}
+            />
           )}
           <Pressable
             onPress={share}
             accessibilityRole="button"
             accessibilityLabel={t('Share')}
-            style={[styles.iconButton, { backgroundColor: c.fill }]}>
+            style={({ pressed }) => [styles.iconButton, { backgroundColor: pressed ? c.fillStrong : c.fill }]}>
             <Icon name="share-outline" size={20} color={c.text} />
           </Pressable>
         </View>
-      </View>
 
-      <View style={{ paddingHorizontal: space.lg, gap: space.md, marginTop: space.lg }}>
         <Pressable onPress={() => setExpanded((e) => !e)} disabled={!s.description}>
-          <Text style={{ color: c.text, fontSize: 15, lineHeight: 22 }} numberOfLines={expanded ? undefined : 3}>
+          <Text style={{ color: c.textSecondary, fontSize: 15, lineHeight: 22, marginTop: 2 }} numberOfLines={expanded ? undefined : 3}>
             {s.description || t('No description yet.')}
           </Text>
         </Pressable>
-        <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
-          {instagram && (
-            <LinkChip icon="logo-instagram" label={`@${instagram}`} onPress={() => Linking.openURL(`https://instagram.com/${instagram}`)} />
-          )}
-          {s.website && <LinkChip icon="globe-outline" label={t('Website')} onPress={() => WebBrowser.openBrowserAsync(s.website!)} />}
-          {s.contact_email && (
-            <LinkChip icon="mail-outline" label={t('Email')} onPress={() => Linking.openURL(`mailto:${s.contact_email}`)} />
-          )}
-        </View>
+        {(instagram || s.website || s.contact_email) && (
+          <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+            {instagram && (
+              <LinkChip icon="logo-instagram" label="Instagram" onPress={() => Linking.openURL(`https://instagram.com/${instagram}`)} />
+            )}
+            {s.website && <LinkChip icon="globe-outline" label={t('Website')} onPress={() => WebBrowser.openBrowserAsync(s.website!)} />}
+            {s.contact_email && (
+              <LinkChip icon="mail-outline" label={t('Email')} onPress={() => Linking.openURL(`mailto:${s.contact_email}`)} />
+            )}
+          </View>
+        )}
       </View>
 
       {(plan || membership) && (
@@ -232,17 +250,17 @@ export default function SocietyScreen() {
         </>
       )}
 
-      <View style={{ marginTop: space.xl }}>
+      <View style={{ marginTop: space.lg }}>
         <UnderlineTabs
           value={tab}
           onChange={setTab}
           tabs={[
-            { value: 'upcoming', label: t('Upcoming'), count: q.data!.upcoming.length },
-            { value: 'past', label: t('Past') },
+            { value: 'upcoming', label: `${t('Upcoming')} · ${q.data!.upcoming.length}` },
+            { value: 'past', label: t('Past events') },
           ]}
         />
       </View>
-      <View style={{ gap: space.sm, marginTop: space.md }}>
+      <View style={{ gap: 14, marginTop: 14 }}>
         {list.length ? (
           list.map((e) => <EventRow key={e.id} event={e} compact />)
         ) : (
@@ -253,17 +271,38 @@ export default function SocietyScreen() {
           />
         )}
       </View>
-    </ScrollView>
+    </ScrollView>,
   );
 }
 
 function Stat({ value, label }: { value: string; label: string }) {
   const c = useColors();
   return (
-    <View style={{ flex: 1 }}>
-      <Text style={{ color: c.text, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{value}</Text>
-      <Text style={{ color: c.textSecondary, fontSize: 13 }}>{label}</Text>
-    </View>
+    <Text style={{ color: c.textSecondary, fontSize: 14 }}>
+      <Text style={{ color: c.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{value}</Text> {label}
+    </Text>
+  );
+}
+
+/** White round button floating over a cover: back, more. */
+export function FloatingButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: 'chevron-back' | 'ellipsis-horizontal';
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={6}
+      style={({ pressed }) => [styles.floatingButton, { opacity: pressed ? 0.8 : 1 }]}>
+      <Icon name={icon} size={20} color="#0A0A0B" />
+    </Pressable>
   );
 }
 
@@ -282,20 +321,43 @@ function LinkChip({
       onPress={onPress}
       accessibilityRole="link"
       style={({ pressed }) => [styles.linkChip, { backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 }]}>
-      <Icon name={icon} size={15} color={c.text} />
-      <Text style={{ color: c.text, fontSize: 14, fontWeight: '600' }}>{label}</Text>
+      <Icon name={icon} size={14} color={c.text} />
+      <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  cover: { height: 150 },
-  headerBody: { paddingHorizontal: space.lg, gap: 4, marginTop: -46 },
-  avatarRing: { padding: 4, borderRadius: 28, alignSelf: 'flex-start', marginBottom: space.sm },
-  headerButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  stats: { flexDirection: 'row', marginVertical: space.md },
-  iconButton: { width: 50, height: 50, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  linkChip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: radius.pill },
+  cover: { height: 176 },
+  floating: { position: 'absolute', left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between' },
+  floatingButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  avatarRing: { position: 'absolute', top: 132, left: space.lg, padding: 4, borderRadius: 26 },
+  headerBody: { paddingHorizontal: space.lg, paddingTop: 52, gap: 12 },
+  name: { fontSize: 25, lineHeight: 31, fontWeight: '600', letterSpacing: -0.4, flexShrink: 1 },
+  stats: { flexDirection: 'row', gap: 18, flexWrap: 'wrap' },
+  headerAction: { minHeight: 44 },
+  iconButton: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  linkChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 32,
+    paddingLeft: 10,
+    paddingRight: 12,
+    borderRadius: radius.pill,
+  },
   join: {
     flexDirection: 'row',
     alignItems: 'center',

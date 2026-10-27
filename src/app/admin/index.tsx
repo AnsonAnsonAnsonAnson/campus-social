@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -8,10 +8,10 @@ import { Button, EmptyState, ErrorView, Pill, SocietyAvatar, UnderlineTabs } fro
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { confirmAsync, showAlert } from '@/lib/dialog';
 import { formatAgo, formatWhen } from '@/lib/format';
-import { radius, space, type, useColors } from '@/lib/theme';
+import { radius, space, textStyle, type, useColors } from '@/lib/theme';
 import type { OpenReport } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
-import { t } from '@/lib/i18n';
+import { t, useLang } from '@/lib/i18n';
 
 const takeDownLabel = (type: OpenReport['target_type']) =>
   ({
@@ -23,6 +23,7 @@ const takeDownLabel = (type: OpenReport['target_type']) =>
 /** Review queue for the app team: reports, new societies and banner requests. */
 export default function Admin() {
   const c = useColors();
+  const lang = useLang();
   const [tab, setTab] = useState<'societies' | 'banners' | 'reports' | null>(null);
   const q = useQuery(async () => {
     const [reports, societies, banners] = await Promise.all([api.openReports(), api.pendingSocieties(), api.pendingBanners()]);
@@ -73,6 +74,15 @@ export default function Admin() {
       style={{ backgroundColor: c.background }}
       contentContainerStyle={{ paddingBottom: 48 }}
       refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}>
+      <Stack.Screen options={{ title: '' }} />
+      <View style={{ paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.md, gap: 2 }}>
+        <Text style={[textStyle('largeTitle', lang), { color: c.text }]} accessibilityRole="header">
+          {t('Review queue')}
+        </Text>
+        <Text style={{ color: c.textSecondary, fontSize: 15 }}>
+          {t('{n} items waiting', { n: reported.length + societies.length + banners.length })}
+        </Text>
+      </View>
       <View style={{ marginBottom: space.md }}>
         <UnderlineTabs
           value={current}
