@@ -1,22 +1,36 @@
 """Draws the app icon set into assets/ (run: python3 scripts/make-icons.py, needs Pillow).
 
-A white event ticket with a sparkle on the brand cobalt, plus the iOS 18+
-dark and tinted variants. Drawn at 4x and
-downsampled for smooth edges.
+A white event ticket with a sparkle on the brand colour, plus the iOS 18+
+dark and tinted variants and the splash mark. Drawn at 4x and downsampled
+for smooth edges. The colours must match BRAND in src/lib/theme.ts; set
+BRAND=jade (etc.) and OUT=some/dir to draw another brand somewhere else.
 """
+import os
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-ASSETS = Path(__file__).resolve().parent.parent / "assets"
+ASSETS = Path(os.environ.get("OUT") or Path(__file__).resolve().parent.parent / "assets")
+ASSETS.mkdir(parents=True, exist_ok=True)
 S = 4  # supersampling factor
 N = 1024 * S
 
-# Design system v2: cobalt 500 -> 700 gradient, cobalt 600 sparkle, tangerine 500 dot.
-COBALT_TOP = (61, 99, 255)
-COBALT_BOTTOM = (26, 60, 196)
-COBALT = (36, 80, 240)
-TANGERINE = (255, 111, 15)
+
+def rgb(hex_):
+    return tuple(int(hex_[i : i + 2], 16) for i in (1, 3, 5))
+
+
+# Brand 500 -> 700 gradient, brand 600 sparkle, accent 500 dot; dark icon uses brand 500 and accent 400.
+BRANDS = {
+    "violet": dict(top="#7A3FF5", bottom="#5420B8", main="#6A2BE0", dot="#F5A400", dot_dark="#FFB81A"),
+    "jade": dict(top="#009670", bottom="#006349", main="#00795A", dot="#FF6F0F", dot_dark="#FF8A3D"),
+    "cobalt": dict(top="#3D63FF", bottom="#1A3CC4", main="#2450F0", dot="#FF6F0F", dot_dark="#FF8A3D"),
+}
+B = BRANDS[os.environ.get("BRAND", "violet")]
+COBALT_TOP = rgb(B["top"])
+COBALT_BOTTOM = rgb(B["bottom"])
+COBALT = rgb(B["main"])
+TANGERINE = rgb(B["dot"])
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
@@ -92,20 +106,16 @@ bg = gradient(1024).resize((N, N), Image.BICUBIC)
 icon = Image.alpha_composite(bg, ticket_layer(0.66))
 save(icon, "icon.png", mode="RGB")
 save(icon, "favicon.png", size=48, mode="RGB")
-# iOS 18+ home screen: dark mode shows a cobalt ticket on black; tinted mode
+# iOS 18+ home screen: dark mode shows a brand-coloured ticket on black; tinted mode
 # recolours a greyscale icon, so the ticket is white and the dot mid-grey.
 black = Image.new("RGBA", (N, N), BLACK + (255,))
-save(Image.alpha_composite(black, ticket_layer(0.66, ink=(61, 99, 255), star=BLACK, dot=(255, 138, 61))), "icon-dark.png", mode="RGB")
+save(Image.alpha_composite(black, ticket_layer(0.66, ink=COBALT_TOP, star=BLACK, dot=rgb(B["dot_dark"]))), "icon-dark.png", mode="RGB")
 save(Image.alpha_composite(black, ticket_layer(0.66, ink=WHITE, star=BLACK, dot=(150, 150, 150))), "icon-tinted.png", mode="RGB")
 save(bg, "android-icon-background.png")
 # Adaptive icons are cropped to a circle/squircle of ~66% of the canvas.
 save(ticket_layer(0.5), "android-icon-foreground.png")
 save(ticket_layer(0.5, ink=WHITE, mono=True), "android-icon-monochrome.png")
 
-# Splash: the icon as a rounded tile on a transparent canvas.
-tile = Image.new("RGBA", (N, N), (0, 0, 0, 0))
-m = Image.new("L", (N, N), 0)
-ImageDraw.Draw(m).rounded_rectangle((0, 0, N - 1, N - 1), radius=N * 0.225, fill=255)
-tile.paste(icon, (0, 0), m)
-save(tile, "splash-icon.png")
+# Splash: the white ticket alone, drawn on the brand colour set in app.json.
+save(ticket_layer(0.9), "splash-icon.png")
 print("Wrote icons to", ASSETS)

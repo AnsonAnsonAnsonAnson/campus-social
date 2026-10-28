@@ -1,34 +1,117 @@
-
 /**
- * Design system v2 (see docs/design-handoff.md). Neutral surfaces, one cobalt for the single
- * primary action per screen, tangerine for dates, vivid flat colours for event covers.
+ * Design system v2 (see docs/design-handoff.md). Neutral surfaces, one brand colour for the
+ * primary action, the current tab, selected filters and links, a warm accent for dates, and
+ * vivid flat colours for event covers.
+ *
+ * The brand is picked in one place, `BRAND` below. Every screen reads it through `useColors()`
+ * (`tint`, `tintSoft`, `tintText`, `accent`...) or `palette.brand` / `palette.accent`, so a new
+ * brand needs no screen changes. The icon, splash and notification colour come from
+ * scripts/make-icons.py and app.json and must be regenerated to match.
  */
-export const palette = {
+const BRANDS = {
+  /** Lion Rock violet with campus gold: a nod to CUHK purple and gold, brighter and more digital. */
+  violet: {
+    brand: {
+      50: '#F4F0FF',
+      100: '#EBE3FF',
+      200: '#D3C2FF',
+      300: '#B497FF',
+      400: '#9466FF',
+      500: '#7A3FF5',
+      600: '#6A2BE0',
+      700: '#5420B8',
+      800: '#3F1890',
+      900: '#24104A',
+      950: '#160A30',
+    },
+    accent: {
+      50: '#FFF8E6',
+      100: '#FFEFC2',
+      200: '#FFDF85',
+      300: '#FFCB47',
+      400: '#FFB81A',
+      500: '#F5A400',
+      600: '#C98500',
+      700: '#8A5A00',
+      800: '#6B4500',
+      900: '#3A2500',
+    },
+  },
+  /** Harbour jade with tangerine: Hong Kong jade and green hills, far from other uni apps. */
+  jade: {
+    brand: {
+      50: '#E8F7F2',
+      100: '#D2F0E6',
+      200: '#9EE0CB',
+      300: '#62C9A9',
+      400: '#2BAF88',
+      500: '#009670',
+      600: '#00795A',
+      700: '#006349',
+      800: '#004D39',
+      900: '#013326',
+      950: '#011F17',
+    },
+    accent: {
+      50: '#FFF4EC',
+      100: '#FFE4D1',
+      200: '#FFC8A3',
+      300: '#FFA66B',
+      400: '#FF8A3D',
+      500: '#FF6F0F',
+      600: '#E05A00',
+      700: '#B34700',
+      800: '#853500',
+      900: '#3A1A04',
+    },
+  },
+  /** Electric cobalt with tangerine: the v2 design colours, used loudly. */
   cobalt: {
-    50: '#EEF2FF',
-    100: '#E6ECFF',
-    200: '#B9C8FF',
-    300: '#8FA6FF',
-    400: '#6283FF',
-    500: '#3D63FF',
-    600: '#2450F0',
-    700: '#1A3CC4',
-    800: '#152F96',
-    900: '#0E1A4D',
-    950: '#0A1033',
+    brand: {
+      50: '#EEF2FF',
+      100: '#E6ECFF',
+      200: '#B9C8FF',
+      300: '#8FA6FF',
+      400: '#6283FF',
+      500: '#3D63FF',
+      600: '#2450F0',
+      700: '#1A3CC4',
+      800: '#152F96',
+      900: '#0E1A4D',
+      950: '#0A1033',
+    },
+    accent: {
+      50: '#FFF4EC',
+      100: '#FFE4D1',
+      200: '#FFC8A3',
+      300: '#FFA66B',
+      400: '#FF8A3D',
+      500: '#FF6F0F',
+      600: '#E05A00',
+      700: '#B34700',
+      800: '#853500',
+      900: '#3A1A04',
+    },
   },
-  tangerine: {
-    50: '#FFF4EC',
-    100: '#FFE4D1',
-    200: '#FFC8A3',
-    300: '#FFA66B',
-    400: '#FF8A3D',
-    500: '#FF6F0F',
-    600: '#E05A00',
-    700: '#B34700',
-    800: '#853500',
-    900: '#3A1A04',
-  },
+} as const;
+
+export type BrandName = keyof typeof BRANDS;
+export const BRAND: BrandName =
+  (process.env.EXPO_PUBLIC_BRAND as BrandName) in BRANDS ? (process.env.EXPO_PUBLIC_BRAND as BrandName) : 'violet';
+const { brand, accent } = BRANDS[BRAND];
+
+/** "#6A2BE0", 0.24 -> "rgba(106,43,224,0.24)" */
+function alpha(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+export const palette = {
+  brand,
+  accent,
+  /** Deprecated names from v2, now the brand and accent scales. */
+  cobalt: brand,
+  tangerine: accent,
   neutral: {
     0: '#FFFFFF',
     50: '#F5F5F7',
@@ -50,24 +133,26 @@ export const palette = {
 
 const light = {
   // Deprecated v1 names, kept until every screen has moved to the role tokens below.
-  purple: '#2450F0',
-  purpleLight: '#3D63FF',
-  gold: '#FF6F0F',
+  purple: brand[600] as string,
+  purpleLight: brand[500] as string,
+  gold: accent[500] as string,
 
-  /** The one primary action per screen. */
-  tint: '#2450F0',
-  tintPressed: '#1A3CC4',
+  /** Primary action, current tab, selected filter chip. */
+  tint: brand[600] as string,
+  tintPressed: brand[700] as string,
   onTint: '#FFFFFF',
-  /** Follow button, "Going" pill, bell-on. */
-  tintSoft: '#E6ECFF',
+  /** Follow button, "Going" pill, bell-on, current tab pill. */
+  tintSoft: brand[100] as string,
   /** Links, plain buttons, verified tick. */
-  tintText: '#2450F0',
+  tintText: brand[600] as string,
+  /** Brand-filled hero surfaces (sign-in, welcome, splash). */
+  brandStrong: brand[700] as string,
 
   /** Campus-date markers, "New" dot. */
-  accent: '#FF6F0F',
-  accentSoft: '#FFE4D1',
+  accent: accent[500] as string,
+  accentSoft: accent[100] as string,
   /** Event dates in lists, campus labels. */
-  accentText: '#B34700',
+  accentText: accent[700] as string,
 
   /** Grouped screens (Profile, Manage, forms). */
   background: '#F5F5F7',
@@ -85,14 +170,14 @@ const light = {
   fill: '#F2F2F5',
   /** Neutral pills, segmented-control track. */
   fillStrong: '#EDEDF0',
-  /** Selected chip, "Checked in", toast. */
+  /** "Checked in", toast, step markers. */
   ink: '#0A0A0B',
   onInk: '#FFFFFF',
 
   disabledFill: '#EDEDF0',
   disabledText: '#A1A1A6',
   /** 3pt halo outside a 2pt tint border. */
-  focusRing: 'rgba(36,80,240,0.24)',
+  focusRing: alpha(brand[600], 0.24),
 
   success: '#078040',
   successSoft: '#E3F7EA',
@@ -115,19 +200,20 @@ const light = {
 };
 
 const dark: typeof light = {
-  purple: '#3D63FF',
-  purpleLight: '#8FA6FF',
-  gold: '#FF8A3D',
+  purple: brand[500],
+  purpleLight: brand[300],
+  gold: accent[400],
 
-  tint: '#3D63FF',
-  tintPressed: '#6283FF',
+  tint: brand[500],
+  tintPressed: brand[400],
   onTint: '#FFFFFF',
-  tintSoft: '#0E1A4D',
-  tintText: '#8FA6FF',
+  tintSoft: brand[900],
+  tintText: brand[300],
+  brandStrong: brand[800],
 
-  accent: '#FF8A3D',
-  accentSoft: '#3A1A04',
-  accentText: '#FFA66B',
+  accent: accent[400],
+  accentSoft: accent[900],
+  accentText: accent[300],
 
   background: '#000000',
   backgroundPlain: '#000000',
@@ -144,7 +230,7 @@ const dark: typeof light = {
 
   disabledFill: '#2C2C2E',
   disabledText: '#636366',
-  focusRing: 'rgba(61,99,255,0.45)',
+  focusRing: alpha(brand[500], 0.45),
 
   success: '#30D158',
   successSoft: '#0E2E19',
@@ -261,7 +347,7 @@ export const categoryArt: Record<string, { cover: string; coverDark: string; ico
   Performance: { cover: '#7C3AED', coverDark: '#7C3AED', icon: 'musical-notes-outline' },
   Career: { cover: '#18181B', coverDark: '#3A3A3F', icon: 'briefcase-outline' },
   Volunteering: { cover: '#D92D20', coverDark: '#D92D20', icon: 'heart-outline' },
-  Orientation: { cover: '#2450F0', coverDark: '#3D63FF', icon: 'compass-outline' },
+  Orientation: { cover: brand[600], coverDark: brand[500], icon: 'compass-outline' },
   Other: { cover: '#52525B', coverDark: '#5A5A63', icon: 'sparkles-outline' },
 };
 
@@ -276,7 +362,7 @@ export const avatarArt: Record<AvatarFamily, { light: readonly [string, string];
   Violet: { light: ['#EFE7FE', '#6D28D9'], dark: ['#24104A', '#B794FF'], cover: '#7C3AED' },
   Graphite: { light: ['#E8E8EB', '#18181B'], dark: ['#2C2C2E', '#D4D4D8'], cover: '#18181B' },
   Red: { light: ['#FDE8E6', '#B42318'], dark: ['#3D0F0C', '#FF6B61'], cover: '#D92D20' },
-  Cobalt: { light: ['#E6ECFF', '#2450F0'], dark: ['#0E1A4D', '#8FA6FF'], cover: '#2450F0' },
+  Cobalt: { light: [brand[100], brand[600]], dark: [brand[900], brand[300]], cover: brand[600] },
   Slate: { light: ['#EDEDF0', '#48484A'], dark: ['#2C2C2E', '#C7C7CC'], cover: '#52525B' },
 };
 
