@@ -5,11 +5,12 @@ import QRCode from 'react-native-qrcode-svg';
 
 import { PaymentPanel } from '@/components/Payment';
 import { ReceiptUpload } from '@/components/Receipt';
+import { SlotPicker, slotWhen } from '@/components/ShopParts';
 import { toast } from '@/components/Toast';
-import { Banner, Button, ErrorView, Icon, Loading, Pill, SocietyAvatar } from '@/components/ui';
+import { Banner, Button, ErrorView, Icon, Loading, Pill, Sheet, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { isExpired, ORDER_QR_PREFIX, orderStatus } from '@/lib/commerce';
+import { isExpired, ORDER_QR_PREFIX, orderStatus, slotState } from '@/lib/commerce';
 import { confirmAsync, showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { formatWhen } from '@/lib/format';
@@ -39,6 +40,8 @@ export default function OrderScreen() {
   const lang = useLang();
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [slotDraft, setSlotDraft] = useState<string | null>(null);
   const q = useQuery(async () => {
     if (!user) return null;
     const wallet = await walletWithFallback(user.id, async () => {
@@ -46,8 +49,14 @@ export default function OrderScreen() {
       return { memberships, orders };
     });
     const order = wallet.orders.find((o) => o.id === id) ?? null;
-    const settings = order && !wallet.offline ? await api.getPaymentSettings(order.society_id) : null;
-    return { order, settings, offline: wallet.offline };
+    const [settings, slots] =
+      order && !wallet.offline
+        ? await Promise.all([
+            api.getPaymentSettings(order.society_id),
+            order.event_id ? [] : api.listPickupSlots(order.society_id).catch(() => []),
+          ])
+        : [null, []];
+    return { order, settings, slots, offline: wallet.offline };
   }, [id, user?.id]);
 
   if (q.loading) return <Loading />;
@@ -68,6 +77,25 @@ export default function OrderScreen() {
       await api.claimOrderPaid(o.id);
       invalidate();
       toast(t('Thanks! The treasurer will check and confirm.'));
+    } catch (e) {
+      showAlert(t('Could not update'), errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const slot = o.pickup_slot ?? null;
+  const slots = (q.data?.slots ?? []).filter((s) => slotState(s).key !== 'past' || s.id === slot?.id);
+  const canPick = !ticket && live && ['awaiting_payment', 'payment_claimed', 'paid', 'ready'].includes(o.status) && !q.data?.offline;
+
+  const saveSlot = async () => {
+    if (!slotDraft || slotDraft === slot?.id) return setPicking(false);
+    setBusy(true);
+    try {
+      await api.choosePickupSlot(o.id, slotDraft);
+      invalidate();
+      setPicking(false);
+      toast(t('Pickup time saved'));
     } catch (e) {
       showAlert(t('Could not update'), errorMessage(e));
     } finally {
@@ -186,11 +214,39 @@ export default function OrderScreen() {
         !expired &&
         !q.data?.offline && <ReceiptUpload kind="order" record={o} />}
 
+      {!ticket && live && o.status !== 'collected' && (slot || slots.length > 0) && (
+        <View style={[styles.slotCard, { backgroundColor: c.card }]}>
+          <Icon name="location-outline" size={22} color={slot ? c.text : c.warningText} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600' }}>{t('Pickup time')}</Text>
+            {slot ? (
+              <>
+                <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }}>{slotWhen(slot)}</Text>
+                <Text style={{ color: c.textSecondary, fontSize: 14 }}>{slot.location}</Text>
+              </>
+            ) : (
+              <Text style={{ color: c.warningText, fontSize: 15, fontWeight: '600' }}>{t('Not chosen yet')}</Text>
+            )}
+          </View>
+          {canPick && slots.length > 0 && (
+            <Button
+              small
+              variant={slot ? 'secondary' : 'ink'}
+              title={slot ? t('Change') : t('Choose')}
+              onPress={() => {
+                setSlotDraft(slot?.id ?? null);
+                setPicking(true);
+              }}
+            />
+          )}
+        </View>
+      )}
+
       <View style={[styles.items, { backgroundColor: c.card }]}>
         {o.items.map((i, n) => (
           <View key={n} style={styles.itemRow}>
             <Text style={{ color: c.text, fontSize: 16, flex: 1 }}>
-              {ticket ? t('Ticket') : `${i.variant || t('One size')} × ${i.qty}`}
+              {ticket ? t('Ticket') : `${[i.title, i.variant].filter(Boolean).join(' · ') || t('One size')} × ${i.qty}`}
             </Text>
             <Text style={{ color: c.text, fontSize: 16, fontVariant: ['tabular-nums'] }}>{formatHkd(i.qty * i.unit_price)}</Text>
           </View>
@@ -211,6 +267,14 @@ export default function OrderScreen() {
       {(o.status === 'awaiting_payment' || o.status === 'payment_claimed') && !expired && (
         <Button variant="dangerText" title={ticket ? t('Give up my place') : t('Cancel order')} onPress={cancel} />
       )}
+
+      <Sheet visible={picking} onClose={() => setPicking(false)}>
+        <ScrollView style={{ maxHeight: 520 }} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.md }}>
+          <Text style={{ color: c.text, fontSize: 20, fontWeight: '700' }}>{t('Choose a pickup time')}</Text>
+          <SlotPicker slots={slots} value={slotDraft} onChange={setSlotDraft} />
+          <Button title={t('Save')} loading={busy} disabled={!slotDraft} onPress={saveSlot} />
+        </ScrollView>
+      </Sheet>
     </ScrollView>
   );
 }
@@ -221,5 +285,6 @@ const styles = StyleSheet.create({
   pickup: { alignItems: 'center', gap: space.md, padding: space.lg, borderRadius: radius.lg },
   qr: { padding: 12, backgroundColor: '#fff', borderRadius: radius.md },
   items: { borderRadius: radius.lg, padding: space.lg, gap: space.sm },
+  slotCard: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg, borderRadius: radius.lg },
   itemRow: { flexDirection: 'row', alignItems: 'center' },
 });

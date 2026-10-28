@@ -1,7 +1,7 @@
 // Sample content used by demo mode and by scripts/make-seed.ts (supabase/seed.sql).
 // Event times are relative to "today" in Hong Kong so the app always looks alive.
 // Campus dates are illustrative: replace them with the official CUHK calendar.
-import type { Banner, CampusDate, CampusEvent, Membership, MembershipPlan, PaymentSettings, Product, Society } from './types';
+import type { Banner, CampusDate, CampusEvent, Membership, MembershipPlan, PaymentSettings, PickupSlot, Product, Society } from './types';
 
 const HK_OFFSET_HOURS = 8;
 
@@ -500,8 +500,13 @@ export function makeDemoProducts(now = new Date()): Product[] {
     society_id: sid(society),
     description: '',
     image_url: null,
+    images: [],
     member_price_hkd: null,
     variants: [{ name: '', stock: null }],
+    size_chart: null,
+    goal_qty: null,
+    ready_on: null,
+    max_per_buyer: null,
     opens_at: null,
     closes_at: hkAt(10, 23, 59, now),
     pickup_note: null,
@@ -523,8 +528,41 @@ export function makeDemoProducts(now = new Date()): Product[] {
         { name: 'M', stock: 3 },
         { name: 'L', stock: 12 },
         { name: 'XL', stock: 0 },
+        { name: 'XXL', stock: 6, extra_hkd: 20 },
       ],
+      size_chart: 'Size, Chest (cm), Length (cm)\nS, 52, 68\nM, 55, 71\nL, 58, 74\nXL, 61, 76\nXXL, 64, 78',
+      goal_qty: 30,
+      ready_on: hkDay(24, now),
+      max_per_buyer: 2,
       pickup_note: 'University Station exit B, before the Sunday hikes',
+    }),
+    product(4, 1, {
+      title: 'Trail tote bag',
+      price_hkd: 80,
+      member_price_hkd: 65,
+      description: 'Canvas tote with the Ma On Shan ridge printed on the front. Fits a water bottle and a rain jacket.',
+      variants: [{ name: '', stock: 30 }],
+      pickup_note: 'University Station exit B, before the Sunday hikes',
+      created_at: hkAt(-4, 12, 0, now),
+    }),
+    product(5, 1, {
+      title: 'Lion Rock enamel pin',
+      price_hkd: 45,
+      description: 'Limited run of 100, numbered on the back. One per person.',
+      variants: [{ name: '', stock: 100 }],
+      max_per_buyer: 1,
+      opens_at: hkAt(2, 12, 0, now),
+      created_at: hkAt(-3, 12, 0, now),
+    }),
+    product(6, 1, {
+      title: 'Club cap',
+      price_hkd: 110,
+      description: 'Six-panel cap, adjustable strap.',
+      variants: [
+        { name: 'Black', stock: 0 },
+        { name: 'Sand', stock: 0 },
+      ],
+      created_at: hkAt(-6, 12, 0, now),
     }),
     product(2, 2, {
       title: 'Sticker pack',
@@ -532,7 +570,7 @@ export function makeDemoProducts(now = new Date()): Product[] {
       member_price_hkd: 15,
       description: 'Six vinyl stickers, laptop-sized.',
       variants: [{ name: '', stock: 80 }],
-      pickup_note: 'Room 1009, Ho Sin-Hang Engineering Building, Tue and Thu 1-2pm',
+      pickup_note: 'Room 1009, Ho Sin-Hang Engineering Building',
     }),
     product(3, 2, {
       title: 'CUCS T-shirt',
@@ -545,5 +583,24 @@ export function makeDemoProducts(now = new Date()): Product[] {
       ],
       status: 'draft',
     }),
+  ];
+}
+
+/** Pickup times: two this week for the Hiking Club, three for CUCS (one nearly full). */
+export function makeDemoPickupSlots(now = new Date()): PickupSlot[] {
+  const slot = (n: number, society: number, day: number, hour: number, location: string, capacity: number | null): PickupSlot => ({
+    id: `70000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+    society_id: sid(society),
+    starts_at: hkAt(day, hour, 0, now),
+    ends_at: hkAt(day, hour + 1, 0, now),
+    location,
+    capacity,
+  });
+  return [
+    slot(1, 1, 3, 9, 'University Station exit B', null),
+    slot(2, 1, 6, 13, 'Pavilion of Harmony', 30),
+    slot(3, 2, 1, 13, 'Room 1009, Ho Sin-Hang Engineering Building', 20),
+    slot(4, 2, 3, 13, 'Room 1009, Ho Sin-Hang Engineering Building', 20),
+    slot(5, 2, 5, 18, 'University Mall, outside Starbucks', 6),
   ];
 }

@@ -2,6 +2,12 @@ import { describe, expect, it } from '@jest/globals';
 
 import {
   amountsIn,
+  checkBag,
+  parseSizeChart,
+  priceRange,
+  saleState,
+  slotState,
+  unitPrice,
   guessColumns,
   liveTicketOrder,
   matchStatement,
@@ -18,7 +24,7 @@ import {
   toCsv,
 } from '../commerce';
 import { setLang } from '../i18n';
-import type { Order, TicketOrder } from '../types';
+import type { Order, PickupSlot, ProductWithStock, TicketOrder } from '../types';
 
 setLang('en');
 
@@ -62,6 +68,17 @@ describe('orders', () => {
         { variant: '', qty: 1, unit_price: 1 },
       ]),
     ).toBe('M ×2, ×1');
+  });
+  it('names each product on a mixed bag, and totals by product', () => {
+    const items = [
+      { product_id: 'h', title: 'Hoodie', variant: 'M', qty: 1, unit_price: 200 },
+      { product_id: 't', title: 'Tote', variant: '', qty: 2, unit_price: 60 },
+    ];
+    expect(itemsSummary(items)).toBe('Hoodie M ×1, Tote ×2');
+    expect(productionSummary([{ ...o('paid', items), product_title: 'Hoodie, Tote' }]).map((p) => [p.title, p.total])).toEqual([
+      ['Hoodie', 1],
+      ['Tote', 2],
+    ]);
   });
   it('totals production, skipping cancelled and expired orders', () => {
     const summary = productionSummary([
@@ -202,5 +219,106 @@ describe('matchStatement', () => {
 
   it('does not read the reference digits as the amount', () => {
     expect(matchStatement('SSM-0120', [{ ...waiting[1], ref: 'SSM-0120' }])[0].amountMatches).toBe(false);
+  });
+});
+
+describe('shop bag', () => {
+  const product = (id: string, p: Partial<ProductWithStock> = {}): ProductWithStock =>
+    ({
+      id,
+      society_id: 's',
+      title: id,
+      price_hkd: 200,
+      member_price_hkd: 160,
+      variants: [
+        { name: 'M', stock: 3 },
+        { name: 'XXL', stock: null, extra_hkd: 20 },
+      ],
+      sold: { M: 1 },
+      opens_at: null,
+      closes_at: null,
+      status: 'published',
+      max_per_order: 5,
+      max_per_buyer: null,
+      payment_window_hours: 48,
+      ...p,
+    }) as ProductWithStock;
+
+  it('adds size charges to the (member) price', () => {
+    const p = product('hoodie');
+    expect(unitPrice(p, 'M', false)).toBe(200);
+    expect(unitPrice(p, 'XXL', false)).toBe(220);
+    expect(unitPrice(p, 'XXL', true)).toBe(180);
+    expect(priceRange(p, false)).toEqual({ min: 200, max: 220 });
+  });
+
+  it('knows when a product sells', () => {
+    const now = '2026-11-01T00:00:00Z';
+    expect(saleState(product('a', { opens_at: '2026-11-02T00:00:00Z' }), now)).toBe('upcoming');
+    expect(saleState(product('a', { closes_at: '2026-10-01T00:00:00Z' }), now)).toBe('closed');
+    expect(saleState(product('a', { variants: [{ name: '', stock: 1 }], sold: { '': 1 } }), now)).toBe('sold_out');
+    expect(saleState(product('a'), now)).toBe('open');
+  });
+
+  it('totals a bag and flags lines that cannot be ordered', () => {
+    const bag = checkBag(
+      [
+        { product_id: 'hoodie', variant: 'M', qty: 2 },
+        { product_id: 'hoodie', variant: 'M', qty: 1 },
+        { product_id: 'hoodie', variant: 'XXL', qty: 1 },
+        { product_id: 'gone', variant: '', qty: 1 },
+      ],
+      [product('hoodie')],
+      false,
+    );
+    expect(bag.rows.map((r) => r.problem)).toEqual([null, 'Sold out', null, 'No longer on sale']);
+    expect(bag.total).toBe(2 * 200 + 220);
+    expect(bag.count).toBe(3);
+    expect(bag.hasProblems).toBe(true);
+  });
+
+  it('applies the per-order limit across sizes', () => {
+    const bag = checkBag(
+      [
+        { product_id: 'p', variant: 'XXL', qty: 2 },
+        { product_id: 'p', variant: 'XXL', qty: 1 },
+      ],
+      [product('p', { max_per_order: 2 })],
+      false,
+    );
+    expect(bag.rows[1].problem).toBe('Up to 2 per order.');
+  });
+});
+
+describe('pickup times', () => {
+  const slot = (p: Partial<PickupSlot>): PickupSlot => ({
+    id: 'x',
+    society_id: 's',
+    starts_at: '2026-11-02T05:00:00Z',
+    ends_at: '2026-11-02T06:00:00Z',
+    location: 'Room 1009',
+    capacity: null,
+    booked: 0,
+    ...p,
+  });
+  it('is open, full or past', () => {
+    const now = '2026-11-01T00:00:00Z';
+    expect(slotState(slot({}), now)).toEqual({ key: 'open', left: null });
+    expect(slotState(slot({ capacity: 3, booked: 1 }), now)).toEqual({ key: 'open', left: 2 });
+    expect(slotState(slot({ capacity: 3, booked: 3 }), now).key).toBe('full');
+    expect(slotState(slot({}), '2026-11-03T00:00:00Z').key).toBe('past');
+  });
+});
+
+describe('size guide', () => {
+  it('reads comma-separated lines and pads short rows', () => {
+    expect(parseSizeChart('Size, Chest, Length\nS, 52, 68\nM, 55')).toEqual({
+      header: ['Size', 'Chest', 'Length'],
+      rows: [
+        ['S', '52', '68'],
+        ['M', '55', ''],
+      ],
+    });
+    expect(parseSizeChart('Size, Chest')).toBeNull();
   });
 });

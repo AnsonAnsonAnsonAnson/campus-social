@@ -15,6 +15,9 @@ import type {
   PaymentMethod,
   PaymentSettings,
   PickupResult,
+  PickupSlot,
+  PickupSlotInput,
+  BagLine,
   PlanInput,
   ProductInput,
   ProductWithStock,
@@ -144,7 +147,13 @@ export interface Backend {
   getPaymentSettings(societyId: string): Promise<PaymentSettings | null>;
   /** A society's products, or every open product across shops when societyId is null. */
   listProducts(societyId: string | null): Promise<ProductWithStock[]>;
-  placeOrder(productId: string, items: { variant: string; qty: number }[], method: PaymentMethod, note?: string): Promise<Order>;
+  /** Checks out a bag from one society as one order (one reference, one pickup QR). */
+  placeBagOrder(societyId: string, lines: BagLine[], method: PaymentMethod, slotId: string | null, note?: string): Promise<Order>;
+  /** Upcoming pickup times with how many orders booked each (committee also sees past ones). */
+  listPickupSlots(societyId: string): Promise<PickupSlot[]>;
+  choosePickupSlot(orderId: string, slotId: string): Promise<void>;
+  /** "Tell me when it's back": one notification when stock is added or it goes on sale. */
+  setProductAlert(productId: string, on: boolean): Promise<void>;
   myOrders(): Promise<MyOrder[]>;
   claimOrderPaid(id: string, note?: string): Promise<void>;
   cancelMyOrder(id: string): Promise<void>;
@@ -162,7 +171,10 @@ export interface Backend {
   deleteProduct(id: string): Promise<void>;
   listOrders(societyId: string): Promise<SocietyOrder[]>;
   setOrderStatus(ids: string[], status: Exclude<OrderStatus, 'payment_claimed'>): Promise<number>;
-  collectOrder(societyId: string, code: string): Promise<PickupResult>;
+  /** `cashReceived` hands over an unpaid cash order and records the cash in one step. */
+  collectOrder(societyId: string, code: string, cashReceived?: boolean): Promise<PickupResult>;
+  savePickupSlot(input: PickupSlotInput): Promise<string>;
+  deletePickupSlot(id: string): Promise<void>;
 
   // Platform admins (Student Affairs / app team)
   pendingSocieties(): Promise<Society[]>;

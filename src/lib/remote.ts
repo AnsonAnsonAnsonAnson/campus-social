@@ -22,6 +22,7 @@ import type {
   Order,
   PaymentSettings,
   PickupResult,
+  PickupSlot,
   ProductWithStock,
   SocietyOrder,
   OpenReport,
@@ -442,10 +443,33 @@ export const remoteBackend: Backend = {
   async listProducts(societyId) {
     return check(await db().rpc('list_products', { p_society_id: societyId })) as ProductWithStock[];
   },
-  async placeOrder(productId, items, method, note) {
+  async placeBagOrder(societyId, lines, method, slotId, note) {
     return check(
-      await db().rpc('place_order', { p_product_id: productId, p_items: items, p_payment_method: method, p_note: note ?? null }),
+      await db().rpc('place_cart_order', {
+        p_society_id: societyId,
+        p_lines: lines,
+        p_payment_method: method,
+        p_slot_id: slotId,
+        p_note: note ?? null,
+      }),
     ) as Order;
+  },
+  async listPickupSlots(societyId) {
+    return check(await db().rpc('list_pickup_slots', { p_society_id: societyId })) as PickupSlot[];
+  },
+  async choosePickupSlot(orderId, slotId) {
+    check(await db().rpc('choose_pickup_slot', { p_order_id: orderId, p_slot_id: slotId }));
+  },
+  async setProductAlert(productId, on) {
+    if (on) check(await db().from('product_alerts').upsert({ product_id: productId }, { ignoreDuplicates: true }));
+    else
+      check(
+        await db()
+          .from('product_alerts')
+          .delete()
+          .eq('product_id', productId)
+          .eq('user_id', await requireUserId()),
+      );
   },
   async myOrders() {
     const u = await currentUser();
@@ -453,7 +477,7 @@ export const remoteBackend: Backend = {
     return check(
       await db()
         .from('orders')
-        .select(`*, society:societies(${SOCIETY_CARD})`)
+        .select(`*, society:societies(${SOCIETY_CARD}), pickup_slot:pickup_slots(*)`)
         .eq('user_id', u.id)
         .order('created_at', { ascending: false })
         .limit(100),
@@ -515,8 +539,28 @@ export const remoteBackend: Backend = {
   async setOrderStatus(ids, status) {
     return check(await db().rpc('set_order_status', { p_ids: ids, p_status: status })) as number;
   },
-  async collectOrder(societyId, code) {
-    return check(await db().rpc('collect_order', { p_society_id: societyId, p_code: code })) as PickupResult;
+  async collectOrder(societyId, code, cashReceived) {
+    return check(
+      await db().rpc('collect_order', { p_society_id: societyId, p_code: code, p_cash_received: !!cashReceived }),
+    ) as PickupResult;
+  },
+  async savePickupSlot(input) {
+    const { id, society_id, ...fields } = input;
+    if (id) {
+      check(await db().from('pickup_slots').update(fields).eq('id', id));
+      return id;
+    }
+    const row = check(
+      await db()
+        .from('pickup_slots')
+        .insert({ society_id, ...fields })
+        .select('id')
+        .single(),
+    );
+    return (row as { id: string }).id;
+  },
+  async deletePickupSlot(id) {
+    check(await db().from('pickup_slots').delete().eq('id', id));
   },
 
   async pendingSocieties() {

@@ -9,6 +9,7 @@ import { Button, Icon } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { MEMBER_QR_PREFIX, ORDER_QR_PREFIX } from '@/lib/commerce';
 import { LEGACY_TICKET_QR_PREFIX, TICKET_QR_PREFIX } from '@/lib/constants';
+import { formatHkd } from '@/lib/fps';
 import { formatLongDay, formatTime } from '@/lib/format';
 import { elevation, space } from '@/lib/theme';
 import type { MemberCardResult, PickupResult } from '@/lib/types';
@@ -31,6 +32,7 @@ const WARNINGS = [
   'Already checked in',
   'Already collected',
   'Not paid yet',
+  'Take cash',
   'This membership has expired',
   'This membership is not active',
 ];
@@ -59,12 +61,28 @@ export default function Scan() {
   const busy = useRef(false);
   const last = useRef<{ code: string; at: number } | null>(null);
 
-  const check = (code: string): Promise<Result> =>
+  const check = (code: string, cash = false): Promise<Result> =>
     mode === 'member'
       ? api.checkMemberCard(societyId!, code)
       : mode === 'pickup'
-        ? api.collectOrder(societyId!, code)
+        ? api.collectOrder(societyId!, code, cash)
         : api.checkIn(eventId!, code);
+
+  // Unpaid cash order at the desk: the committee takes the money and hands it over in one tap.
+  const takeCash = async () => {
+    const code = last.current?.code;
+    if (!code || busy.current) return;
+    busy.current = true;
+    try {
+      const r = await check(code, true);
+      setResult(r);
+      if (r.ok) setCount((n) => n + 1);
+    } catch (e) {
+      setResult({ ok: false, message: errorMessage(e) });
+    } finally {
+      busy.current = false;
+    }
+  };
 
   const handle = async (raw: string) => {
     const prefix = PREFIXES[mode].find((p) => raw.startsWith(p));
@@ -174,6 +192,14 @@ export default function Scan() {
             </View>
           </View>
         )}
+        {result?.message === 'Take cash' && result.total_hkd != null && (
+          <Button
+            variant="ink"
+            icon="cash-outline"
+            title={t('Took {amount} cash, hand over', { amount: formatHkd(result.total_hkd) })}
+            onPress={takeCash}
+          />
+        )}
         {typing ? (
           <View style={styles.manual}>
             <TextInput
@@ -221,7 +247,13 @@ function resultMeta(mode: Mode, r: Result) {
       .join(' · ');
   }
   if (mode === 'pickup') {
-    return [r.ref, r.items, r.collected_at ? t('Collected at {time}', { time: formatTime(r.collected_at) }) : null]
+    return [
+      r.ref,
+      r.items,
+      r.message === 'Take cash' && r.total_hkd != null ? t('{amount} cash', { amount: formatHkd(r.total_hkd) }) : null,
+      r.slot ? t('Booked {slot}', { slot: r.slot }) : null,
+      r.collected_at ? t('Collected at {time}', { time: formatTime(r.collected_at) }) : null,
+    ]
       .filter(Boolean)
       .join(' · ');
   }

@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { eventIdFrom, notificationsSupported, refreshReminders, registerForPush } from '@/lib/notifications';
 import { useColors, useIsDark } from '@/lib/theme';
+import { loadBags } from '@/lib/bag';
 import { loadLang, t, takeReturnRoute, useLang } from '@/lib/i18n';
 
 /**
@@ -27,7 +28,11 @@ function NotificationRouting() {
     if (!notificationsSupported) return;
     const open = (r: Notifications.NotificationResponse | null) => {
       const id = eventIdFrom(r);
+      const data = r?.notification.request.content.data;
       if (id) router.push(`/event/${id}`);
+      else if (typeof data?.orderId === 'string') router.push(`/order/${data.orderId}`);
+      else if (typeof data?.productId === 'string' && typeof data?.societyId === 'string')
+        router.push({ pathname: '/shop/[id]', params: { id: data.productId, societyId: data.societyId } });
     };
     open(Notifications.getLastNotificationResponse());
     const sub = Notifications.addNotificationResponseReceivedListener(open);
@@ -64,6 +69,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     loadLang().finally(() => setLangLoaded(true));
+    loadBags();
   }, []);
 
   // The splash screen stays up for the few milliseconds this takes.
@@ -101,7 +107,10 @@ export default function RootLayout() {
           <Stack.Screen name="manage/payment-settings" options={{ presentation: 'modal', title: t('Payment details') }} />
           <Stack.Screen name="membership/join" options={{ presentation: 'modal', title: t('Join') }} />
           <Stack.Screen name="membership/[id]" options={{ title: t('Member card') }} />
+          <Stack.Screen name="shop/index" options={{ title: t('Shop') }} />
           <Stack.Screen name="shop/[id]" options={{ title: '' }} />
+          <Stack.Screen name="shop/bag" options={{ title: t('Your bag') }} />
+          <Stack.Screen name="manage/pickup-times" options={{ title: t('Pickup times') }} />
           <Stack.Screen name="order/[id]" options={{ title: t('Order') }} />
           <Stack.Screen name="welcome" options={{ presentation: 'modal', title: t('Welcome'), gestureEnabled: false }} />
         </Stack>

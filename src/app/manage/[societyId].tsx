@@ -461,6 +461,12 @@ function ShopSection({ societyId, data, isAdmin }: { societyId: string; data: Da
             />
           )}
           <ListRow
+            icon="calendar-outline"
+            title={t('Pickup times')}
+            subtitle={t('Buyers book one, you get a pick list')}
+            onPress={() => router.push({ pathname: '/manage/pickup-times', params: { societyId } })}
+          />
+          <ListRow
             icon="scan-outline"
             title={t('Pickup scanner')}
             onPress={() => router.push({ pathname: '/manage/scan', params: { mode: 'pickup', societyId, title: t('Pickup') } })}

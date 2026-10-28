@@ -8,8 +8,12 @@ import type {
   Membership,
   MembershipPlan,
   MyRegistration,
+  BagLine,
   Order,
+  OrderItem,
   OrderStatus,
+  PickupSlot,
+  Product,
   ProductWithStock,
   ReceiptKind,
   TicketOrder,
@@ -136,9 +140,129 @@ export function isSoldOut(p: Pick<ProductWithStock, 'variants' | 'sold'>) {
   return Object.values(stockLeft(p)).every((n) => n === 0);
 }
 
-/** "M ×2, L ×1" ("×3" for one-size items). */
-export function itemsSummary(items: Order['items']) {
-  return items.map((i) => `${i.variant ? `${i.variant} ` : ''}×${i.qty}`).join(', ');
+/** Units in live orders, for the pre-order goal. */
+export function unitsOrdered(p: Pick<ProductWithStock, 'sold'>) {
+  return Object.values(p.sold).reduce((a, b) => a + b, 0);
+}
+
+/** What one unit of a size costs this buyer: the (member) price plus any charge for the size. */
+export function unitPrice(p: Pick<Product, 'price_hkd' | 'member_price_hkd' | 'variants'>, variant: string, member: boolean) {
+  const base = member && p.member_price_hkd != null ? p.member_price_hkd : p.price_hkd;
+  return base + (p.variants.find((v) => v.name === variant)?.extra_hkd ?? 0);
+}
+
+/** Lowest and highest price across sizes, for "HK$200–220". */
+export function priceRange(p: Pick<Product, 'price_hkd' | 'member_price_hkd' | 'variants'>, member: boolean) {
+  const prices = p.variants.map((v) => unitPrice(p, v.name, member));
+  return { min: Math.min(...prices), max: Math.max(...prices) };
+}
+
+export type SaleState = 'draft' | 'upcoming' | 'open' | 'sold_out' | 'closed';
+
+export function saleState(
+  p: Pick<ProductWithStock, 'status' | 'opens_at' | 'closes_at' | 'variants' | 'sold'>,
+  now = new Date().toISOString(),
+): SaleState {
+  if (p.status === 'draft') return 'draft';
+  if (p.status === 'closed' || (p.closes_at && now > p.closes_at)) return 'closed';
+  if (p.opens_at && now < p.opens_at) return 'upcoming';
+  return isSoldOut(p) ? 'sold_out' : 'open';
+}
+
+export type BagRow = {
+  line: BagLine;
+  product: ProductWithStock | null;
+  unit: number;
+  /** Why this line can't be ordered as it is, or null. */
+  problem: string | null;
+  /** Most of this line that can be ordered right now. */
+  max: number;
+};
+
+/**
+ * Checks a bag against the latest products: prices (with member and size
+ * charges), stock, and limits, in the same order the server checks them, so the
+ * buyer sees problems before paying rather than an error after.
+ */
+export function checkBag(lines: BagLine[], products: ProductWithStock[], member: boolean) {
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const takenBySize = new Map<string, number>();
+  const perProduct = new Map<string, number>();
+  const rows: BagRow[] = lines.map((line) => {
+    const p = byId.get(line.product_id) ?? null;
+    if (!p) return { line, product: null, unit: 0, problem: t('No longer on sale'), max: 0 };
+    const unit = unitPrice(p, line.variant, member);
+    const state = saleState(p);
+    if (state === 'closed' || state === 'draft') return { line, product: p, unit, problem: t('Orders have closed'), max: 0 };
+    if (state === 'upcoming') return { line, product: p, unit, problem: t('Orders have not opened yet'), max: 0 };
+    const variant = p.variants.find((v) => v.name === line.variant);
+    if (!variant) return { line, product: p, unit, problem: t('This size is no longer available'), max: 0 };
+    const key = `${p.id}|${line.variant}`;
+    const taken = takenBySize.get(key) ?? 0;
+    const left = variant.stock == null ? Infinity : Math.max(0, variant.stock - (p.sold[line.variant] ?? 0) - taken);
+    const used = perProduct.get(p.id) ?? 0;
+    const max = Math.max(0, Math.min(left, p.max_per_order - used, (p.max_per_buyer ?? Infinity) - used));
+    takenBySize.set(key, taken + line.qty);
+    perProduct.set(p.id, used + line.qty);
+    const problem =
+      left === 0
+        ? t('Sold out')
+        : line.qty > left
+          ? t('Only {n} left', { n: left })
+          : line.qty > max
+            ? t('Up to {n} per order.', { n: Math.min(p.max_per_order, p.max_per_buyer ?? Infinity) })
+            : null;
+    return { line, product: p, unit, problem, max };
+  });
+  const ok = rows.filter((r) => !r.problem);
+  return {
+    rows,
+    total: ok.reduce((n, r) => n + r.unit * r.line.qty, 0),
+    count: ok.reduce((n, r) => n + r.line.qty, 0),
+    hasProblems: rows.some((r) => r.problem),
+    /** The shortest payment window of anything in the bag. */
+    windowHours: ok.length ? Math.min(...ok.map((r) => r.product!.payment_window_hours)) : 48,
+  };
+}
+
+/** Can a buyer still book this pickup time? */
+export function slotState(s: PickupSlot, now = new Date().toISOString()) {
+  if (s.ends_at < now) return { key: 'past' as const, left: 0 };
+  if (s.capacity == null) return { key: 'open' as const, left: null };
+  const left = Math.max(0, s.capacity - (s.booked ?? 0));
+  return { key: left === 0 ? ('full' as const) : ('open' as const), left };
+}
+
+/** A size guide written as comma-separated lines becomes header + rows. */
+export function parseSizeChart(text: string | null | undefined) {
+  const rows = parseCsv(text ?? '').map((r) => r.map((c) => c.trim()));
+  if (rows.length < 2) return null;
+  const width = Math.max(...rows.map((r) => r.length));
+  const pad = (r: string[]) => [...r, ...Array(width - r.length).fill('')];
+  return { header: pad(rows[0]), rows: rows.slice(1).map(pad) };
+}
+
+/** Products on an order: one entry per line, older orders fall back to the order's product. */
+export function lineTitle(i: OrderItem, o: Pick<Order, 'product_title'>) {
+  return i.title ?? o.product_title;
+}
+
+/**
+ * "M ×2, L ×1" ("×3" for one-size items). When an order mixes products each line
+ * names its product: "Hoodie M ×1, Tote ×2".
+ */
+export function itemsSummary(items: OrderItem[]) {
+  const mixed = new Set(items.map((i) => i.title ?? '')).size > 1;
+  return items.map((i) => `${mixed && i.title ? `${i.title} ` : ''}${i.variant ? `${i.variant} ` : ''}×${i.qty}`).join(', ');
+}
+
+export function itemCount(items: OrderItem[]) {
+  return items.reduce((n, i) => n + i.qty, 0);
+}
+
+/** Does this order include the product? */
+export function orderHasProduct(o: Pick<Order, 'product_id' | 'items'>, productId: string) {
+  return o.product_id === productId || o.items.some((i) => i.product_id === productId);
 }
 
 /** Totals by variant across orders that hold stock, for the supplier. */
@@ -146,9 +270,12 @@ export function productionSummary(orders: Pick<Order, 'product_title' | 'items' 
   const totals = new Map<string, Map<string, number>>();
   for (const o of orders) {
     if (o.status === 'cancelled' || o.status === 'refunded' || isExpired(o)) continue;
-    const byVariant = totals.get(o.product_title) ?? new Map<string, number>();
-    for (const i of o.items) byVariant.set(i.variant, (byVariant.get(i.variant) ?? 0) + i.qty);
-    totals.set(o.product_title, byVariant);
+    for (const i of o.items) {
+      const title = lineTitle(i, o);
+      const byVariant = totals.get(title) ?? new Map<string, number>();
+      byVariant.set(i.variant, (byVariant.get(i.variant) ?? 0) + i.qty);
+      totals.set(title, byVariant);
+    }
   }
   return [...totals].map(([title, v]) => ({
     title,

@@ -25,6 +25,7 @@ const ICONS: Record<NotificationKind, IconName> = {
   membership_renewal: 'refresh',
   order_update: 'bag-handle',
   payment_settings_changed: 'warning',
+  product_available: 'pricetag',
 };
 
 /** The button under each message, as in the design. Same tap target as the row. */
@@ -34,6 +35,7 @@ const ACTIONS: Partial<Record<NotificationKind, string>> = {
   new_event: 'View event',
   membership_active: 'Show card',
   order_update: 'View order',
+  product_available: 'Shop now',
 };
 
 export default function Notifications() {
@@ -66,6 +68,7 @@ export default function Notifications() {
     else if (n.kind === 'order_update') router.navigate({ pathname: '/tickets', params: { tab: 'orders' } });
     else if (n.kind === 'payment_settings_changed' && n.society_id)
       router.push({ pathname: '/manage/payment-settings', params: { societyId: n.society_id } });
+    else if (n.kind === 'product_available' && n.society_id) router.push({ pathname: '/shop', params: { societyId: n.society_id } });
     else if (n.kind === 'committee_added' && n.society_id) router.push(`/manage/${n.society_id}`);
     else if (n.society_id) router.push(`/society/${n.society_id}`);
   };

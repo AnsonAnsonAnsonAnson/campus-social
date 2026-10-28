@@ -189,7 +189,8 @@ export type NotificationKind =
   | 'membership_active'
   | 'membership_renewal'
   | 'order_update'
-  | 'payment_settings_changed';
+  | 'payment_settings_changed'
+  | 'product_available';
 
 export type AppNotification = {
   id: string;
@@ -314,8 +315,11 @@ export type PaymentSettings = {
   updated_at: string;
 };
 
-/** A size or colour. `stock` null means pre-order with no limit; one variant named '' means one size. */
-export type ProductVariant = { name: string; stock: number | null };
+/**
+ * A size or colour. `stock` null means pre-order with no limit; one variant named '' means one size.
+ * `extra_hkd` is added to the price for this size (e.g. XXL +HK$20).
+ */
+export type ProductVariant = { name: string; stock: number | null; extra_hkd?: number | null };
 export type ProductStatus = 'draft' | 'published' | 'closed';
 
 export type Product = {
@@ -323,10 +327,20 @@ export type Product = {
   society_id: string;
   title: string;
   description: string;
+  /** Cover photo; `images` are the extra photos after it. */
   image_url: string | null;
+  images: string[];
   price_hkd: number;
   member_price_hkd: number | null;
   variants: ProductVariant[];
+  /** Comma-separated rows, header first: "Size, Chest, Length". */
+  size_chart: string | null;
+  /** Pre-orders: units the society needs to go ahead. */
+  goal_qty: number | null;
+  /** Pre-orders: expected ready date, YYYY-MM-DD. */
+  ready_on: string | null;
+  /** Across all of one buyer's live orders. */
+  max_per_buyer: number | null;
   opens_at: string | null;
   closes_at: string | null;
   pickup_note: string | null;
@@ -339,6 +353,8 @@ export type Product = {
 export type ProductWithStock = Product & {
   /** Units held by live orders, by variant name. */
   sold: Record<string, number>;
+  /** You asked to be told when it's back on sale. */
+  alert?: boolean;
   society: SocietySummary & { category: string };
 };
 
@@ -346,7 +362,8 @@ export type ProductInput = Omit<Product, 'id' | 'created_at'> & { id?: string };
 
 export type OrderStatus = 'awaiting_payment' | 'payment_claimed' | 'paid' | 'ready' | 'collected' | 'cancelled' | 'refunded';
 
-export type OrderItem = { variant: string; qty: number; unit_price: number };
+/** One line of an order. Orders before v0.7 have no product_id or title on their lines (see Order.product_title). */
+export type OrderItem = { product_id?: string; title?: string; variant: string; qty: number; unit_price: number };
 
 export type Order = {
   id: string;
@@ -357,6 +374,7 @@ export type Order = {
   registration_id: string | null;
   user_id: string | null;
   ref: string;
+  /** Set when the order holds one product; mixed bags list each product on their lines. */
   product_title: string;
   items: OrderItem[];
   total_hkd: number;
@@ -373,16 +391,44 @@ export type Order = {
   cancelled_at: string | null;
   receipt_path: string | null;
   receipt_at: string | null;
+  pickup_slot_id: string | null;
   created_at: string;
 };
 
-/** The buyer's own order, with the society. */
-export type MyOrder = Order & { society: SocietySummary & { category: string } };
+/** The buyer's own order, with the society and the pickup time they booked. */
+export type MyOrder = Order & { society: SocietySummary & { category: string }; pickup_slot?: PickupSlot | null };
 
 /** An order as the committee sees it. */
 export type SocietyOrder = Order & { buyer_name: string; buyer_email: string; expired: boolean };
 
-export type PickupResult = CheckInResult & { ref?: string; items?: string; collected_at?: string };
+/** "Take cash" means an unpaid cash order: collect again with cash received to hand it over. */
+export type PickupResult = CheckInResult & {
+  ref?: string;
+  items?: string;
+  collected_at?: string;
+  /** The pickup time the buyer booked, "Thu 13 Nov 13:00, Room 1009". */
+  slot?: string | null;
+  total_hkd?: number;
+  payment_method?: PaymentMethod;
+};
+
+/** A time and place the committee hands out orders. */
+export type PickupSlot = {
+  id: string;
+  society_id: string;
+  starts_at: string;
+  ends_at: string;
+  location: string;
+  /** Orders that can book it; null = no cap. */
+  capacity: number | null;
+  /** Live orders booked on it. */
+  booked?: number;
+};
+
+export type PickupSlotInput = Omit<PickupSlot, 'id' | 'booked'> & { id?: string };
+
+/** One line in a shopping bag (kept on the phone until checkout). */
+export type BagLine = { product_id: string; variant: string; qty: number };
 
 /** Which record a payment screenshot belongs to. */
 export type ReceiptKind = 'order' | 'membership';

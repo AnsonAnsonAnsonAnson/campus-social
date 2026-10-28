@@ -2,7 +2,7 @@
 // App Store screenshots, UI work). Mirrors the rules in the SQL migration.
 import type { AuthUser, Backend } from './backend';
 import { isCuhkEmail } from './backend';
-import { liveTicketOrder, receiptPath } from './commerce';
+import { liveTicketOrder, receiptPath, slotState, unitPrice } from './commerce';
 import {
   DEMO_DINNER,
   demoPaymentSettings,
@@ -11,10 +11,12 @@ import {
   makeDemoCampusDates,
   makeDemoEvents,
   makeDemoMemberships,
+  makeDemoPickupSlots,
   makeDemoPlans,
   makeDemoProducts,
 } from './demoData';
 import { DEMO_RECEIPT_MEMBERSHIP, DEMO_RECEIPT_TICKET } from './demoReceipts';
+import { formatDay, formatTime } from './format';
 import { t } from './i18n';
 import type {
   AppNotification,
@@ -29,6 +31,7 @@ import type {
   Order,
   OrderStatus,
   PaymentSettings,
+  PickupSlot,
   Product,
   SocietyOrder,
   NotificationKind,
@@ -109,6 +112,9 @@ const state = {
   memberships: makeDemoMemberships() as Membership[],
   paymentSettings: demoPaymentSettings.map((p) => ({ ...p })) as PaymentSettings[],
   products: makeDemoProducts() as Product[],
+  pickupSlots: makeDemoPickupSlots() as PickupSlot[],
+  // Products the demo user asked to hear about when they're back on sale.
+  alerts: new Set<string>(),
   orders: makeDemoOrders() as (Order & { buyer_name: string; buyer_email: string })[],
   // Payment screenshots by storage path. In demo mode they only live in memory.
   receipts: new Map<string, string>([
@@ -148,9 +154,58 @@ function makeDemoOrders() {
       registration_id: null,
       receipt_path: null,
       receipt_at: null,
+      pickup_slot_id: `70000000-0000-4000-8000-${String(3 + (i % 3)).padStart(12, '0')}`,
       created_at: created,
       buyer_name: FAKE_NAMES[i],
       buyer_email: `student${1155200000 + i}@link.cuhk.edu.hk`,
+    };
+  });
+  // Hoodie pre-orders from other Hiking Club members, so the goal bar has progress.
+  const hoodie = makeDemoProducts().find((p) => p.title === 'Club hoodie 2026')!;
+  const hoodieLines: [string, number][][] = [
+    [['S', 2]],
+    [['L', 3]],
+    [
+      ['L', 1],
+      ['XXL', 1],
+    ],
+    [['S', 1]],
+    [['L', 2]],
+    [
+      ['XXL', 1],
+      ['S', 1],
+    ],
+    [['L', 2]],
+    [
+      ['S', 1],
+      ['L', 1],
+    ],
+    [['L', 2]],
+  ];
+  const hoodies = hoodieLines.map((lines, i) => {
+    const created = new Date(Date.now() - (i + 1) * 9 * 3600_000).toISOString();
+    const items = lines.map(([variant, qty]) => ({
+      product_id: hoodie.id,
+      title: hoodie.title,
+      variant,
+      qty,
+      unit_price: hoodie.price_hkd + (variant === 'XXL' ? 20 : 0),
+    }));
+    return {
+      ...shop[3],
+      id: `81000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+      society_id: hoodie.society_id,
+      product_id: hoodie.id,
+      user_id: `demo-hiker-${i}`,
+      ref: `HIK-${String(3107 + i * 53).slice(-4)}`,
+      product_title: hoodie.title,
+      items,
+      total_hkd: items.reduce((n, l) => n + l.qty * l.unit_price, 0),
+      status: 'paid' as OrderStatus,
+      pickup_code: `demohoodie${i}`.padEnd(32, '0'),
+      pickup_slot_id: null,
+      created_at: created,
+      buyer_name: FAKE_NAMES[(i + 3) % FAKE_NAMES.length],
     };
   });
   // Tickets for the year-end dinner: one sent a screenshot, one hasn't paid yet, one is paid.
@@ -181,12 +236,13 @@ function makeDemoOrders() {
       collected_at: null,
       receipt_path: status === 'payment_claimed' ? `${dinner.society_id}/order/demo-ticket-receipt.jpg` : null,
       receipt_at: status === 'payment_claimed' ? created : null,
+      pickup_slot_id: null,
       created_at: created,
       buyer_name: FAKE_NAMES[8 + i],
       buyer_email: `student${1155210000 + i}@link.cuhk.edu.hk`,
     };
   });
-  return [...tickets, ...shop];
+  return [...tickets, ...shop, ...hoodies];
 }
 
 function todayHK() {
@@ -238,10 +294,51 @@ function holdsStock(o: Order) {
 function productSold(productId: string) {
   const sold: Record<string, number> = {};
   for (const o of state.orders) {
-    if (o.product_id !== productId || !holdsStock(o)) continue;
-    for (const i of o.items) sold[i.variant] = (sold[i.variant] ?? 0) + i.qty;
+    if (!holdsStock(o)) continue;
+    for (const i of o.items) {
+      if ((i.product_id ?? o.product_id) === productId) sold[i.variant] = (sold[i.variant] ?? 0) + i.qty;
+    }
   }
   return sold;
+}
+
+function slotBooked(slotId: string, except?: string) {
+  return state.orders.filter((o) => o.pickup_slot_id === slotId && holdsStock(o) && o.id !== except).length;
+}
+
+function withBooked(s: PickupSlot): PickupSlot {
+  return { ...s, booked: slotBooked(s.id) };
+}
+
+/** Mirrors _slot_label(): "Thu 13 Nov 13:00, Room 1009". */
+function slotLabel(s: PickupSlot) {
+  return `${formatDay(s.starts_at)} ${formatTime(s.starts_at)}, ${s.location}`;
+}
+
+function checkSlot(slotId: string, societyId: string, except?: string) {
+  const slot = state.pickupSlots.find((x) => x.id === slotId && x.society_id === societyId);
+  if (!slot) throw new Error('Choose another pickup time');
+  const st = slotState({ ...slot, booked: slotBooked(slot.id, except) });
+  if (st.key === 'past') throw new Error('That pickup time has passed');
+  if (st.key === 'full') throw new Error('That pickup time is full');
+}
+
+/** Mirrors notify_slot_change(): the demo user hears about times they booked. */
+function notifySlotChange(slot: PickupSlot, removed: boolean) {
+  for (const o of state.orders) {
+    if (o.pickup_slot_id !== slot.id || o.user_id !== state.user?.id || !holdsStock(o)) continue;
+    if (!['awaiting_payment', 'payment_claimed', 'paid', 'ready'].includes(o.status)) continue;
+    if (removed)
+      notify('order_update', t('Pickup time cancelled'), t('Choose a new time to collect {ref}.', { ref: o.ref }), null, o.society_id);
+    else
+      notify(
+        'order_update',
+        t('Pickup time changed'),
+        t('Now {slot} for {ref}.', { slot: slotLabel(slot), ref: o.ref }),
+        null,
+        o.society_id,
+      );
+  }
 }
 
 function societyCard(id: string) {
@@ -249,11 +346,18 @@ function societyCard(id: string) {
   return { ...summary(s), category: s.category };
 }
 
+function readyBody(o: Order) {
+  const slot = state.pickupSlots.find((s) => s.id === o.pickup_slot_id);
+  return slot
+    ? t('Collect {title} at {slot}. Show the pickup QR in Tickets.', { title: o.product_title, slot: slotLabel(slot) })
+    : t('Show the pickup QR in Tickets to collect {title}.', { title: o.product_title });
+}
+
 function notifyOrder(o: Order) {
   if (o.user_id !== state.user?.id) return;
   const titles: Partial<Record<OrderStatus, [string, string]>> = {
     paid: [t('Payment received'), t('{title} ({ref}) is paid.', { title: o.product_title, ref: o.ref })],
-    ready: [t('Ready for pickup'), t('Show the pickup QR in Tickets to collect {title}.', { title: o.product_title })],
+    ready: [t('Ready for pickup'), readyBody(o)],
     awaiting_payment: [
       t('Payment not found yet'),
       t('The society could not find a payment for {ref}. Check the reference and amount.', { ref: o.ref }),
@@ -413,6 +517,7 @@ function ensureTicketOrder(reg: Registration) {
     cancelled_at: null,
     receipt_path: null,
     receipt_at: null,
+    pickup_slot_id: null,
     created_at: now.toISOString(),
     buyer_name: state.profile?.display_name || state.user?.email || '',
     buyer_email: state.user?.email ?? '',
@@ -1131,46 +1236,69 @@ export const demoBackend: Backend = {
           : p.status === 'published' && (!p.closes_at || p.closes_at > now),
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
-      .map((p) => ({ ...p, sold: productSold(p.id), society: societyCard(p.society_id) }));
+      .map((p) => ({ ...p, sold: productSold(p.id), alert: state.alerts.has(p.id), society: societyCard(p.society_id) }));
   },
-  async placeOrder(productId, items, method, note) {
+  async placeBagOrder(societyId, bagLines, method, slotId, note) {
     await delay(300);
     const user = requireUser();
-    const p = state.products.find((x) => x.id === productId);
     const now = new Date().toISOString();
-    if (!p || p.status !== 'published') throw new Error('This item is not on sale');
-    if (p.opens_at && now < p.opens_at) throw new Error('Orders have not opened yet');
-    if (p.closes_at && now > p.closes_at) throw new Error('Orders have closed');
-    const lines = items.filter((i) => i.qty > 0);
+    if (!['fps', 'payme', 'cash'].includes(method)) throw new Error('Choose how you will pay');
+    const lines = bagLines.filter((l) => l.qty > 0);
     if (!lines.length) throw new Error('Choose at least one item');
-    const member = p.member_price_hkd != null && isCurrentMember(p.society_id);
-    const unit = member ? p.member_price_hkd! : p.price_hkd;
-    const sold = productSold(p.id);
-    for (const i of lines) {
-      const v = p.variants.find((x) => x.name === i.variant);
+    const member = isCurrentMember(societyId);
+    const taken = new Map<string, Record<string, number>>();
+    const perProduct = new Map<string, number>();
+    const out: Order['items'] = [];
+    const titles: string[] = [];
+    let total = 0;
+    let anyMember = false;
+    let window = Infinity;
+    for (const l of lines) {
+      const p = state.products.find((x) => x.id === l.product_id);
+      if (!p || p.society_id !== societyId || p.status !== 'published') throw new Error('This item is not on sale');
+      if (p.opens_at && now < p.opens_at) throw new Error('Orders have not opened yet');
+      if (p.closes_at && now > p.closes_at) throw new Error('Orders have closed');
+      const v = p.variants.find((x) => x.name === l.variant);
       if (!v) throw new Error('Choose a size');
-      if (v.stock != null && (sold[v.name] ?? 0) + i.qty > v.stock) throw new Error('Not enough stock left');
+      const sold = taken.get(p.id) ?? productSold(p.id);
+      if (v.stock != null && (sold[v.name] ?? 0) + l.qty > v.stock) throw new Error('Not enough stock left');
+      taken.set(p.id, { ...sold, [v.name]: (sold[v.name] ?? 0) + l.qty });
+      const per = (perProduct.get(p.id) ?? 0) + l.qty;
+      perProduct.set(p.id, per);
+      if (per > p.max_per_order) throw new Error('That is more than the limit per order');
+      if (p.max_per_buyer != null) {
+        const mine = state.orders
+          .filter((o) => o.user_id === user.id && holdsStock(o))
+          .flatMap((o) => o.items.filter((i) => (i.product_id ?? o.product_id) === p.id))
+          .reduce((n, i) => n + i.qty, 0);
+        if (mine + per > p.max_per_buyer) throw new Error('You have reached the limit for this item');
+      }
+      const isMemberPrice = member && p.member_price_hkd != null;
+      anyMember ||= isMemberPrice;
+      const unit = unitPrice(p, v.name, member);
+      total += unit * l.qty;
+      out.push({ product_id: p.id, title: p.title, variant: v.name, qty: l.qty, unit_price: unit });
+      if (!titles.includes(p.title)) titles.push(p.title);
+      window = Math.min(window, p.payment_window_hours);
     }
-    const qty = lines.reduce((n, i) => n + i.qty, 0);
-    if (qty > p.max_per_order) throw new Error('That is more than the limit per order');
-    const s = state.societies.find((x) => x.id === p.society_id)!;
+    if (slotId) checkSlot(slotId, societyId);
+    const s = state.societies.find((x) => x.id === societyId)!;
     const prefix = ((s.short_name ?? s.name).replace(/[^A-Za-z]/g, '') || 'CS').slice(0, 3).toUpperCase();
-    const total = qty * unit;
     const order: Order & { buyer_name: string; buyer_email: string } = {
       id: uid(),
-      society_id: p.society_id,
-      product_id: p.id,
+      society_id: societyId,
+      product_id: perProduct.size === 1 ? out[0].product_id! : null,
       user_id: user.id,
       ref: `${prefix}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
-      product_title: p.title,
-      items: lines.map((i) => ({ variant: i.variant, qty: i.qty, unit_price: unit })),
+      product_title: titles.join(', '),
+      items: out,
       total_hkd: total,
-      member_price: member,
+      member_price: anyMember,
       status: total === 0 ? 'paid' : 'awaiting_payment',
       payment_method: method,
       buyer_note: note?.trim() || null,
       pickup_code: uid().slice(5) + uid().slice(5) + uid().slice(5),
-      expires_at: total > 0 && method !== 'cash' ? new Date(Date.now() + p.payment_window_hours * 3600_000).toISOString() : null,
+      expires_at: total > 0 && method !== 'cash' ? new Date(Date.now() + window * 3600_000).toISOString() : null,
       claimed_at: null,
       paid_at: total === 0 ? now : null,
       ready_at: null,
@@ -1180,6 +1308,7 @@ export const demoBackend: Backend = {
       registration_id: null,
       receipt_path: null,
       receipt_at: null,
+      pickup_slot_id: slotId,
       created_at: now,
       buyer_name: state.profile?.display_name || user.email,
       buyer_email: user.email,
@@ -1188,12 +1317,39 @@ export const demoBackend: Backend = {
     const { buyer_name: _n, buyer_email: _e, ...plain } = order;
     return plain;
   },
+  async listPickupSlots(societyId) {
+    await delay();
+    const cutoff = new Date(Date.now() - 86400_000).toISOString();
+    return state.pickupSlots
+      .filter((s) => s.society_id === societyId && (s.ends_at > cutoff || isMember(societyId)))
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+      .map(withBooked);
+  },
+  async choosePickupSlot(orderId, slotId) {
+    await delay(200);
+    const o = state.orders.find((x) => x.id === orderId && x.user_id === state.user?.id);
+    if (!o) throw new Error('Order not found');
+    if (o.event_id || !['awaiting_payment', 'payment_claimed', 'paid', 'ready'].includes(o.status) || !holdsStock(o)) {
+      throw new Error('This order can no longer change its pickup time');
+    }
+    checkSlot(slotId, o.society_id, o.id);
+    o.pickup_slot_id = slotId;
+  },
+  async setProductAlert(productId, on) {
+    requireUser();
+    if (on) state.alerts.add(productId);
+    else state.alerts.delete(productId);
+  },
   async myOrders() {
     await delay();
     if (!state.user) return [];
     return state.orders
       .filter((o) => o.user_id === state.user!.id)
-      .map(({ buyer_name: _n, buyer_email: _e, ...o }) => ({ ...o, society: societyCard(o.society_id) }));
+      .map(({ buyer_name: _n, buyer_email: _e, ...o }) => ({
+        ...o,
+        society: societyCard(o.society_id),
+        pickup_slot: state.pickupSlots.find((s) => s.id === o.pickup_slot_id) ?? null,
+      }));
   },
   async claimOrderPaid(id, note) {
     const o = state.orders.find((x) => x.id === id && x.user_id === state.user?.id);
@@ -1253,15 +1409,50 @@ export const demoBackend: Backend = {
     await delay(300);
     if (!isMember(input.society_id)) throw new Error('Not allowed');
     if (input.id) {
-      Object.assign(
-        state.products.find((p) => p.id === input.id)!,
-        input,
-      );
+      const p = state.products.find((x) => x.id === input.id)!;
+      // Mirrors notify_product_alerts(): published, or more stock on any size.
+      const more = input.variants.some((nv) => {
+        const ov = p.variants.find((v) => v.name === nv.name);
+        return !ov || (nv.stock == null && ov.stock != null) || (nv.stock ?? 0) > (ov.stock ?? Infinity);
+      });
+      if (input.status === 'published' && (p.status !== 'published' || more) && state.alerts.has(p.id)) {
+        state.alerts.delete(p.id);
+        notify(
+          'product_available',
+          t('Back on sale'),
+          t('{title} is available again. Get it before it goes.', { title: input.title }),
+          null,
+          p.society_id,
+        );
+      }
+      Object.assign(p, input);
       return input.id;
     }
     const id = uid();
     state.products.push({ ...input, id, created_at: new Date().toISOString() });
     return id;
+  },
+  async savePickupSlot(input) {
+    await delay(200);
+    if (!isMember(input.society_id)) throw new Error('Not allowed');
+    if (input.ends_at <= input.starts_at) throw new Error('The end must be after the start');
+    if (input.id) {
+      const slot = state.pickupSlots.find((s) => s.id === input.id)!;
+      const moved = slot.starts_at !== input.starts_at || slot.ends_at !== input.ends_at || slot.location !== input.location;
+      Object.assign(slot, input);
+      if (moved) notifySlotChange(slot, false);
+      return input.id;
+    }
+    const id = uid();
+    state.pickupSlots.push({ ...input, id });
+    return id;
+  },
+  async deletePickupSlot(id) {
+    const slot = state.pickupSlots.find((s) => s.id === id);
+    if (!slot || !isMember(slot.society_id)) throw new Error('Not allowed');
+    notifySlotChange(slot, true);
+    state.pickupSlots = state.pickupSlots.filter((s) => s.id !== id);
+    for (const o of state.orders) if (o.pickup_slot_id === id) o.pickup_slot_id = null;
   },
   async deleteProduct(id) {
     state.products = state.products.filter((p) => p.id !== id);
@@ -1307,21 +1498,43 @@ export const demoBackend: Backend = {
     }
     return n;
   },
-  async collectOrder(societyId, code) {
+  async collectOrder(societyId, code, cashReceived) {
     await delay(200);
     if (!isMember(societyId)) throw new Error('Only society committee members can hand out orders');
     const o = state.orders.find(
       (x) => x.pickup_code === code.trim().toLowerCase() || (x.society_id === societyId && x.ref === code.trim().toUpperCase()),
     );
     if (!o) return { ok: false, message: 'Order not found' };
-    const items = `${o.product_title} · ${o.items.map((i) => `${i.variant ? i.variant + ' ' : ''}×${i.qty}`).join(', ')}`;
-    const base = { name: o.buyer_name, ref: o.ref, items };
     if (o.society_id !== societyId) return { ok: false, name: o.buyer_name, message: 'This order is for a different society' };
+    const mixed = new Set(o.items.map((i) => i.title ?? o.product_title)).size > 1;
+    const lines = o.items.map((i) => `${mixed ? `${i.title} ` : ''}${i.variant ? i.variant + ' ' : ''}×${i.qty}`).join(', ');
+    const slot = state.pickupSlots.find((s) => s.id === o.pickup_slot_id);
+    const base = {
+      name: o.buyer_name,
+      ref: o.ref,
+      items: mixed ? lines : `${o.product_title} · ${lines}`,
+      slot: slot ? slotLabel(slot) : null,
+      total_hkd: o.total_hkd,
+      payment_method: o.payment_method,
+    };
+    if (o.event_id) return { ...base, ok: false, message: 'This is an event ticket. Check it in from the event instead.' };
     if (o.status === 'collected') return { ...base, ok: false, message: 'Already collected', collected_at: o.collected_at ?? undefined };
-    if (o.status !== 'paid' && o.status !== 'ready') return { ...base, ok: false, message: 'Not paid yet' };
-    if (o.event_id) throw new Error('This is an event ticket. Check it in from the event instead.');
+    const now = new Date().toISOString();
+    if (o.status === 'awaiting_payment' && o.payment_method === 'cash' && cashReceived) {
+      Object.assign(o, { status: 'collected', paid_at: now, collected_at: now });
+      return { ...base, ok: true, message: 'Cash taken and collected' };
+    }
+    if (o.status !== 'paid' && o.status !== 'ready') {
+      const message =
+        o.status === 'awaiting_payment' && o.payment_method === 'cash'
+          ? 'Take cash'
+          : o.status === 'cancelled' || o.status === 'refunded'
+            ? 'This order was cancelled'
+            : 'Not paid yet';
+      return { ...base, ok: false, message };
+    }
     o.status = 'collected';
-    o.collected_at = new Date().toISOString();
+    o.collected_at = now;
     return { ...base, ok: true, message: 'Collected' };
   },
 

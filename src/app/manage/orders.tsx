@@ -7,22 +7,29 @@ import { ListSkeleton } from '@/components/Skeleton';
 import { toast } from '@/components/Toast';
 import { Button, Chip, ChipRow, EmptyState, ErrorView, Icon, InfoRow, Pill, Sheet } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
-import { isExpired, itemsSummary, orderStatus, productionSummary, toCsv } from '@/lib/commerce';
+import { isExpired, itemCount, itemsSummary, orderStatus, productionSummary, toCsv } from '@/lib/commerce';
 import { confirmAsync, showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { formatDay, formatTime, todayHK } from '@/lib/format';
 import { shareCsv } from '@/lib/shareFile';
 import { radius, space, useColors } from '@/lib/theme';
-import type { OrderStatus, PaymentMethod, SocietyOrder } from '@/lib/types';
+import type { OrderStatus, PaymentMethod, PickupSlot, SocietyOrder } from '@/lib/types';
+import { slotWhen } from '@/components/ShopParts';
 import { useQuery } from '@/lib/useQuery';
 import { t } from '@/lib/i18n';
 
-type Filter = 'check' | 'unpaid' | 'handout' | 'done' | 'all' | 'summary';
+type Filter = 'check' | 'unpaid' | 'handout' | 'done' | 'all' | 'summary' | 'picklist';
 type Change = Exclude<OrderStatus, 'payment_claimed'>;
 
 const methodLabel = (m: PaymentMethod) => (m === 'cash' ? t('Cash') : m === 'payme' ? 'PayMe' : 'FPS');
 
-function bucket(o: SocietyOrder): Exclude<Filter, 'all' | 'summary'> {
+/** Orders someone still has to collect: paid, ready, or cash to take at the desk. */
+const toCollect = (o: SocietyOrder) =>
+  !o.event_id &&
+  !isExpired(o) &&
+  (['paid', 'ready'].includes(o.status) || (o.status === 'awaiting_payment' && o.payment_method === 'cash'));
+
+function bucket(o: SocietyOrder): Exclude<Filter, 'all' | 'summary' | 'picklist'> {
   if (isExpired(o)) return 'done';
   if (o.status === 'payment_claimed') return 'check';
   if (o.status === 'awaiting_payment') return 'unpaid';
@@ -37,12 +44,17 @@ export default function Orders() {
   const [filter, setFilter] = useState<Filter>('check');
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<SocietyOrder | null>(null);
+  const [slotFilter, setSlotFilter] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const q = useQuery(async () => {
-    const [orders, mine] = await Promise.all([api.listOrders(societyId), api.mySocieties()]);
+    const [orders, mine, slots] = await Promise.all([
+      api.listOrders(societyId),
+      api.mySocieties(),
+      api.listPickupSlots(societyId).catch(() => [] as PickupSlot[]),
+    ]);
     const society = mine.find((s) => s.id === societyId);
-    return { orders, society, isAdmin: !!society && society.role !== 'editor' };
+    return { orders, society, slots, isAdmin: !!society && society.role !== 'editor' };
   }, [societyId]);
 
   const orders = useMemo(() => q.data?.orders ?? [], [q.data]);
@@ -52,13 +64,27 @@ export default function Orders() {
     return n;
   }, [orders]);
 
+  const slots = useMemo(() => q.data?.slots ?? [], [q.data]);
+  const slotById = useMemo(() => new Map(slots.map((s) => [s.id, s])), [slots]);
+  // Pick list: the first upcoming time with orders, unless one was picked.
+  const pickSlot =
+    slotFilter ??
+    slots.find((s) => s.ends_at > new Date().toISOString() && orders.some((o) => o.pickup_slot_id === s.id && toCollect(o)))?.id ??
+    '';
+
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
+    if (filter === 'picklist') {
+      return orders
+        .filter((o) => toCollect(o) && (o.pickup_slot_id ?? '') === pickSlot)
+        .filter((o) => !needle || [o.ref, o.buyer_name].some((v) => v.toLowerCase().includes(needle)))
+        .sort((a, b) => a.ref.localeCompare(b.ref));
+    }
     return orders
       .filter((o) => filter === 'all' || bucket(o) === filter)
       .filter((o) => !needle || [o.ref, o.buyer_name, o.buyer_email, o.product_title].some((v) => v.toLowerCase().includes(needle)))
       .sort((a, b) => (a.claimed_at ?? a.created_at).localeCompare(b.claimed_at ?? b.created_at));
-  }, [orders, filter, search]);
+  }, [orders, filter, search, pickSlot]);
 
   const summary = useMemo(() => productionSummary(orders), [orders]);
 
@@ -99,13 +125,28 @@ export default function Orders() {
 
   const exportCsv = async () => {
     const rows = [
-      [t('Ref'), t('Name'), t('Email'), t('Product'), t('Items'), t('Total'), t('Method'), t('Status'), t('Ordered'), t('Paid')],
-      ...orders.map((o) => [
+      [
+        t('Ref'),
+        t('Name'),
+        t('Email'),
+        t('Product'),
+        t('Items'),
+        t('Pickup time'),
+        t('Total'),
+        t('Method'),
+        t('Status'),
+        t('Ordered'),
+        t('Paid'),
+      ],
+      ...(filter === 'picklist' ? visible : orders).map((o) => [
         o.ref,
         o.buyer_name,
         o.buyer_email,
         o.product_title,
         itemsSummary(o.items),
+        o.pickup_slot_id && slotById.get(o.pickup_slot_id)
+          ? `${slotWhen(slotById.get(o.pickup_slot_id)!)} ${slotById.get(o.pickup_slot_id)!.location}`
+          : '',
         o.total_hkd,
         methodLabel(o.payment_method),
         orderStatus(o).label,
@@ -201,8 +242,36 @@ export default function Orders() {
               {chip('handout', t('To hand out'), counts.handout)}
               {chip('done', t('Done'))}
               {chip('all', t('All'))}
+              {chip('picklist', t('Pick list'))}
               {chip('summary', t('Totals'))}
             </ChipRow>
+            {filter === 'picklist' && (
+              <>
+                <ChipRow>
+                  {slots
+                    .filter((s) => s.ends_at > new Date(new Date().getTime() - 86400_000).toISOString())
+                    .map((s) => (
+                      <Chip
+                        key={s.id}
+                        icon="calendar-outline"
+                        label={slotWhen(s)}
+                        selected={pickSlot === s.id}
+                        onPress={() => setSlotFilter(s.id)}
+                      />
+                    ))}
+                  <Chip label={t('No time booked')} selected={pickSlot === ''} onPress={() => setSlotFilter('')} />
+                </ChipRow>
+                <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19, marginHorizontal: space.lg }}>
+                  {pickSlot && slotById.get(pickSlot)
+                    ? t('{n} orders, {units} items to pack for {where}. Sorted by ref, so label bags with it.', {
+                        n: visible.length,
+                        units: visible.reduce((n, o) => n + itemCount(o.items), 0),
+                        where: slotById.get(pickSlot)!.location,
+                      })
+                    : t('Paid orders with no pickup time booked.')}
+                </Text>
+              </>
+            )}
             {filter === 'summary' && <Summary summary={summary} />}
           </View>
         }
@@ -221,8 +290,12 @@ export default function Orders() {
                     {o.buyer_name}
                   </Text>
                 </View>
-                <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
-                  {o.event_id ? `${t('Ticket')} · ${o.product_title}` : `${o.product_title} · ${itemsSummary(o.items)}`}
+                <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={filter === 'picklist' ? 3 : 1}>
+                  {o.event_id
+                    ? `${t('Ticket')} · ${o.product_title}`
+                    : o.items.some((i) => i.title) && new Set(o.items.map((i) => i.title)).size > 1
+                      ? itemsSummary(o.items)
+                      : `${o.product_title} · ${itemsSummary(o.items)}`}
                 </Text>
                 <Text style={{ color: c.textSecondary, fontSize: 13 }}>
                   {formatHkd(o.total_hkd)} · {methodLabel(o.payment_method)}
@@ -252,7 +325,14 @@ export default function Orders() {
         }
       />
       {bulk && <View style={[styles.bulk, { backgroundColor: c.backgroundPlain, borderTopColor: c.border }]}>{bulk}</View>}
-      <OrderSheet order={open} isAdmin={isAdmin} busy={busy} onClose={() => setOpen(null)} onChange={change} />
+      <OrderSheet
+        order={open}
+        slot={open?.pickup_slot_id ? (slotById.get(open.pickup_slot_id) ?? null) : null}
+        isAdmin={isAdmin}
+        busy={busy}
+        onClose={() => setOpen(null)}
+        onChange={change}
+      />
     </View>
   );
 }
@@ -285,12 +365,14 @@ function Summary({ summary }: { summary: ReturnType<typeof productionSummary> })
 
 function OrderSheet({
   order: o,
+  slot,
   isAdmin,
   busy,
   onClose,
   onChange,
 }: {
   order: SocietyOrder | null;
+  slot: PickupSlot | null;
   isAdmin: boolean;
   busy: boolean;
   onClose: () => void;
@@ -343,6 +425,7 @@ function OrderSheet({
             }
             subColor={o.claimed_at && !o.paid_at ? c.infoText : undefined}
           />
+          {slot && <InfoRow icon="calendar-outline" title={slotWhen(slot)} sub={slot.location} />}
           {o.buyer_note && <InfoRow icon="chatbubble-ellipses-outline" title={o.buyer_note} sub={t('Note from buyer')} />}
         </View>
         {isAdmin && <ReceiptButton path={o.receipt_path} at={o.receipt_at} />}

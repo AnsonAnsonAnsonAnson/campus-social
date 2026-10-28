@@ -245,7 +245,11 @@ export default function SocietyScreen() {
 
       {products.length > 0 && (
         <>
-          <SectionHeader title={t('Shop')} />
+          <SectionHeader
+            title={t('Shop')}
+            action={t('See all')}
+            onAction={() => router.push({ pathname: '/shop', params: { societyId: id } })}
+          />
           <ProductRow products={products} />
         </>
       )}

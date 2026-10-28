@@ -1,120 +1,169 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Artwork, Button, ErrorView, Icon, InfoRow, Loading, Pill, SegmentedControl, SocietyAvatar } from '@/components/ui';
+import { GoalMeter, SizeChart, slotWhen, Stepper } from '@/components/ShopParts';
+import { toast } from '@/components/Toast';
+import { Artwork, Banner, Button, ErrorView, Icon, InfoRow, Loading, Pill, Sheet, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { isSoldOut, membershipState, stockLeft } from '@/lib/commerce';
+import { addToBag, bagCount, useBag } from '@/lib/bag';
+import { membershipState, priceRange, saleState, slotState, stockLeft, unitPrice, unitsOrdered } from '@/lib/commerce';
 import { showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { formatWhen } from '@/lib/format';
+import { hasDropReminder, notificationsSupported, setDropReminder } from '@/lib/notifications';
 import { radius, space, textStyle, useColors } from '@/lib/theme';
-import type { PaymentMethod } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
 import { t, useLang } from '@/lib/i18n';
 
-/** A merch item: pick sizes and quantities, then order and pay the society directly. */
+/** A merch item: photos, sizes with stock, size guide, then add to the society's bag. */
 export default function ProductScreen() {
   const { id, societyId } = useLocalSearchParams<{ id: string; societyId: string }>();
   const c = useColors();
   const lang = useLang();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { user, requireSignIn } = useAuth();
-  const [qty, setQty] = useState<Record<string, number>>({});
-  const [method, setMethod] = useState<PaymentMethod | null>(null);
+  const bag = useBag(societyId);
+  const [variant, setVariant] = useState<string | null>(null);
+  const [qty, setQty] = useState(1);
+  const [photo, setPhoto] = useState(0);
+  const [guide, setGuide] = useState(false);
+  const [reminder, setReminder] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const q = useQuery(async () => {
-    const [products, settings, memberships] = await Promise.all([
+    const [products, memberships, slots] = await Promise.all([
       api.listProducts(societyId),
-      api.getPaymentSettings(societyId),
       api.myMemberships(),
+      api.listPickupSlots(societyId).catch(() => []),
     ]);
     const isMember = memberships.some((m) => m.society_id === societyId && membershipState(m, m.plan).key === 'active');
-    return { product: products.find((p) => p.id === id) ?? null, settings, isMember };
+    return { product: products.find((p) => p.id === id) ?? null, isMember, slots };
   }, [id, societyId, user?.id]);
 
-  if (q.loading) return <Loading />;
-  if (q.error) return <ErrorView message={q.error} onRetry={q.refresh} />;
   const p = q.data?.product;
+  useEffect(() => {
+    if (p?.opens_at) hasDropReminder(p.id).then(setReminder, () => undefined);
+  }, [p?.id, p?.opens_at]);
+
+  const photos = useMemo(() => (p ? [p.image_url, ...p.images].filter((u): u is string => !!u) : []), [p]);
+
+  if (q.loading && !q.data) return <Loading />;
+  if (q.error && !q.data) return <ErrorView message={q.error} onRetry={q.refresh} />;
   if (!p) return <ErrorView message={t('This item is not on sale')} />;
 
+  const member = q.data!.isMember;
   const left = stockLeft(p);
   const oneSize = p.variants.length === 1 && p.variants[0].name === '';
-  const memberPrice = q.data!.isMember && p.member_price_hkd != null;
-  const unit = memberPrice ? p.member_price_hkd! : p.price_hkd;
-  const count = Object.values(qty).reduce((a, b) => a + b, 0);
-  const now = new Date().toISOString();
-  const notOpen = !!p.opens_at && now < p.opens_at;
-  const closed = p.status !== 'published' || (!!p.closes_at && now > p.closes_at);
-  const soldOut = isSoldOut(p);
-  const methods: { value: PaymentMethod; label: string }[] = [
-    ...(q.data?.settings?.fps_id ? [{ value: 'fps' as const, label: 'FPS 轉數快' }] : []),
-    ...(q.data?.settings?.payme_link ? [{ value: 'payme' as const, label: 'PayMe' }] : []),
-    { value: 'cash', label: t('Cash at pickup') },
-  ];
-  const chosen = method ?? methods[0].value;
+  const chosen = oneSize ? '' : variant;
+  const state = saleState(p);
+  const canBuy = state === 'open';
+  const range = priceRange(p, member);
+  const memberPrice = member && p.member_price_hkd != null;
+  const unit = chosen != null ? unitPrice(p, chosen, member) : range.min;
+  const inBag = bag.filter((l) => l.product_id === p.id).reduce((n, l) => n + l.qty, 0);
+  const inBagThisSize = chosen != null ? (bag.find((l) => l.product_id === p.id && l.variant === chosen)?.qty ?? 0) : 0;
+  const sizeLeft = chosen != null ? left[chosen] : null;
+  const limit = Math.min(p.max_per_order, p.max_per_buyer ?? Infinity);
+  const max = Math.max(0, Math.min(limit - inBag, sizeLeft == null ? Infinity : sizeLeft - inBagThisSize));
+  const upcomingSlots = (q.data!.slots ?? []).filter((s) => slotState(s).key !== 'past');
+  const n = bagCount(bag);
 
-  const change = (variant: string, delta: number) =>
-    setQty((cur) => {
-      const n = Math.max(0, (cur[variant] ?? 0) + delta);
-      const cap = left[variant];
-      if (delta > 0 && (count >= p.max_per_order || (cap != null && n > cap))) return cur;
-      return { ...cur, [variant]: n };
-    });
+  const hint =
+    state === 'closed'
+      ? t('Orders have closed')
+      : state === 'upcoming'
+        ? t('Orders open {when}', { when: formatWhen(p.opens_at!) })
+        : state === 'sold_out'
+          ? t('Sold out')
+          : chosen == null
+            ? t('Choose a size')
+            : max === 0
+              ? inBag
+                ? t('Already in your bag')
+                : t('Sold out')
+              : undefined;
 
-  const order = async () => {
+  const add = () => {
+    if (chosen == null) return;
+    addToBag(societyId, { product_id: p.id, variant: chosen, qty: Math.min(qty, max) });
+    setQty(1);
+    toast(t('Added to bag'), { icon: 'bag-check-outline' });
+  };
+
+  const toggleAlert = async () => {
     if (!requireSignIn()) return;
     setBusy(true);
     try {
-      const o = await api.placeOrder(
-        p.id,
-        Object.entries(qty).map(([variant, n]) => ({ variant, qty: n })),
-        chosen,
-      );
+      await api.setProductAlert(p.id, !p.alert);
       invalidate();
-      router.replace(`/order/${o.id}`);
+      toast(p.alert ? t('Alert turned off') : t('We’ll tell you when it’s back'), { icon: 'notifications-outline' });
     } catch (e) {
-      showAlert(t('Could not place order'), errorMessage(e));
+      showAlert(t('Something went wrong'), errorMessage(e));
     } finally {
       setBusy(false);
     }
   };
 
-  const hint = closed
-    ? t('Orders have closed')
-    : notOpen
-      ? t('Orders open {when}', { when: formatWhen(p.opens_at!) })
-      : soldOut
-        ? t('Sold out')
-        : count === 0
-          ? oneSize
-            ? t('Choose how many')
-            : t('Choose a size')
-          : undefined;
+  const toggleReminder = async () => {
+    const ok = await setDropReminder(p, !reminder);
+    if (!ok) {
+      showAlert(t('Turn on notifications'), t('Allow notifications for Campus Social in Settings to get a reminder.'));
+      return;
+    }
+    setReminder(!reminder);
+    toast(reminder ? t('Reminder removed') : t('We’ll remind you when orders open'), { icon: 'alarm-outline' });
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: c.backgroundPlain }}>
       <Stack.Screen options={{ title: '' }} />
       <ScrollView contentContainerStyle={{ paddingBottom: 160 }}>
-        <Artwork seed={p.id} uri={p.image_url} category={p.society.category} style={{ height: 260 }} />
+        {photos.length > 1 ? (
+          <View>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e) => setPhoto(Math.round(e.nativeEvent.contentOffset.x / width))}
+              accessibilityLabel={t('Photos')}>
+              {photos.map((uri, i) => (
+                <Artwork key={i} seed={p.id + i} uri={uri} category={p.society.category} style={{ width, height: width * 0.9 }} />
+              ))}
+            </ScrollView>
+            <View style={styles.dots} pointerEvents="none">
+              {photos.map((_, i) => (
+                <View key={i} style={[styles.dot, { backgroundColor: i === photo ? '#fff' : 'rgba(255,255,255,0.5)' }]} />
+              ))}
+            </View>
+          </View>
+        ) : (
+          <Artwork seed={p.id} uri={photos[0]} category={p.society.category} style={{ height: Math.min(width * 0.9, 380) }} />
+        )}
+
         <View style={{ padding: space.lg, gap: space.md }}>
-          <Text style={[textStyle('title1', lang), { color: c.text }]}>{p.title}</Text>
           <Pressable
             onPress={() => router.push(`/society/${p.society_id}`)}
             accessibilityRole="button"
             style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-            <SocietyAvatar name={p.society.name} uri={p.society.logo_url} category={p.society.category} size={28} />
-            <Text style={{ color: c.textSecondary, fontSize: 15, flex: 1 }} numberOfLines={1}>
+            <SocietyAvatar name={p.society.name} uri={p.society.logo_url} category={p.society.category} size={24} />
+            <Text style={{ color: c.textSecondary, fontSize: 14, fontWeight: '600', flex: 1 }} numberOfLines={1}>
               {p.society.name}
             </Text>
           </Pressable>
+          <Text style={[textStyle('title1', lang), { color: c.text }]}>{p.title}</Text>
+
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.sm, flexWrap: 'wrap' }}>
-            <Text style={{ color: c.text, fontSize: 24, fontWeight: '700' }}>{formatHkd(unit)}</Text>
+            <Text style={{ color: c.text, fontSize: 24, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+              {chosen == null && range.max > range.min ? `${formatHkd(range.min)}–${formatHkd(range.max)}` : formatHkd(unit)}
+            </Text>
             {memberPrice && (
-              <Text style={{ color: c.textSecondary, fontSize: 15, textDecorationLine: 'line-through' }}>{formatHkd(p.price_hkd)}</Text>
+              <Text style={{ color: c.textSecondary, fontSize: 15, textDecorationLine: 'line-through' }}>
+                {formatHkd(chosen != null ? unitPrice(p, chosen, false) : p.price_hkd)}
+              </Text>
             )}
             {memberPrice ? (
               <Pill label={t('Member price')} tone="success" icon="card-outline" />
@@ -124,107 +173,219 @@ export default function ProductScreen() {
               )
             )}
           </View>
+
+          {state === 'upcoming' && (
+            <View style={[styles.notice, { backgroundColor: c.accentSoft }]}>
+              <Icon name="alarm-outline" size={20} color={c.accentText} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: c.text, fontSize: 15, fontWeight: '600' }}>
+                  {t('Orders open {when}', { when: formatWhen(p.opens_at!) })}
+                </Text>
+                {p.max_per_buyer != null && (
+                  <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('Limit {n} per person.', { n: p.max_per_buyer })}</Text>
+                )}
+              </View>
+              {notificationsSupported && (
+                <Button
+                  small
+                  variant={reminder ? 'secondary' : 'ink'}
+                  icon={reminder ? 'checkmark' : 'notifications-outline'}
+                  title={reminder ? t('Reminder set') : t('Remind me')}
+                  onPress={toggleReminder}
+                />
+              )}
+            </View>
+          )}
+          {state === 'sold_out' && (
+            <View style={[styles.notice, { backgroundColor: c.fill }]}>
+              <Icon name="notifications-outline" size={20} color={c.text} />
+              <Text style={{ color: c.text, fontSize: 15, flex: 1 }}>
+                {p.alert ? t('We’ll tell you if more are added.') : t('Sold out. Get a notification if more are added.')}
+              </Text>
+              <Button
+                small
+                variant={p.alert ? 'secondary' : 'ink'}
+                loading={busy}
+                title={p.alert ? t('Turn off') : t('Notify me')}
+                onPress={toggleAlert}
+              />
+            </View>
+          )}
+          {state === 'closed' && <Banner icon="lock-closed-outline" text={t('Orders have closed')} />}
+
+          <GoalMeter ordered={unitsOrdered(p)} goal={p.goal_qty} readyOn={p.ready_on} />
+
           {!!p.description && <Text style={{ color: c.text, fontSize: 16, lineHeight: 24 }}>{p.description}</Text>}
 
-          <View style={{ gap: space.sm, marginTop: space.sm }}>
-            <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>{oneSize ? t('Quantity') : t('Sizes')}</Text>
-            {p.variants.map((v) => {
-              const n = qty[v.name] ?? 0;
-              const l = left[v.name];
-              const out = l === 0;
-              return (
-                <View key={v.name} style={[styles.variant, { backgroundColor: c.fill }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: out ? c.disabledText : c.text, fontSize: 16, fontWeight: '600' }}>{v.name || t('One size')}</Text>
-                    <Text style={{ color: out ? c.dangerText : l != null && l <= 5 ? c.warningText : c.textSecondary, fontSize: 13 }}>
-                      {out ? t('Sold out') : l == null ? t('Pre-order') : t('{n} left', { n: l })}
-                    </Text>
-                  </View>
-                  <Stepper
-                    value={n}
-                    disabled={out || closed || notOpen}
-                    onChange={(d) => change(v.name, d)}
-                    label={v.name || t('One size')}
-                  />
-                </View>
-              );
-            })}
-            <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('Up to {n} per order.', { n: p.max_per_order })}</Text>
-          </View>
+          {!oneSize && (
+            <View style={{ gap: space.sm, marginTop: space.xs }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ color: c.text, fontSize: 17, fontWeight: '600', flex: 1 }}>{t('Size')}</Text>
+                {!!p.size_chart && (
+                  <Pressable onPress={() => setGuide(true)} hitSlop={8} accessibilityRole="button" style={styles.guideLink}>
+                    <Icon name="resize-outline" size={16} color={c.tintText} />
+                    <Text style={{ color: c.tintText, fontSize: 15, fontWeight: '600' }}>{t('Size guide')}</Text>
+                  </Pressable>
+                )}
+              </View>
+              <View style={styles.sizes}>
+                {p.variants.map((v) => {
+                  const l = left[v.name];
+                  const out = l === 0;
+                  const selected = variant === v.name;
+                  const extra = v.extra_hkd ?? 0;
+                  return (
+                    <Pressable
+                      key={v.name}
+                      onPress={() => {
+                        setVariant(v.name);
+                        setQty(1);
+                      }}
+                      disabled={out || !canBuy}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected, disabled: out || !canBuy }}
+                      accessibilityLabel={`${v.name}${out ? `, ${t('Sold out')}` : ''}`}
+                      style={({ pressed }) => [
+                        styles.size,
+                        {
+                          backgroundColor: selected ? c.ink : c.card,
+                          borderColor: selected ? c.ink : c.border,
+                          opacity: out ? 0.45 : pressed ? 0.8 : 1,
+                        },
+                      ]}>
+                      <Text
+                        style={{
+                          color: selected ? c.onInk : out ? c.disabledText : c.text,
+                          fontSize: 16,
+                          fontWeight: '600',
+                          textDecorationLine: out ? 'line-through' : 'none',
+                        }}>
+                        {v.name}
+                      </Text>
+                      <Text
+                        style={{
+                          color: selected ? c.onInk : out ? c.disabledText : l != null && l <= 5 ? c.warningText : c.textSecondary,
+                          fontSize: 11,
+                        }}>
+                        {out
+                          ? t('Sold out')
+                          : l != null && l <= 5
+                            ? t('{n} left', { n: l })
+                            : extra
+                              ? `+${formatHkd(extra)}`
+                              : l == null
+                                ? t('Pre-order')
+                                : ' '}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {canBuy && (
+            <View style={styles.qtyRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>{t('Quantity')}</Text>
+                <Text style={{ color: c.textSecondary, fontSize: 13 }}>
+                  {oneSize && sizeLeft != null && sizeLeft <= 10
+                    ? t('{n} left', { n: sizeLeft })
+                    : p.max_per_buyer != null
+                      ? t('Limit {n} per person.', { n: p.max_per_buyer })
+                      : t('Up to {n} per order.', { n: p.max_per_order })}
+                </Text>
+              </View>
+              <Stepper
+                value={Math.min(qty, Math.max(max, 1))}
+                max={max}
+                disabled={max === 0}
+                onChange={(v) => setQty(Math.max(1, v))}
+                label={p.title}
+              />
+            </View>
+          )}
 
           <View style={{ marginTop: space.sm }}>
-            {p.closes_at && <InfoRow icon="time-outline" title={t('Order by {when}', { when: formatWhen(p.closes_at) })} />}
-            {p.pickup_note && <InfoRow icon="location-outline" title={t('Pickup')} sub={p.pickup_note} />}
+            {p.closes_at && state !== 'closed' && (
+              <InfoRow icon="time-outline" title={t('Order by {when}', { when: formatWhen(p.closes_at) })} />
+            )}
+            {upcomingSlots.length > 0 ? (
+              <InfoRow
+                icon="location-outline"
+                title={t('Pick up at a time you choose')}
+                sub={upcomingSlots
+                  .slice(0, 3)
+                  .map((s) => `${slotWhen(s)} · ${s.location}`)
+                  .join('\n')}
+              />
+            ) : (
+              p.pickup_note && <InfoRow icon="location-outline" title={t('Pickup')} sub={p.pickup_note} />
+            )}
             <InfoRow
               icon="shield-checkmark-outline"
               title={t('You pay the society directly')}
-              sub={t('By FPS, PayMe or cash. Campus Social never holds your money.')}
+              sub={t('One payment for everything in your bag, by FPS, PayMe or cash. Campus Social never holds your money.')}
             />
           </View>
-
-          {!closed && !soldOut && (
-            <View style={{ gap: 6 }}>
-              <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>{t('How will you pay?')}</Text>
-              <SegmentedControl options={methods} value={chosen} onChange={setMethod} />
-            </View>
-          )}
         </View>
       </ScrollView>
 
       <View
         style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: c.elevated, borderTopColor: c.border }]}>
+        {n > 0 && (
+          <Pressable
+            onPress={() => router.push({ pathname: '/shop/bag', params: { societyId } })}
+            accessibilityRole="button"
+            accessibilityLabel={t('{n} items in your bag', { n })}
+            style={({ pressed }) => [styles.bagButton, { backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 }]}>
+            <Icon name="bag-handle-outline" size={22} color={c.text} />
+            <View style={[styles.badge, { backgroundColor: c.danger }]}>
+              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{n}</Text>
+            </View>
+          </Pressable>
+        )}
         <View style={{ flex: 1 }}>
-          <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>{formatHkd(count * unit)}</Text>
+          <Text style={{ color: c.text, fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] }}>
+            {formatHkd(unit * (hint ? 1 : Math.min(qty, max)))}
+          </Text>
           <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={2}>
-            {hint ?? t('{n} items', { n: count })}
+            {hint ?? (inBag ? t('{n} already in your bag', { n: inBag }) : t('Pay once for your whole bag'))}
           </Text>
         </View>
-        <Button title={t('Order')} icon="bag-handle-outline" loading={busy} disabled={!!hint} onPress={order} style={{ minWidth: 150 }} />
+        <Button title={t('Add to bag')} icon="bag-add-outline" disabled={!!hint} onPress={add} style={{ minWidth: 140 }} />
       </View>
-    </View>
-  );
-}
 
-function Stepper({
-  value,
-  onChange,
-  disabled,
-  label,
-}: {
-  value: number;
-  onChange: (delta: number) => void;
-  disabled?: boolean;
-  label: string;
-}) {
-  const c = useColors();
-  const btn = (delta: number, icon: 'remove' | 'add') => (
-    <Pressable
-      onPress={() => onChange(delta)}
-      disabled={disabled || (delta < 0 && value === 0)}
-      hitSlop={6}
-      accessibilityRole="button"
-      accessibilityLabel={`${delta > 0 ? t('Add') : t('Remove')} ${label}`}
-      style={({ pressed }) => [
-        styles.stepBtn,
-        { backgroundColor: c.card, opacity: disabled || (delta < 0 && value === 0) ? 0.4 : pressed ? 0.7 : 1 },
-      ]}>
-      <Icon name={icon} size={18} color={c.text} />
-    </Pressable>
-  );
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-      {btn(-1, 'remove')}
-      <Text style={{ color: c.text, fontSize: 17, fontWeight: '600', minWidth: 22, textAlign: 'center', fontVariant: ['tabular-nums'] }}>
-        {value}
-      </Text>
-      {btn(1, 'add')}
+      <Sheet visible={guide} onClose={() => setGuide(false)}>
+        <View style={{ paddingHorizontal: space.lg, gap: space.md }}>
+          <Text style={{ color: c.text, fontSize: 20, fontWeight: '700' }}>{t('Size guide')}</Text>
+          <SizeChart text={p.size_chart} />
+          <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19 }}>
+            {t('Measured flat, in the units the society gave. Between sizes? Ask the committee before you order.')}
+          </Text>
+        </View>
+      </Sheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  variant: { flexDirection: 'row', alignItems: 'center', padding: space.md, borderRadius: radius.md, gap: space.md },
-  stepBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  dots: { position: 'absolute', bottom: space.md, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  notice: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.lg },
+  guideLink: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 },
+  sizes: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  size: {
+    minWidth: 68,
+    minHeight: 52,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xs },
   bar: {
     position: 'absolute',
     left: 0,
@@ -236,5 +397,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
     paddingTop: space.md,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  bagButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
 });
