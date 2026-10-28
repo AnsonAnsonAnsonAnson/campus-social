@@ -1109,6 +1109,32 @@ const zhHant: Record<string, string> = {
   Continue: '繼續',
   'You can change all of this later in Profile': '所有資料之後都可以喺「個人」更改',
   '{n} items waiting': '{n} 項等待處理',
+  // v0.7 onboarding interests
+  'Debate, finance, research': '辯論、財經、研究',
+  'Drama, film, photography': '戲劇、電影、攝影',
+  'Languages, exchange, heritage': '語言、交流、文化傳承',
+  'Fellowships and faith groups': '團契及信仰小組',
+  'Bands, choirs, a cappella': '樂隊、合唱團、無伴奏合唱',
+  'Volunteering, social causes': '義工、社會議題',
+  'Hiking, ball games, dance': '行山、球類、跳舞',
+  'Coding, robotics, startups': '編程、機械人、初創',
+  'Hall and college life': '宿舍及書院生活',
+  'Everything else': '其他各類',
+  'Pick as many as you like. We’ll suggest societies to follow.': '想揀幾多個都得，我哋會推介學會俾你追蹤。',
+  'Societies for you': '為你揀嘅學會',
+  'Follow a few to fill Discover with their events. Tap to follow, tap again to undo.':
+    '追蹤幾個學會，探索頁就會出現佢哋嘅活動。撳一下追蹤，再撳一下取消。',
+  'Follow all': '全部追蹤',
+  'Continue · {n} picked': '繼續 · 已揀 {n} 個',
+  'Pick at least one to continue': '揀最少一個先可以繼續',
+  'Because you like {interest}': '因為你鍾意{interest}',
+  'In your college': '你所屬書院',
+  'Popular on campus': '校園熱門',
+  'Based on your interests: {interests}': '根據你嘅興趣：{interests}',
+  ', ': '、',
+  'Pick interests from the list': '請喺清單入面揀興趣',
+  Interests: '興趣',
+  'We suggest societies to follow from these.': '我哋會根據呢啲推介學會俾你追蹤。',
 };
 
 export default zhHant;

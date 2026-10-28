@@ -19,6 +19,8 @@ export type Profile = {
   is_platform_admin: boolean;
   /** App language; notifications are written in it. */
   locale?: Lang;
+  /** Society categories picked during onboarding; they drive society suggestions. */
+  interests?: string[];
 };
 
 export type Society = {

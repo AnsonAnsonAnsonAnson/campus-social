@@ -167,3 +167,9 @@ it('saves events privately and only ones you can see', async () => {
   expect(await api.mySavedEventIds()).toEqual(before);
   await expect(api.setEventSaved('20000000-0000-4000-8000-999999999999', true)).rejects.toThrow('Event not found');
 });
+
+it('saves interests from the society categories only', async () => {
+  await api.updateProfile({ interests: ['Music', 'Tech'] });
+  expect((await api.getProfile())?.interests).toEqual(['Music', 'Tech']);
+  await expect(api.updateProfile({ interests: ['Gambling'] })).rejects.toThrow('interests');
+});
