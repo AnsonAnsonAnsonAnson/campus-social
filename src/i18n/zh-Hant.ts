@@ -1109,6 +1109,17 @@ const zhHant: Record<string, string> = {
   Continue: '繼續',
   'You can change all of this later in Profile': '所有資料之後都可以喺「個人」更改',
   '{n} items waiting': '{n} 項等待處理',
+  // Most anticipated this week / month
+  'Most anticipated': '最受期待',
+  'Nothing big this week yet': '今個星期暫時未有大型活動',
+  'See what’s coming up this month.': '睇吓今個月有咩活動。',
+  '{n} saved': '{n} 人收藏',
+  'No. {n}': '第 {n} 位',
+  'Major event': '大型活動',
+  'Feature as major event': '設為大型活動',
+  'Stop featuring': '取消大型活動標記',
+  'Marked as a major event': '已設為大型活動',
+  'No longer a major event': '已取消大型活動標記',
 };
 
 export default zhHant;

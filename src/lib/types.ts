@@ -69,13 +69,19 @@ export type CampusEvent = {
   payment_window_hours: number;
   confirmed_count: number;
   waitlist_count: number;
+  /** How many students saved it (who saved stays private). */
+  save_count: number;
+  /** Set by platform admins for major events; they lead "Most anticipated". */
+  featured_at: string | null;
   /** Set when moderators take the event down; only its committee still sees it. */
   removed_at: string | null;
 };
 
 export type EventWithSociety = CampusEvent & { society: SocietySummary };
 
-export type EventInput = Omit<CampusEvent, 'id' | 'confirmed_count' | 'waitlist_count' | 'removed_at'> & { id?: string };
+export type EventInput = Omit<CampusEvent, 'id' | 'confirmed_count' | 'waitlist_count' | 'save_count' | 'featured_at' | 'removed_at'> & {
+  id?: string;
+};
 
 export type Registration = {
   id: string;

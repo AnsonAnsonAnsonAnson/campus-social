@@ -26,6 +26,7 @@ import { useAuth } from '@/lib/auth';
 import { COLLEGES, EVENT_CATEGORIES } from '@/lib/constants';
 import { availability, formatWhen } from '@/lib/format';
 import { formatHkd } from '@/lib/fps';
+import { byBuzz } from '@/lib/ranking';
 import { coverFor, radius, space, type, useColors, useIsDark } from '@/lib/theme';
 import type { EventWithSociety } from '@/lib/types';
 import { useDebouncedValue } from '@/lib/useDebouncedValue';
@@ -89,7 +90,7 @@ export default function Search() {
       .filter((e) => price === 'any' || (price === 'free' ? !(e.price_hkd ?? 0) : (e.price_hkd ?? 0) > 0))
       .filter((e) => college === 'any' || e.society.college === college)
       .filter((e) => matchesWhen(e.starts_at, when, now));
-    return sort === 'popular' ? [...list].sort((a, b) => b.confirmed_count - a.confirmed_count) : list;
+    return sort === 'popular' ? [...list].sort(byBuzz) : list;
   }, [results.data, category, price, college, when, sort, hiddenIds, query]);
 
   const whenOptions: { value: When; label: string }[] = [

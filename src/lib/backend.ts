@@ -169,6 +169,8 @@ export interface Backend {
   pendingBanners(): Promise<BannerWithLinks[]>;
   reviewSociety(id: string, status: ReviewStatus, verified: boolean): Promise<void>;
   reviewBanner(id: string, status: ReviewStatus, priority: number): Promise<void>;
+  /** Mark a major event so it leads "Most anticipated" (this week / month) on Discover. */
+  setEventFeatured(id: string, featured: boolean): Promise<void>;
   openReports(): Promise<OpenReport[]>;
   /** 'removed' takes the reported event down (or rejects the society / banner). */
   resolveReport(id: string, action: 'dismissed' | 'removed'): Promise<void>;
