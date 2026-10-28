@@ -12,7 +12,9 @@ import {
   makeDemoEvents,
   makeDemoMemberships,
   makeDemoPlans,
+  makeDemoPosts,
   makeDemoProducts,
+  type DemoPost,
 } from './demoData';
 import { DEMO_RECEIPT_MEMBERSHIP, DEMO_RECEIPT_TICKET } from './demoReceipts';
 import { t } from './i18n';
@@ -37,6 +39,7 @@ import type {
   Registration,
   Society,
   SocietyMember,
+  SocietyPost,
   SocietyRole,
   TicketOrder,
 } from './types';
@@ -105,6 +108,9 @@ const state = {
   checkedInFake: new Map<string, Set<number>>(),
   notifications: [] as AppNotification[],
   reports: [] as (OpenReport & { resolved: boolean })[],
+  posts: makeDemoPosts() as DemoPost[],
+  // Posts you liked; a couple already, so the hearts show both states.
+  liked: new Set<string>(['70000000-0000-4000-8000-000000000002']),
   plans: makeDemoPlans() as MembershipPlan[],
   memberships: makeDemoMemberships() as Membership[],
   paymentSettings: demoPaymentSettings.map((p) => ({ ...p })) as PaymentSettings[],
@@ -327,6 +333,47 @@ function isMember(societyId: string) {
 function visibleEvent(e: CampusEvent) {
   const s = state.societies.find((x) => x.id === e.society_id);
   return (e.status !== 'draft' && !e.removed_at && s?.status === 'approved') || isMember(e.society_id);
+}
+
+/** Mirrors the "read live posts" policy. */
+function visiblePost(p: DemoPost) {
+  const s = state.societies.find((x) => x.id === p.society_id);
+  return (!p.removed_at && s?.status === 'approved') || isMember(p.society_id);
+}
+
+function withPostLinks(p: DemoPost): SocietyPost {
+  const s = state.societies.find((x) => x.id === p.society_id)!;
+  const e = p.event_id ? state.events.find((x) => x.id === p.event_id) : undefined;
+  return {
+    ...p,
+    society: { ...summary(s), category: s.category },
+    event:
+      e && visibleEvent(e)
+        ? {
+            id: e.id,
+            title: e.title,
+            starts_at: e.starts_at,
+            ends_at: e.ends_at,
+            location: e.location,
+            cover_url: e.cover_url,
+            category: e.category,
+            status: e.status,
+          }
+        : null,
+  };
+}
+
+/** How list_open_reports() names a post: "Society: first 80 characters". */
+function postName(id: string) {
+  const p = state.posts.find((x) => x.id === id);
+  const s = p && state.societies.find((x) => x.id === p.society_id);
+  return p && s ? `${s.name}: ${p.body.slice(0, 80)}` : undefined;
+}
+
+function committeePost(id: string) {
+  const p = state.posts.find((x) => x.id === id);
+  if (!p || !isMember(p.society_id)) throw new Error('Not allowed');
+  return p;
 }
 
 function fillFromWaitlist(e: CampusEvent) {
@@ -562,6 +609,20 @@ export const demoBackend: Backend = {
     return state.campusDates.filter((d) => d.ends_on >= from && d.starts_on <= to);
   },
 
+  async listPosts(societyId) {
+    await delay();
+    return state.posts
+      .filter((p) => p.society_id === societyId && visiblePost(p))
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.created_at.localeCompare(a.created_at))
+      .map(withPostLinks);
+  },
+
+  async getPost(id) {
+    await delay();
+    const p = state.posts.find((x) => x.id === id);
+    return p && visiblePost(p) ? withPostLinks(p) : null;
+  },
+
   async myHiddenSocietyIds() {
     return state.user ? [...state.hidden] : [];
   },
@@ -584,6 +645,20 @@ export const demoBackend: Backend = {
       // Mirrors the "save a visible event" policy.
       if (!e || !visibleEvent(e) || e.status === 'draft' || e.removed_at) throw new Error('Event not found');
       state.saved.unshift(eventId);
+    }
+  },
+  async myLikedPostIds(postIds) {
+    return state.user ? postIds.filter((id) => state.liked.has(id)) : [];
+  },
+  async setPostLiked(postId, liked) {
+    requireUser();
+    const p = state.posts.find((x) => x.id === postId);
+    if (!p || !visiblePost(p) || p.removed_at) throw new Error('Post not found');
+    if (liked && !state.liked.has(postId)) {
+      state.liked.add(postId);
+      p.like_count++;
+    } else if (!liked && state.liked.delete(postId)) {
+      p.like_count = Math.max(p.like_count - 1, 0);
     }
   },
   async myFollowIds() {
@@ -679,7 +754,9 @@ export const demoBackend: Backend = {
         ? state.events.find((e) => e.id === targetId)?.title
         : targetType === 'society'
           ? state.societies.find((s) => s.id === targetId)?.name
-          : state.banners.find((b) => b.id === targetId)?.title;
+          : targetType === 'post'
+            ? postName(targetId)
+            : state.banners.find((b) => b.id === targetId)?.title;
     state.reports.push({
       id: uid(),
       target_type: targetType,
@@ -916,6 +993,48 @@ export const demoBackend: Backend = {
   },
   async deleteBanner(id) {
     state.banners = state.banners.filter((b) => b.id !== id);
+  },
+  async savePost(input) {
+    requireUser();
+    await delay(250);
+    const body = input.body.trim();
+    if (!isMember(input.society_id)) throw new Error('Not allowed');
+    if (!body || body.length > 2000) throw new Error('Write something to post (up to 2000 characters).');
+    if (input.image_urls.length > 4) throw new Error('Add up to 4 photos.');
+    if (input.event_id && state.events.find((e) => e.id === input.event_id)?.society_id !== input.society_id)
+      throw new Error('Not allowed');
+    // Mirrors _society_post_write(): one pinned post per society.
+    if (input.pinned) state.posts.filter((p) => p.society_id === input.society_id).forEach((p) => (p.pinned = false));
+    if (input.id) {
+      const p = committeePost(input.id);
+      if (p.body !== body || p.image_urls.join() !== input.image_urls.join()) p.edited_at = new Date().toISOString();
+      Object.assign(p, { body, image_urls: input.image_urls, event_id: input.event_id, pinned: input.pinned });
+      return p.id;
+    }
+    const post: DemoPost = {
+      id: uid(),
+      society_id: input.society_id,
+      body,
+      image_urls: input.image_urls,
+      event_id: input.event_id,
+      pinned: input.pinned,
+      like_count: 0,
+      created_at: new Date().toISOString(),
+      edited_at: null,
+      removed_at: null,
+    };
+    state.posts.unshift(post);
+    return post.id;
+  },
+  async setPostPinned(id, pinned) {
+    const p = committeePost(id);
+    if (pinned) state.posts.filter((x) => x.society_id === p.society_id).forEach((x) => (x.pinned = false));
+    p.pinned = pinned;
+  },
+  async deletePost(id) {
+    committeePost(id);
+    state.posts = state.posts.filter((p) => p.id !== id);
+    state.liked.delete(id);
   },
   async uploadImage(localUri) {
     // Demo mode keeps the local file URI; it only lives on this device.
@@ -1370,6 +1489,9 @@ export const demoBackend: Backend = {
       } else if (report.target_type === 'society') {
         const s = state.societies.find((x) => x.id === report.target_id);
         if (s) s.status = 'rejected';
+      } else if (report.target_type === 'post') {
+        const p = state.posts.find((x) => x.id === report.target_id);
+        if (p) Object.assign(p, { removed_at: new Date().toISOString(), pinned: false });
       } else {
         const b = state.banners.find((x) => x.id === report.target_id);
         if (b) b.status = 'rejected';

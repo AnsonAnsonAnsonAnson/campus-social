@@ -1,7 +1,8 @@
 // Sample content used by demo mode and by scripts/make-seed.ts (supabase/seed.sql).
 // Event times are relative to "today" in Hong Kong so the app always looks alive.
 // Campus dates are illustrative: replace them with the official CUHK calendar.
-import type { Banner, CampusDate, CampusEvent, Membership, MembershipPlan, PaymentSettings, Product, Society } from './types';
+import { DEMO_PHOTO_CONCERT, DEMO_PHOTO_HACK, DEMO_PHOTO_HIKE } from './demoPhotos';
+import type { Banner, CampusDate, CampusEvent, Membership, MembershipPlan, PaymentSettings, Product, Society, SocietyPost } from './types';
 
 const HK_OFFSET_HOURS = 8;
 
@@ -22,6 +23,7 @@ const eid = (n: number) => `20000000-0000-4000-8000-${String(n).padStart(12, '0'
 const bid = (n: number) => `30000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const cid = (n: number) => `40000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const pid = (n: number) => `50000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const poid = (n: number) => `70000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const prid = (n: number) => `60000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 function society(n: number, s: Partial<Society> & Pick<Society, 'name' | 'category' | 'description'>): Society {
@@ -544,6 +546,83 @@ export function makeDemoProducts(now = new Date()): Product[] {
         { name: 'L', stock: null },
       ],
       status: 'draft',
+    }),
+  ];
+}
+
+export type DemoPost = Omit<SocietyPost, 'society' | 'event'>;
+
+/** Society posts, newest first within each society. Only demo mode uses these. */
+export function makeDemoPosts(now = new Date()): DemoPost[] {
+  const ago = (hours: number) => new Date(now.getTime() - hours * 3600_000).toISOString();
+  const post = (n: number, p: Partial<DemoPost> & Pick<DemoPost, 'society_id' | 'body' | 'created_at'>): DemoPost => ({
+    id: poid(n),
+    image_urls: [],
+    event_id: null,
+    pinned: false,
+    like_count: 0,
+    edited_at: null,
+    removed_at: null,
+    ...p,
+  });
+  return [
+    post(1, {
+      society_id: sid(1),
+      body: 'Sunrise hike this week is full, but 4 people are on the waitlist and places usually free up the night before. Join the waitlist and keep notifications on 🌄',
+      event_id: eid(1),
+      pinned: true,
+      like_count: 48,
+      created_at: ago(5),
+    }),
+    post(2, {
+      society_id: sid(1),
+      body: 'Last Sunday on Sharp Peak. 23 of us made it to the top before the clouds rolled in. Thanks to everyone who carried extra water for the newbies!',
+      image_urls: [DEMO_PHOTO_HIKE],
+      like_count: 132,
+      created_at: ago(52),
+    }),
+    post(3, {
+      society_id: sid(1),
+      body: 'Reminder: proper hiking shoes are required for the MacLehose day hike. Trainers with no grip will be turned away at the start, sorry, it is for your safety.',
+      event_id: eid(10),
+      like_count: 19,
+      created_at: ago(120),
+    }),
+    post(4, {
+      society_id: sid(2),
+      body: 'Hack Night is 3 days away and 61 people have signed up. No team yet? Tell us what you want to build in the sign-up question and we will match you on the night. Pizza at 8 🍕',
+      event_id: eid(2),
+      pinned: true,
+      like_count: 86,
+      created_at: ago(3),
+    }),
+    post(5, {
+      society_id: sid(2),
+      body: 'Photos from our first workshop of the term. 70 people, 14 apps shipped, 1 laptop survived a coffee spill.',
+      image_urls: [DEMO_PHOTO_HACK],
+      like_count: 64,
+      created_at: ago(30),
+    }),
+    post(6, {
+      society_id: sid(2),
+      body: 'Club hoodies are back in the shop. Order by Friday so we can send the sizes to the printer; pickup is at the year-end dinner.',
+      like_count: 27,
+      created_at: ago(76),
+    }),
+    post(7, {
+      society_id: sid(6),
+      body: 'Dress rehearsal done. Dvořák 8 on Friday at Lee Hysan Hall, free tickets in the app. See you there 🎻',
+      image_urls: [DEMO_PHOTO_CONCERT],
+      event_id: eid(6),
+      like_count: 210,
+      created_at: ago(9),
+    }),
+    post(8, {
+      society_id: sid(4),
+      body: 'Theme for this month’s photo challenge: “reflections”. Post yours with #CUPhotoSoc and we will feature our favourites at the darkroom session.',
+      event_id: eid(13),
+      like_count: 41,
+      created_at: ago(26),
     }),
   ];
 }

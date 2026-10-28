@@ -84,6 +84,8 @@ export default function RootLayout() {
           <Stack.Screen name="report" options={{ presentation: 'formSheet', title: t('Report'), sheetAllowedDetents: [0.6, 1] }} />
           <Stack.Screen name="manage/[societyId]" options={{ title: t('Manage') }} />
           <Stack.Screen name="manage/event-form" options={{ presentation: 'modal', title: t('Event') }} />
+          <Stack.Screen name="manage/post-form" options={{ presentation: 'modal', title: t('Post') }} />
+          <Stack.Screen name="post/[id]" options={{ title: t('Post') }} />
           <Stack.Screen name="manage/promote" options={{ presentation: 'modal', title: t('Promote event') }} />
           <Stack.Screen name="manage/attendees" options={{ title: t('Attendees') }} />
           <Stack.Screen name="manage/scan" options={{ presentation: 'fullScreenModal', headerShown: false }} />

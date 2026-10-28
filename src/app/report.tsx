@@ -6,6 +6,7 @@ import { toast } from '@/components/Toast';
 import { Button, Chip, ChipRow, Field } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { space, useColors } from '@/lib/theme';
+import type { ReportTarget } from '@/lib/types';
 import { showAlert } from '@/lib/dialog';
 import { t } from '@/lib/i18n';
 
@@ -14,7 +15,7 @@ const REASONS = ['Spam or scam', 'Inappropriate content', 'Impersonation', 'Unsa
 
 export default function Report() {
   const c = useColors();
-  const { type, id, name } = useLocalSearchParams<{ type: 'event' | 'society' | 'banner'; id: string; name?: string }>();
+  const { type, id, name } = useLocalSearchParams<{ type: ReportTarget; id: string; name?: string }>();
   const [reason, setReason] = useState<string | null>(null);
   const [details, setDetails] = useState('');
   const [busy, setBusy] = useState(false);

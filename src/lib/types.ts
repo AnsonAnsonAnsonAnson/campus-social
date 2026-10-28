@@ -210,7 +210,7 @@ export type SocietyMember = {
   created_at: string;
 };
 
-export type ReportTarget = 'event' | 'society' | 'banner';
+export type ReportTarget = 'event' | 'society' | 'banner' | 'post';
 
 export type OpenReport = {
   id: string;
@@ -221,6 +221,32 @@ export type OpenReport = {
   report_count: number;
   created_at: string;
 };
+
+// ---------------------------------------------------------------------------
+// Society posts (v0.7): the committee's feed on a society page.
+// ---------------------------------------------------------------------------
+export type PostEvent = Pick<CampusEvent, 'id' | 'title' | 'starts_at' | 'ends_at' | 'location' | 'cover_url' | 'category' | 'status'>;
+
+export type SocietyPost = {
+  id: string;
+  society_id: string;
+  body: string;
+  /** Up to four photos. */
+  image_urls: string[];
+  /** The event this post promotes, if any. */
+  event_id: string | null;
+  pinned: boolean;
+  like_count: number;
+  created_at: string;
+  edited_at: string | null;
+  /** Set when moderators take the post down; only its committee still sees it. */
+  removed_at: string | null;
+  society: SocietySummary & Pick<Society, 'category'>;
+  /** Null when the event was deleted or is not visible to you. */
+  event: PostEvent | null;
+};
+
+export type PostInput = Pick<SocietyPost, 'society_id' | 'body' | 'image_urls' | 'event_id' | 'pinned'> & { id?: string };
 
 // ---------------------------------------------------------------------------
 // Members (v0.4). Separate from SocietyMember, which is the committee.
