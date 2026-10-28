@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "locales": {
       "zh-Hant": "./locales/zh-Hant.json",
       "zh-HK": "./locales/zh-Hant.json",
@@ -91,10 +91,7 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 160,
-          "backgroundColor": "#FFFFFF",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#FFFFFF"
         }
       ],
       [

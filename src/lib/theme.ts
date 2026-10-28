@@ -1,4 +1,3 @@
-import { useColorScheme } from 'react-native';
 
 /**
  * Design system v2 (see docs/design-handoff.md). Neutral surfaces, one cobalt for the single
@@ -168,12 +167,18 @@ const dark: typeof light = {
 
 export type Colors = typeof light;
 
+/**
+ * The app is light only for launch, as in the design, whatever the phone is set
+ * to. The dark palette stays so a dark mode can be switched back on here.
+ */
+const DARK_MODE = false;
+
 export function useColors(): Colors {
-  return useColorScheme() === 'dark' ? dark : light;
+  return DARK_MODE ? dark : light;
 }
 
 export function useIsDark(): boolean {
-  return useColorScheme() === 'dark';
+  return DARK_MODE;
 }
 
 export const radius = { xs: 6, sm: 8, md: 12, lg: 16, xl: 22, pill: 999 } as const;

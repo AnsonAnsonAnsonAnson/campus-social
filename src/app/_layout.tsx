@@ -2,13 +2,12 @@ import * as Notifications from 'expo-notifications';
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
 
 import { ToastHost } from '@/components/Toast';
 import { api } from '@/lib/api';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { eventIdFrom, notificationsSupported, refreshReminders, registerForPush } from '@/lib/notifications';
-import { useColors } from '@/lib/theme';
+import { useColors, useIsDark } from '@/lib/theme';
 import { loadLang, t, takeReturnRoute, useLang } from '@/lib/i18n';
 
 /**
@@ -56,11 +55,11 @@ function ReturnAfterLanguageChange() {
 }
 
 export default function RootLayout() {
-  const scheme = useColorScheme();
+  const dark = useIsDark();
   const c = useColors();
   const lang = useLang();
   const [langLoaded, setLangLoaded] = useState(false);
-  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+  const base = dark ? DarkTheme : DefaultTheme;
   const theme = { ...base, colors: { ...base.colors, primary: c.tint, background: c.background, card: c.card } };
 
   useEffect(() => {
@@ -109,7 +108,7 @@ export default function RootLayout() {
         <NotificationRouting />
         <ReturnAfterLanguageChange />
         <ToastHost />
-        <StatusBar style="auto" />
+        <StatusBar style={dark ? 'light' : 'dark'} />
       </AuthProvider>
     </ThemeProvider>
   );
