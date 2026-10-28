@@ -1,41 +1,37 @@
+import { Image } from 'expo-image';
 import { router, Stack } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Skeleton } from '@/components/Skeleton';
-import { FollowButton } from '@/components/SocietyRow';
-import { Button, Chip, Field, Icon, SocietyAvatar, tap } from '@/components/ui';
+import { Field, Icon, tap } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { COLLEGES, SOCIETY_CATEGORIES } from '@/lib/constants';
+import { COLLEGES } from '@/lib/constants';
 import { showAlert } from '@/lib/dialog';
+import { categoriesFor, revealRelated, startingTopics, TOPICS } from '@/lib/interests';
 import { markOnboarded } from '@/lib/onboarding';
-import { recommendSocieties, type Suggestion } from '@/lib/recommend';
-import { avatarArt, SOCIETY_ICONS, societyFamily, space, textStyle, type, useColors, useIsDark } from '@/lib/theme';
+import { recommendSocieties } from '@/lib/recommend';
+import { avatarArt, familyFor, initialsFor, space, useColors } from '@/lib/theme';
+import type { Society } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
 import { changeLanguage, t, useLang } from '@/lib/i18n';
 
-/** What each interest tile covers, so a pick means something before you know the societies. */
-const INTEREST_EXAMPLES: Record<string, string> = {
-  Academic: 'Debate, finance, research',
-  Arts: 'Drama, film, photography',
-  Culture: 'Languages, exchange, heritage',
-  Faith: 'Fellowships and faith groups',
-  Music: 'Bands, choirs, a cappella',
-  Service: 'Volunteering, social causes',
-  Sports: 'Hiking, ball games, dance',
-  Tech: 'Coding, robotics, startups',
-  College: 'Hall and college life',
-  Other: 'Everything else',
-};
-
 const STEPS = 3;
+const MIN_TOPICS = 3;
+
+/** Grow and shift the bubbles when topics or societies appear (native only; web just jumps). */
+function animateLayout() {
+  if (Platform.OS === 'ios') LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+}
 
 /**
- * First-run setup, like a music or video app's taste picker, in three steps:
- * who you are (name, college), what you're into (interest tiles), then societies
- * picked from those to follow in one tap, so Discover is personal from day one.
+ * First-run setup, built like a streaming app's taste picker rather than a form:
+ * 1. who you are (name, college),
+ * 2. topics you're into, as bubbles; picking one reveals related ones, pick 3 or more,
+ * 3. a grid of societies picked from those, one tap to follow; following one
+ *    brings in similar ones.
  */
 export default function Welcome() {
   const c = useColors();
@@ -44,43 +40,95 @@ export default function Welcome() {
   const [name, setName] = useState(profile?.display_name ?? '');
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [college, setCollege] = useState<string | null>(profile?.college ?? null);
-  const [interests, setInterests] = useState<Set<string>>(new Set(profile?.interests ?? []));
   const [noCollege, setNoCollege] = useState(false);
+  const [topics, setTopics] = useState<string[]>([]);
+  const [shownTopics, setShownTopics] = useState(startingTopics);
+  const [topicSearch, setTopicSearch] = useState('');
+  const [moreLike, setMoreLike] = useState<{ after: string; ids: string[] }[]>([]);
+  const [societySearch, setSocietySearch] = useState('');
   const [busy, setBusy] = useState(false);
   const lang = useLang();
   const insets = useSafeAreaInsets();
 
   const societies = useQuery(() => api.listSocieties({}));
+  const byId = useMemo(() => new Map((societies.data ?? []).map((s) => [s.id, s])), [societies.data]);
 
-  // Worked out when you reach step 3, not on every follow, so rows don't jump as you tap.
-  const suggestions = useMemo(
-    () => (step === 3 ? recommendSocieties(societies.data ?? [], { interests, college }) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [societies.data, step],
-  );
-  const notFollowed = suggestions.filter((s) => !followIds.has(s.society.id));
-  const followAll = () => {
-    tap();
-    Promise.all(notFollowed.map((s) => toggleFollow(s.society.id))).catch((e) => showAlert(t('Could not update'), errorMessage(e)));
+  const toggleTopic = (label: string) => {
+    animateLayout();
+    if (topics.includes(label)) setTopics(topics.filter((x) => x !== label));
+    else {
+      setTopics([...topics, label]);
+      setShownTopics((shown) => revealRelated(shown.includes(label) ? shown : [label, ...shown], label));
+      setTopicSearch('');
+    }
   };
 
-  const toggleInterest = (cat: string) =>
-    setInterests((prev) => {
-      const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
-      return next;
-    });
+  const topicQuery = topicSearch.trim().toLowerCase();
+  const visibleTopics = topicQuery
+    ? TOPICS.map((x) => x.label).filter((label) => label.toLowerCase().includes(topicQuery) || t(label).toLowerCase().includes(topicQuery))
+    : shownTopics;
+
+  // The society grid is worked out on arrival (it doesn't depend on follows), then only grows
+  // as "more like this" societies slot in after ones you follow, so tiles don't jump as you tap.
+  const suggested = useMemo(
+    () =>
+      step === 3 && societies.data
+        ? recommendSocieties(societies.data, { interests: categoriesFor(topics), college }, { min: 6, max: 9 }).map((s) => s.society.id)
+        : [],
+    [step, societies.data, topics, college],
+  );
+  const shownSocieties = useMemo(
+    () =>
+      moreLike.reduce((list, { after, ids }) => {
+        const fresh = ids.filter((id) => !list.includes(id));
+        const at = list.indexOf(after);
+        return at < 0 ? [after, ...fresh, ...list] : [...list.slice(0, at + 1), ...fresh, ...list.slice(at + 1)];
+      }, suggested),
+    [suggested, moreLike],
+  );
+
+  const reasons = useMemo(() => {
+    // The first topic you picked in each category, for "Because you like Hiking".
+    const topicFor = new Map<string, string>();
+    for (const label of topics) {
+      const category = TOPICS.find((x) => x.label === label)?.category;
+      if (category && !topicFor.has(category)) topicFor.set(category, label);
+    }
+    return (s: Society) =>
+      topicFor.has(s.category)
+        ? t('Because you like {interest}', { interest: t(topicFor.get(s.category)!) })
+        : college && s.college === college
+          ? t('In your college')
+          : t('Popular on campus');
+  }, [topics, college]);
+
+  const toggleSociety = (s: Society) => {
+    const follow = !followIds.has(s.id);
+    toggleFollow(s.id).catch((e) => showAlert(t('Could not update'), errorMessage(e)));
+    if (!follow) return;
+    // "More like this": other societies of the same kind slot in after the one you followed.
+    animateLayout();
+    const similar = (societies.data ?? [])
+      .filter((x) => x.category === s.category && !shownSocieties.includes(x.id))
+      .sort((a, b) => b.follower_count - a.follower_count)
+      .slice(0, 3)
+      .map((x) => x.id);
+    setMoreLike((prev) => [...prev, { after: s.id, ids: similar }]);
+    setSocietySearch('');
+  };
+
+  const societyQuery = societySearch.trim().toLowerCase();
+  const visibleSocieties = societyQuery
+    ? (societies.data ?? []).filter(
+        (s) => s.name.toLowerCase().includes(societyQuery) || (s.short_name ?? '').toLowerCase().includes(societyQuery),
+      )
+    : shownSocieties.map((id) => byId.get(id)).filter((s): s is Society => !!s);
 
   const finish = async (save: boolean) => {
     setBusy(true);
     try {
       if (save) {
-        await api.updateProfile({
-          display_name: name.trim() || undefined,
-          college,
-          interests: SOCIETY_CATEGORIES.filter((cat) => interests.has(cat)),
-        });
+        await api.updateProfile({ display_name: name.trim() || undefined, college, interests: categoriesFor(topics) });
         await refreshProfile();
       }
       await markOnboarded();
@@ -94,27 +142,47 @@ export default function Welcome() {
     }
   };
 
-  const next = step < STEPS ? () => setStep((step + 1) as 2 | 3) : () => finish(true);
+  const remaining = MIN_TOPICS - topics.length;
+  const footer =
+    step === 1
+      ? { title: t('Continue'), disabled: !name.trim(), hint: t('Add your name to continue'), onPress: () => setStep(2) }
+      : step === 2
+        ? {
+            title: remaining > 0 ? t('Pick {n} more', { n: remaining }) : t('Next'),
+            disabled: remaining > 0,
+            hint: t('Pick at least 3 to continue'),
+            onPress: () => setStep(3),
+          }
+        : {
+            title: followIds.size ? t('Done · following {n}', { n: followIds.size }) : t('Done'),
+            disabled: false,
+            hint: undefined,
+            onPress: () => finish(true),
+          };
+
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.backgroundPlain }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.top, { paddingTop: Math.max(insets.top, space.md) }]}>
         {step > 1 && (
           <Pressable
-            onPress={() => setStep((step - 1) as 1 | 2)}
+            onPress={() => {
+              // Coming back to change topics means a fresh set of societies next time.
+              if (step === 3) setMoreLike([]);
+              setStep((step - 1) as 1 | 2);
+            }}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t('Back')}
             style={{ marginLeft: -6 }}>
-            <Icon name="chevron-back" size={22} color={c.text} />
+            <Icon name="chevron-back" size={24} color={c.text} />
           </Pressable>
         )}
-        <View style={{ flexDirection: 'row', gap: 4 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          {Array.from({ length: STEPS }, (_, i) => i + 1).map((n) => (
-            <View key={n} style={[styles.stepBar, { backgroundColor: n <= step ? c.tint : c.border }]} />
+        <View style={{ flex: 1, flexDirection: 'row', gap: 4 }} accessibilityLabel={t('Step {n} of {total}', { n: step, total: STEPS })}>
+          {Array.from({ length: STEPS }, (_, i) => (
+            <View key={i} style={[styles.stepBar, { backgroundColor: i < step ? c.ink : c.fillStrong }]} />
           ))}
         </View>
-        <Text style={{ flex: 1, fontSize: 13, color: c.textSecondary }}>{t('Step {n} of {total}', { n: step, total: STEPS })}</Text>
         <Pressable
           onPress={() => changeLanguage(lang === 'en' ? 'zh-Hant' : 'en', '/welcome')}
           accessibilityRole="button"
@@ -123,25 +191,19 @@ export default function Welcome() {
           <Text style={{ fontSize: 15, fontWeight: '600', color: c.textSecondary }}>{lang === 'en' ? '中文' : 'English'}</Text>
         </Pressable>
         <Pressable onPress={() => finish(false)} accessibilityRole="button" style={styles.topLink}>
-          <Text style={{ fontSize: 16, fontWeight: '600', color: c.textSecondary }}>{t('Skip')}</Text>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: c.textSecondary }}>{t('Skip')}</Text>
         </Pressable>
       </View>
+
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: 14, paddingBottom: space.xl, gap: 22 }}
+        contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.xl, gap: space.xl }}
         keyboardShouldPersistTaps="handled">
         {step === 1 ? (
           <>
-            <View style={{ gap: 10 }}>
-              <View style={[styles.appIcon, { backgroundColor: c.tint }]}>
-                <Icon name="ticket-outline" size={28} color="#FFFFFF" />
-              </View>
-              <Text style={[textStyle('title1', lang), { color: c.text, marginTop: 4, letterSpacing: -0.3 }]} accessibilityRole="header">
-                {t('Welcome to Campus Social')}
-              </Text>
-              <Text style={{ color: c.textSecondary, fontSize: 16, lineHeight: 24 }}>
-                {t('Follow societies, sign up in one tap, keep your tickets on your phone. First, tell us who you are.')}
-              </Text>
-            </View>
+            <Headline
+              title={t('Welcome to Campus Social')}
+              body={t('Every society, event and ticket at CUHK in one place. First, who are you?')}
+            />
             <Field
               label={t('What should we call you?')}
               value={name}
@@ -152,16 +214,17 @@ export default function Welcome() {
               placeholder={t('e.g. Chan Tai Man')}
               hint={t('Committees see this when you sign up for events.')}
             />
-            <View style={{ gap: space.sm }}>
-              <Text style={[type.label, { color: c.textSecondary }]}>{t('Which college are you in?')}</Text>
-              <View style={styles.wrap} accessibilityRole="radiogroup">
+            <View style={{ gap: space.md }}>
+              <Text style={[styles.subhead, { color: c.text }]}>{t('Which college are you in?')}</Text>
+              <View style={styles.bubbles} accessibilityRole="radiogroup">
                 {[...COLLEGES, 'none' as const].map((col) => {
                   const value = col === 'none' ? null : col;
                   return (
-                    <Chip
+                    <Bubble
                       key={col}
                       label={col === 'none' ? t('Not applicable') : t(col)}
                       selected={college === value && (value !== null || noCollege)}
+                      role="radio"
                       onPress={() => {
                         setNoCollege(value === null);
                         setCollege(value);
@@ -174,113 +237,143 @@ export default function Welcome() {
           </>
         ) : step === 2 ? (
           <>
-            <View style={{ gap: space.sm }}>
-              <Text style={[textStyle('title1', lang), { color: c.text, letterSpacing: -0.3 }]} accessibilityRole="header">
-                {t('What are you into?')}
-              </Text>
-              <Text style={{ color: c.textSecondary, fontSize: 16, lineHeight: 24 }}>
-                {t('Pick as many as you like. We’ll suggest societies to follow.')}
-              </Text>
-            </View>
-            <View style={styles.grid}>
-              {SOCIETY_CATEGORIES.map((cat) => (
-                <InterestTile key={cat} category={cat} selected={interests.has(cat)} onPress={() => toggleInterest(cat)} />
+            <Headline title={t('What are you into?')} body={t('Pick 3 or more. We’ll find societies and events to match.')} />
+            <SearchBox value={topicSearch} onChangeText={setTopicSearch} placeholder={t('Search topics')} />
+            <View style={styles.bubbles}>
+              {visibleTopics.map((label) => (
+                <Bubble key={label} label={t(label)} selected={topics.includes(label)} big onPress={() => toggleTopic(label)} />
               ))}
+              {!visibleTopics.length && <Text style={{ color: c.textSecondary, fontSize: 15 }}>{t('No topics match')}</Text>}
             </View>
           </>
         ) : (
           <>
-            <View style={{ gap: space.sm }}>
-              <Text style={[textStyle('title1', lang), { color: c.text, letterSpacing: -0.3 }]} accessibilityRole="header">
-                {t('Societies for you')}
-              </Text>
-              <Text style={{ color: c.textSecondary, fontSize: 16, lineHeight: 24 }}>
-                {t('Follow a few to fill Discover with their events. Tap to follow, tap again to undo.')}
-              </Text>
-            </View>
-            <View>
-              <View style={styles.listHead}>
-                <Text style={[textStyle('title2', lang), { color: c.text, flex: 1 }]} accessibilityRole="header">
-                  {t('Suggested societies')}
-                </Text>
-                {notFollowed.length > 1 && <Button small variant="plain" title={t('Follow all')} onPress={followAll} />}
-              </View>
-              <View style={{ marginHorizontal: -space.lg }}>
-                {societies.loading && !societies.data
-                  ? Array.from({ length: 5 }, (_, i) => <Skeleton key={i} height={72} round={0} style={{ marginBottom: 1 }} />)
-                  : suggestions.map((s, i) => (
-                      <View key={s.society.id}>
-                        {i > 0 && <View style={[styles.rule, { backgroundColor: c.border }]} />}
-                        <SuggestionRow suggestion={s} />
-                      </View>
-                    ))}
-              </View>
+            <Headline
+              title={t('Follow societies you’ll like')}
+              body={t('Picked from what you’re into. Tap to follow, and we’ll show more like it.')}
+            />
+            <SearchBox value={societySearch} onChangeText={setSocietySearch} placeholder={t('Search societies')} />
+            <View style={styles.grid}>
+              {societies.loading && !societies.data
+                ? Array.from({ length: 6 }, (_, i) => (
+                    <View key={i} style={styles.gridCell}>
+                      <Skeleton width={92} height={92} round={46} />
+                    </View>
+                  ))
+                : visibleSocieties.map((s) => (
+                    <SocietyBubble
+                      key={s.id}
+                      society={s}
+                      reason={reasons(s)}
+                      following={followIds.has(s.id)}
+                      onPress={() => toggleSociety(s)}
+                    />
+                  ))}
             </View>
           </>
         )}
       </ScrollView>
-      <View
-        style={[styles.footer, { paddingBottom: Math.max(insets.bottom, space.lg), borderTopColor: step > 1 ? c.border : 'transparent' }]}>
-        <Button
-          title={
-            step === 2 && interests.size
-              ? t('Continue · {n} picked', { n: interests.size })
-              : step < STEPS
-                ? t('Continue')
-                : followIds.size
-                  ? t('Done · following {n}', { n: followIds.size })
-                  : t('Done')
-          }
-          loading={busy}
-          disabled={(step === 1 && !name.trim()) || (step === 2 && !interests.size)}
-          hint={step === 1 ? t('Add your name to continue') : step === 2 ? t('Pick at least one to continue') : undefined}
-          onPress={next}
-          style={{ alignSelf: 'stretch' }}
-        />
-        {step === 1 && <Text style={{ fontSize: 13, color: c.textTertiary }}>{t('You can change all of this later in Profile')}</Text>}
+
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, space.lg) }]}>
+        <Pressable
+          onPress={() => {
+            tap();
+            footer.onPress();
+          }}
+          disabled={footer.disabled || busy}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: footer.disabled || busy, busy }}
+          accessibilityHint={footer.disabled ? footer.hint : undefined}
+          style={({ pressed }) => [
+            styles.cta,
+            { backgroundColor: footer.disabled ? c.fillStrong : c.ink, transform: [{ scale: pressed ? 0.98 : 1 }] },
+          ]}>
+          <Text style={[styles.ctaText, { color: footer.disabled ? c.textTertiary : c.onInk }]}>{busy ? t('Saving…') : footer.title}</Text>
+        </Pressable>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  top: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: space.lg, minHeight: 44 },
-  topLink: { minHeight: 44, justifyContent: 'center' },
-  stepBar: { width: 36, height: 4, borderRadius: 2 },
-  appIcon: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  tile: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    minHeight: 104,
-    borderRadius: 18,
-    padding: 14,
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-  },
-  tileCheck: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  listHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, minHeight: 44 },
-  suggestion: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md },
-  rule: { height: StyleSheet.hairlineWidth, marginLeft: 76 },
-  footer: { gap: 10, alignItems: 'center', paddingHorizontal: space.lg, paddingTop: space.md, borderTopWidth: StyleSheet.hairlineWidth },
-});
+function Headline({ title, body }: { title: string; body: string }) {
+  const c = useColors();
+  return (
+    <View style={{ gap: 10 }}>
+      <Text style={[styles.headline, { color: c.text }]} accessibilityRole="header">
+        {title}
+      </Text>
+      <Text style={{ color: c.textSecondary, fontSize: 17, lineHeight: 24 }}>{body}</Text>
+    </View>
+  );
+}
 
-/** Big colour tile for one interest, in the category's colour family; filled when picked. */
-function InterestTile({ category, selected, onPress }: { category: string; selected: boolean; onPress: () => void }) {
-  const dark = useIsDark();
-  const art = avatarArt[societyFamily[category] ?? 'Slate'];
-  const [soft, ink] = art[dark ? 'dark' : 'light'];
-  const fg = selected ? '#FFFFFF' : ink;
+function SearchBox({ value, onChangeText, placeholder }: { value: string; onChangeText: (v: string) => void; placeholder: string }) {
+  const c = useColors();
+  return (
+    <View style={[styles.search, { backgroundColor: c.fill }]}>
+      <Icon name="search" size={20} color={c.text} />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={c.textTertiary}
+        autoCorrect={false}
+        returnKeyType="search"
+        accessibilityLabel={placeholder}
+        style={{ flex: 1, fontSize: 17, fontWeight: '600', color: c.text, paddingVertical: 0 }}
+      />
+    </View>
+  );
+}
+
+/** Rounded topic bubble: grey until picked, then solid ink with a check. */
+function Bubble({
+  label,
+  selected,
+  onPress,
+  big,
+  role = 'checkbox',
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  big?: boolean;
+  role?: 'checkbox' | 'radio';
+}) {
+  const c = useColors();
+  return (
+    <Pressable
+      onPress={() => {
+        tap();
+        onPress();
+      }}
+      accessibilityRole={role}
+      accessibilityState={{ checked: selected }}
+      style={({ pressed }) => [
+        styles.bubble,
+        big && styles.bubbleBig,
+        { backgroundColor: selected ? c.ink : c.fill, transform: [{ scale: pressed ? 0.95 : 1 }] },
+      ]}>
+      <Text style={{ color: selected ? c.onInk : c.text, fontSize: big ? 17 : 15, fontWeight: '700' }}>{label}</Text>
+      {selected && <Icon name="checkmark" size={big ? 18 : 16} color={c.onInk} />}
+    </Pressable>
+  );
+}
+
+/** Big round society logo with its name; a check badge once followed. */
+function SocietyBubble({
+  society,
+  reason,
+  following,
+  onPress,
+}: {
+  society: Society;
+  reason: string;
+  following: boolean;
+  onPress: () => void;
+}) {
+  const c = useColors();
+  const art = avatarArt[familyFor(society.category, society.name)];
   return (
     <Pressable
       onPress={() => {
@@ -288,52 +381,62 @@ function InterestTile({ category, selected, onPress }: { category: string; selec
         onPress();
       }}
       accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected }}
-      accessibilityLabel={`${t(category)}, ${t(INTEREST_EXAMPLES[category])}`}
-      style={({ pressed }) => [styles.tile, { backgroundColor: selected ? art.cover : soft, transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
-      <Icon name={SOCIETY_ICONS[category]} size={26} color={fg} />
-      <View>
-        <Text style={{ color: fg, fontSize: 17, fontWeight: '700' }}>{t(category)}</Text>
-        <Text style={{ color: fg, opacity: 0.85, fontSize: 12, lineHeight: 16 }} numberOfLines={2}>
-          {t(INTEREST_EXAMPLES[category])}
-        </Text>
+      accessibilityState={{ checked: following }}
+      accessibilityLabel={`${society.name}, ${reason}`}
+      accessibilityHint={following ? t('Following') : t('Follow')}
+      style={({ pressed }) => [styles.gridCell, { transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
+      <View style={[styles.logoRing, { borderColor: following ? c.tint : 'transparent' }]}>
+        {society.logo_url ? (
+          <Image source={{ uri: society.logo_url }} style={styles.logo} contentFit="cover" />
+        ) : (
+          <View style={[styles.logo, { backgroundColor: art.cover, alignItems: 'center', justifyContent: 'center' }]}>
+            <Text style={{ color: '#FFFFFF', fontSize: 30, fontWeight: '800' }} allowFontScaling={false}>
+              {initialsFor(society.name)}
+            </Text>
+          </View>
+        )}
+        {following && (
+          <View style={[styles.badge, { backgroundColor: c.tint, borderColor: c.backgroundPlain }]}>
+            <Icon name="checkmark" size={16} color="#FFFFFF" />
+          </View>
+        )}
       </View>
-      {selected && (
-        <View style={[styles.tileCheck, { backgroundColor: '#FFFFFF' }]}>
-          <Icon name="checkmark" size={16} color={art.cover} />
-        </View>
-      )}
+      <Text style={{ color: c.text, fontSize: 14, lineHeight: 18, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
+        {society.short_name || society.name}
+      </Text>
+      <Text style={{ color: c.textSecondary, fontSize: 12, lineHeight: 16, textAlign: 'center' }} numberOfLines={2}>
+        {reason}
+      </Text>
     </Pressable>
   );
 }
 
-/** Suggested society with why it's suggested; tapping anywhere on the row follows, like the button. */
-function SuggestionRow({ suggestion: { society, reason } }: { suggestion: Suggestion }) {
-  const c = useColors();
-  const { toggleFollow } = useAuth();
-  const why =
-    reason === 'interest'
-      ? t('Because you like {interest}', { interest: t(society.category) })
-      : reason === 'college'
-        ? t('In your college')
-        : t('Popular on campus');
-  return (
-    <View style={[styles.suggestion, { backgroundColor: c.backgroundPlain }]}>
-      <Pressable
-        onPress={() => toggleFollow(society.id).catch((e) => showAlert(t('Could not update'), errorMessage(e)))}
-        accessibilityRole="button"
-        style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, opacity: pressed ? 0.6 : 1 }]}>
-        <SocietyAvatar name={society.name} uri={society.logo_url} category={society.category} size={48} />
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: c.text, fontSize: 16, lineHeight: 21, fontWeight: '600' }} numberOfLines={2}>
-            {society.name}
-          </Text>
-          <Text style={{ color: reason === 'popular' ? c.textSecondary : c.accentText, fontSize: 13 }} numberOfLines={1}>
-            {why}
-          </Text>
-        </View>
-      </Pressable>
-      <FollowButton societyId={society.id} />
-    </View>
-  );
-}
+const styles = StyleSheet.create({
+  top: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: space.lg, minHeight: 44 },
+  topLink: { minHeight: 44, justifyContent: 'center' },
+  stepBar: { flex: 1, height: 4, borderRadius: 2, maxWidth: 48 },
+  headline: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -0.8 },
+  subhead: { fontSize: 20, lineHeight: 26, fontWeight: '800', letterSpacing: -0.3 },
+  search: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 52, borderRadius: 26, paddingHorizontal: 18 },
+  bubbles: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  bubble: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, borderRadius: 22, paddingHorizontal: 18 },
+  bubbleBig: { minHeight: 52, borderRadius: 26, paddingHorizontal: 22 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: space.xl, marginHorizontal: -space.xs },
+  gridCell: { width: '33.33%', alignItems: 'center', gap: 4, paddingHorizontal: space.xs },
+  logoRing: { padding: 3, borderRadius: 52, borderWidth: 3, marginBottom: 4 },
+  logo: { width: 92, height: 92, borderRadius: 46 },
+  badge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footer: { paddingHorizontal: space.lg, paddingTop: space.md },
+  cta: { height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  ctaText: { fontSize: 18, fontWeight: '800' },
+});
