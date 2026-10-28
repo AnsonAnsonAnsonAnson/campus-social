@@ -2,6 +2,7 @@
 import { beforeAll, expect, it } from '@jest/globals';
 
 import { demoBackend as api, DEMO_CODE } from '../demo';
+import { ticketToken } from '../ticketToken';
 
 const eid = (n: number) => `20000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const CODING_SOCIETY = '10000000-0000-4000-8000-000000000002';
@@ -128,7 +129,7 @@ it('runs a paid ticket through payment, screenshot and check-in', async () => {
   expect(mine.order!.expires_at).not.toBeNull();
 
   // Unpaid tickets don't get in at the door.
-  const scan = await api.checkIn(dinner, mine.ticket_code);
+  const scan = await api.checkIn(dinner, ticketToken(mine.id, mine.ticket_code));
   expect(scan).toMatchObject({ ok: false, message: 'Not paid yet', ref: mine.order!.ref });
 
   // A screenshot counts as "I've paid"; the committee sees it in Orders.
@@ -139,7 +140,10 @@ it('runs a paid ticket through payment, screenshot and check-in', async () => {
 
   await api.setOrderStatus([listed.id], 'paid');
   await expect(api.setOrderStatus([listed.id], 'ready')).rejects.toThrow('event ticket');
-  expect((await api.checkIn(dinner, mine.ticket_code)).ok).toBe(true);
+  // The fixed code and an old screenshot don't work; the live QR does.
+  expect((await api.checkIn(dinner, mine.ticket_code)).message).toMatch(/^Old QR code/);
+  expect((await api.checkIn(dinner, ticketToken(mine.id, mine.ticket_code, Date.now() - 120_000))).message).toMatch(/^QR code expired/);
+  expect((await api.checkIn(dinner, ticketToken(mine.id, mine.ticket_code))).ok).toBe(true);
 
   // Refunding gives the place up.
   const going = (await api.getEvent(dinner))!.confirmed_count;

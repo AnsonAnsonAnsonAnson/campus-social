@@ -103,6 +103,7 @@ export default function RootLayout() {
           <Stack.Screen name="membership/[id]" options={{ title: t('Member card') }} />
           <Stack.Screen name="shop/[id]" options={{ title: '' }} />
           <Stack.Screen name="order/[id]" options={{ title: t('Order') }} />
+          <Stack.Screen name="ticket/[id]" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="welcome" options={{ presentation: 'modal', title: t('Welcome'), gestureEnabled: false }} />
         </Stack>
         <NotificationRouting />

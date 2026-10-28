@@ -68,7 +68,8 @@ export default function Scan() {
 
   const handle = async (raw: string) => {
     const prefix = PREFIXES[mode].find((p) => raw.startsWith(p));
-    const code = prefix ? raw.slice(prefix.length) : raw.trim();
+    // Typed codes can have the space shown on the ticket ("A1B2 C3D4").
+    const code = prefix ? raw.slice(prefix.length) : raw.replace(/\s+/g, '');
     const now = Date.now();
     if (busy.current || (last.current?.code === code && now - last.current.at < SAME_CODE_COOLDOWN_MS)) return;
     busy.current = true;
@@ -185,7 +186,7 @@ export default function Scan() {
                   ? t('Member no., e.g. 12')
                   : mode === 'pickup'
                     ? t('Order ref, e.g. SSM-1234')
-                    : t('Or type the 8-character code')
+                    : t('Or type the backup code')
               }
               placeholderTextColor="rgba(255,255,255,0.6)"
               autoCapitalize={mode === 'pickup' ? 'characters' : 'none'}
@@ -201,7 +202,7 @@ export default function Scan() {
           <Pressable onPress={() => setTyping(true)} accessibilityRole="button" style={styles.typeButton}>
             <Icon name="keypad-outline" size={18} color="#fff" />
             <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
-              {mode === 'member' ? t('Type a member number') : mode === 'pickup' ? t('Type an order ref') : t('Type the 8-character code')}
+              {mode === 'member' ? t('Type a member number') : mode === 'pickup' ? t('Type an order ref') : t('Type the backup code')}
             </Text>
           </Pressable>
         )}

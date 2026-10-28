@@ -53,7 +53,7 @@ select tests.eq((select count(*) from public.orders where registration_id = :'wr
 
 -- check-in refuses unpaid tickets, both ways
 select tests.login('00000000-0000-0000-0000-000000000085');
-select tests.eq(public.check_in(:'eid', :'tcode') ->> 'message',
+select tests.eq(public.check_in(:'eid', tests.ticket_token(:'tcode')) ->> 'message',
   'Not paid yet', 'scanner refuses an unpaid ticket');
 select tests.throws(format('select public.set_checked_in(%L, true)', :'rid'), 'Not paid yet', 'manual check-in refuses an unpaid ticket');
 select tests.throws(format('select public.set_order_status(array[%L]::uuid[], %L)', :'oid', 'paid'),
@@ -84,7 +84,7 @@ select tests.eq((select receipt_path from jsonb_to_recordset(public.list_orders(
 select public.set_order_status(array[:'oid']::uuid[], 'paid');
 select tests.throws(format('select public.set_order_status(array[%L]::uuid[], %L)', :'oid', 'ready'),
   'event ticket', 'tickets are not handed out like merch');
-select tests.eq(public.check_in(:'eid', :'tcode') ->> 'message',
+select tests.eq(public.check_in(:'eid', tests.ticket_token(:'tcode')) ->> 'message',
   'Checked in', 'paid ticket checks in');
 select tests.login('00000000-0000-0000-0000-000000000082');
 select tests.throws(format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'receipts', :'rpath'),
