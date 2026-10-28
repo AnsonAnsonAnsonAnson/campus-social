@@ -3244,7 +3244,7 @@ create policy "unsave an event" on public.saved_events
 
 grant select, insert, delete on public.saved_events to authenticated;
 
--- ===== 20261030000000_v07_society_posts.sql =====
+-- ===== 20261030020000_v07_society_posts.sql =====
 
 -- v0.7: society posts. A society page gets a feed where its committee posts
 -- updates, photos and event promotions. Only the committee can post (no
