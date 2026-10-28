@@ -3244,7 +3244,7 @@ create policy "unsave an event" on public.saved_events
 
 grant select, insert, delete on public.saved_events to authenticated;
 
--- ===== 20261030000000_v07_top_events.sql =====
+-- ===== 20261030010000_v07_top_events.sql =====
 
 -- v0.7: "Most anticipated" (this week / month) on Discover.
 --
