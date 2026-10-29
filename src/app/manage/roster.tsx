@@ -7,13 +7,13 @@ import { toast } from '@/components/Toast';
 import { ReceiptButton } from '@/components/Receipt';
 import { Button, Chip, ChipRow, EmptyState, ErrorView, Icon, InfoRow, Pill, Sheet } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
-import { membersCsv, membershipRef, membershipState } from '@/lib/commerce';
+import { membersCsv, membershipRef, membershipState, methodLabel } from '@/lib/commerce';
 import { confirmAsync, showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { formatLongDay, todayHK } from '@/lib/format';
 import { shareCsv } from '@/lib/shareFile';
 import { radius, space, useColors } from '@/lib/theme';
-import type { Membership, MembershipPlan, PaymentMethod } from '@/lib/types';
+import type { Membership, MembershipPlan } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
 import { t } from '@/lib/i18n';
 
@@ -27,7 +27,6 @@ const FILTER_KEYS: Record<Filter, string[]> = {
   all: [],
 };
 
-const methodLabel = (m: PaymentMethod) => (m === 'cash' ? t('Cash') : m === 'payme' ? 'PayMe' : 'FPS');
 
 export default function Roster() {
   const { societyId, export: exportNow } = useLocalSearchParams<{ societyId: string; export?: string }>();

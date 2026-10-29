@@ -2,7 +2,7 @@
 // App Store screenshots, UI work). Mirrors the rules in the SQL migration.
 import type { AuthUser, Backend } from './backend';
 import { isCuhkEmail } from './backend';
-import { liveTicketOrder, receiptPath, slotState, unitPrice } from './commerce';
+import { liveTicketOrder, platformFeeHkd, receiptPath, slotState, unitPrice } from './commerce';
 import {
   DEMO_DINNER,
   demoPaymentSettings,
@@ -31,6 +31,8 @@ import type {
   Order,
   OrderStatus,
   PaymentSettings,
+  PayoutAccount,
+  PlatformFee,
   PickupSlot,
   Product,
   SocietyOrder,
@@ -111,6 +113,21 @@ const state = {
   plans: makeDemoPlans() as MembershipPlan[],
   memberships: makeDemoMemberships() as Membership[],
   paymentSettings: demoPaymentSettings.map((p) => ({ ...p })) as PaymentSettings[],
+  // CU Coding Society already takes online payments, so the demo shows both sides.
+  payoutAccounts: [
+    {
+      society_id: demoSocieties[1].id,
+      provider: 'stripe',
+      account_id: 'acct_demo',
+      charges_enabled: true,
+      payouts_enabled: true,
+      details_submitted: true,
+      requirements_due: 0,
+      disabled_reason: null,
+      updated_at: '2026-10-20T02:00:00Z',
+    },
+  ] as PayoutAccount[],
+  platformFee: { percent: 5, fixed_hkd: 3 } as PlatformFee,
   products: makeDemoProducts() as Product[],
   pickupSlots: makeDemoPickupSlots() as PickupSlot[],
   // Products the demo user asked to hear about when they're back on sale.
@@ -363,6 +380,13 @@ function notifyOrder(o: Order) {
       t('The society could not find a payment for {ref}. Check the reference and amount.', { ref: o.ref }),
     ],
     cancelled: [t('Order cancelled'), `${o.product_title} (${o.ref})`],
+    refunded: [
+      t('Refunded'),
+      t('HK${amount} for {ref} is on its way back to your card or wallet. It can take 5 to 10 days to appear.', {
+        amount: o.total_hkd,
+        ref: o.ref,
+      }),
+    ],
   };
   const n = titles[o.status];
   if (n) notify('order_update', n[0], n[1], null, o.society_id);
@@ -402,6 +426,10 @@ function seedDemoInbox() {
 function notify(kind: NotificationKind, title: string, body: string, event_id: string | null = null, society_id: string | null = null) {
   if (!state.user) return;
   state.notifications.unshift({ id: uid(), kind, title, body, event_id, society_id, read_at: null, created_at: new Date().toISOString() });
+}
+
+function onlineReady(societyId: string) {
+  return state.payoutAccounts.some((a) => a.society_id === societyId && a.charges_enabled);
 }
 
 function isAdminOf(societyId: string) {
@@ -1242,7 +1270,8 @@ export const demoBackend: Backend = {
     await delay(300);
     const user = requireUser();
     const now = new Date().toISOString();
-    if (!['fps', 'payme', 'cash'].includes(method)) throw new Error('Choose how you will pay');
+    if (!['fps', 'payme', 'cash', 'online'].includes(method)) throw new Error('Choose how you will pay');
+    if (method === 'online' && !onlineReady(societyId)) throw new Error('This society does not take online payments yet');
     const lines = bagLines.filter((l) => l.qty > 0);
     if (!lines.length) throw new Error('Choose at least one item');
     const member = isCurrentMember(societyId);
@@ -1298,7 +1327,8 @@ export const demoBackend: Backend = {
       payment_method: method,
       buyer_note: note?.trim() || null,
       pickup_code: uid().slice(5) + uid().slice(5) + uid().slice(5),
-      expires_at: total > 0 && method !== 'cash' ? new Date(Date.now() + window * 3600_000).toISOString() : null,
+      expires_at:
+        total > 0 && method !== 'cash' ? new Date(Date.now() + (method === 'online' ? 0.5 : window) * 3600_000).toISOString() : null,
       claimed_at: null,
       paid_at: total === 0 ? now : null,
       ready_at: null,
@@ -1354,6 +1384,7 @@ export const demoBackend: Backend = {
   async claimOrderPaid(id, note) {
     const o = state.orders.find((x) => x.id === id && x.user_id === state.user?.id);
     if (!o) throw new Error('Order not found');
+    if (o.payment_method === 'online') throw new Error('Online payments are confirmed automatically');
     if (o.status !== 'awaiting_payment') throw new Error('This order is not waiting for payment');
     if (!holdsStock(o)) throw new Error('This order expired. Please order again.');
     o.status = 'payment_claimed';
@@ -1391,6 +1422,65 @@ export const demoBackend: Backend = {
     const uri = state.receipts.get(path);
     if (!uri) throw new Error('This screenshot was deleted after the payment was settled.');
     return uri;
+  },
+  async onlinePaymentsReady(societyId) {
+    return onlineReady(societyId);
+  },
+  async startOnlinePayment(orderId) {
+    await delay(500);
+    // No payment page in the demo: the "provider" confirms straight away.
+    const o = state.orders.find((x) => x.id === orderId && x.user_id === state.user?.id);
+    if (!o) throw new Error('Order not found');
+    if (o.payment_method !== 'online') throw new Error('This order is paid another way');
+    if (o.status !== 'awaiting_payment') throw new Error('This order is not waiting for payment');
+    if (!holdsStock(o)) throw new Error('This order expired. Please order again.');
+    o.status = 'paid';
+    o.paid_at = new Date().toISOString();
+    o.platform_fee_hkd = platformFeeHkd(o.total_hkd, state.platformFee);
+    notifyOrder(o);
+    return null;
+  },
+  async platformFee() {
+    return state.platformFee;
+  },
+  async payoutAccount(societyId) {
+    if (!isMember(societyId)) return null;
+    return state.payoutAccounts.find((a) => a.society_id === societyId) ?? null;
+  },
+  async startPayoutSetup(societyId) {
+    await delay(500);
+    if (!isAdminOf(societyId)) throw new Error('Only society admins can set up online payments');
+    if (!state.payoutAccounts.some((a) => a.society_id === societyId)) {
+      state.payoutAccounts.push({
+        society_id: societyId,
+        provider: 'stripe',
+        account_id: 'acct_' + uid().slice(5),
+        charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: true,
+        requirements_due: 0,
+        disabled_reason: null,
+        updated_at: new Date().toISOString(),
+      });
+    }
+    return null;
+  },
+  async refreshPayoutAccount(societyId) {
+    return state.payoutAccounts.find((a) => a.society_id === societyId) ?? null;
+  },
+  async payoutDashboardUrl() {
+    return null;
+  },
+  async refundOnlineOrder(orderId) {
+    await delay(400);
+    const o = state.orders.find((x) => x.id === orderId);
+    if (!o || !isAdminOf(o.society_id)) throw new Error('Only society admins can confirm payments');
+    if (o.payment_method !== 'online' || !['paid', 'ready', 'collected'].includes(o.status)) {
+      throw new Error('That change is not possible for this order');
+    }
+    o.status = 'refunded';
+    o.cancelled_at = new Date().toISOString();
+    notifyOrder(o);
   },
   async setPaymentSettings(societyId, s) {
     if (!isAdminOf(societyId)) throw new Error('Only society admins can change payment details');
@@ -1472,6 +1562,12 @@ export const demoBackend: Backend = {
       const payment = ['awaiting_payment', 'paid', 'cancelled', 'refunded'].includes(status);
       if (!isMember(o.society_id) || (payment && !isAdminOf(o.society_id))) throw new Error('Only society admins can confirm payments');
       if (o.status === status) continue;
+      if (o.payment_method === 'online') {
+        if (['paid', 'awaiting_payment'].includes(status)) throw new Error('Online payments are confirmed automatically');
+        if (status === 'refunded' || (status === 'cancelled' && o.status !== 'awaiting_payment')) {
+          throw new Error('Refund online payments with the Refund button');
+        }
+      }
       const ok =
         (status === 'paid' && ['awaiting_payment', 'payment_claimed'].includes(o.status)) ||
         (status === 'awaiting_payment' && o.status === 'payment_claimed') ||

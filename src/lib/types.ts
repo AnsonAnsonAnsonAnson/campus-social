@@ -245,7 +245,8 @@ export type MembershipPlan = {
 export type PlanInput = Omit<MembershipPlan, 'id' | 'created_at'> & { id?: string };
 
 export type MembershipStatus = 'pending' | 'active' | 'rejected' | 'cancelled';
-export type PaymentMethod = 'fps' | 'payme' | 'cash';
+/** 'online' is card, Apple Pay, Google Pay, Alipay or WeChat Pay through the payment provider (shop only). */
+export type PaymentMethod = 'fps' | 'payme' | 'cash' | 'online';
 
 export type Membership = {
   id: string;
@@ -392,6 +393,8 @@ export type Order = {
   receipt_path: string | null;
   receipt_at: string | null;
   pickup_slot_id: string | null;
+  /** What the platform kept from an online payment; the society received the total less this. */
+  platform_fee_hkd?: number | null;
   created_at: string;
 };
 
@@ -429,6 +432,24 @@ export type PickupSlotInput = Omit<PickupSlot, 'id' | 'booked'> & { id?: string 
 
 /** One line in a shopping bag (kept on the phone until checkout). */
 export type BagLine = { product_id: string; variant: string; qty: number };
+
+/** A society's payout account at the payment provider, for online payments. */
+export type PayoutAccount = {
+  society_id: string;
+  provider: 'stripe';
+  account_id: string;
+  /** Buyers can pay online once the provider has verified the account. */
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  /** How many details the provider still needs. */
+  requirements_due: number;
+  disabled_reason: string | null;
+  updated_at: string;
+};
+
+/** What the platform keeps from each online order: a percentage plus a fixed amount. */
+export type PlatformFee = { percent: number; fixed_hkd: number };
 
 /** Which record a payment screenshot belongs to. */
 export type ReceiptKind = 'order' | 'membership';

@@ -14,6 +14,8 @@ import type {
   OrderStatus,
   PaymentMethod,
   PaymentSettings,
+  PayoutAccount,
+  PlatformFee,
   PickupResult,
   PickupSlot,
   PickupSlotInput,
@@ -164,6 +166,27 @@ export interface Backend {
   uploadReceipt(kind: ReceiptKind, record: { id: string; society_id: string }, jpegUri: string): Promise<void>;
   /** A short-lived link to a screenshot, for the payer or the society's admins. */
   receiptUrl(path: string): Promise<string>;
+
+  // Online payments (card, Apple Pay, Google Pay, Alipay, WeChat Pay)
+  /** Can buyers pay this society online? */
+  onlinePaymentsReady(societyId: string): Promise<boolean>;
+  /**
+   * The provider's payment page for an unpaid online order. The order becomes paid
+   * when the provider confirms, not when the buyer comes back. Null when there is
+   * no page to open (the demo pays straight away).
+   */
+  startOnlinePayment(orderId: string): Promise<string | null>;
+  /** The rate this society pays on online orders. */
+  platformFee(societyId: string): Promise<PlatformFee>;
+  payoutAccount(societyId: string): Promise<PayoutAccount | null>;
+  /** The provider's onboarding pages for a society admin (null when nothing to open). */
+  startPayoutSetup(societyId: string): Promise<string | null>;
+  /** Re-reads the account from the provider, e.g. after onboarding. */
+  refreshPayoutAccount(societyId: string): Promise<PayoutAccount | null>;
+  /** The provider's payouts dashboard for the society. */
+  payoutDashboardUrl(societyId: string): Promise<string | null>;
+  /** Refunds a paid online order in full, back to the buyer's card or wallet. */
+  refundOnlineOrder(orderId: string): Promise<void>;
 
   // Shop: committee
   setPaymentSettings(societyId: string, s: Pick<PaymentSettings, 'fps_id' | 'payee_name' | 'payme_link' | 'instructions'>): Promise<void>;

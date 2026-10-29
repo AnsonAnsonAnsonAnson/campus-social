@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SlotPicker, Stepper } from '@/components/ShopParts';
+import { toast } from '@/components/Toast';
 import { Artwork, Button, EmptyState, ErrorView, Field, Icon, Loading, SegmentedControl, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -11,6 +12,7 @@ import { clearBag, setBagQty, useBag } from '@/lib/bag';
 import { checkBag, membershipState, slotState, unitPrice } from '@/lib/commerce';
 import { showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
+import { payOnline } from '@/lib/payments';
 import { radius, space, useColors } from '@/lib/theme';
 import type { PaymentMethod } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
@@ -33,15 +35,16 @@ export default function BagScreen() {
   const [busy, setBusy] = useState(false);
 
   const q = useQuery(async () => {
-    const [society, products, settings, slots, memberships] = await Promise.all([
+    const [society, products, settings, slots, memberships, online] = await Promise.all([
       api.getSociety(societyId),
       api.listProducts(societyId),
       api.getPaymentSettings(societyId),
       api.listPickupSlots(societyId).catch(() => []),
       api.myMemberships(),
+      api.onlinePaymentsReady(societyId).catch(() => false),
     ]);
     const isMember = memberships.some((m) => m.society_id === societyId && membershipState(m, m.plan).key === 'active');
-    return { society, products, settings, slots: slots.filter((s) => slotState(s).key !== 'past'), isMember };
+    return { society, products, settings, slots: slots.filter((s) => slotState(s).key !== 'past'), isMember, online };
   }, [societyId, user?.id]);
 
   if (q.loading && !q.data) return <Loading />;
@@ -73,6 +76,7 @@ export default function BagScreen() {
     .reduce((n, r) => n + unitPrice(r.product!, r.line.variant, false) * r.line.qty, 0);
   const saved = fullPrice - bag.total;
   const methods: { value: PaymentMethod; label: string }[] = [
+    ...(d.online ? [{ value: 'online' as const, label: t('Card / Alipay') }] : []),
     ...(d.settings?.fps_id ? [{ value: 'fps' as const, label: 'FPS 轉數快' }] : []),
     ...(d.settings?.payme_link ? [{ value: 'payme' as const, label: 'PayMe' }] : []),
     { value: 'cash', label: t('Cash at pickup') },
@@ -103,6 +107,15 @@ export default function BagScreen() {
       clearBag(societyId);
       invalidate();
       router.replace(`/order/${o.id}`);
+      if (chosenMethod === 'online' && o.status === 'awaiting_payment') {
+        // The order page offers "Pay now" again if this page is closed or fails.
+        const paid = await payOnline(o.id).catch((e) => {
+          showAlert(t('Could not open the payment page'), errorMessage(e));
+          return false;
+        });
+        invalidate();
+        if (paid) toast(t('Paid. We will tell you when it is ready.'));
+      }
     } catch (e) {
       q.refresh();
       showAlert(t('Could not place order'), errorMessage(e));
@@ -193,11 +206,15 @@ export default function BagScreen() {
           <Text style={[styles.heading, { color: c.text }]}>{t('How will you pay?')}</Text>
           <SegmentedControl options={methods} value={chosenMethod} onChange={setMethod} />
           <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19 }}>
-            {chosenMethod === 'cash'
-              ? t('Bring the exact amount when you collect.')
-              : t('Next you’ll see a QR with the amount and reference filled in. Pay within {n} hours or the items go back on sale.', {
-                  n: bag.windowHours,
-                })}
+            {chosenMethod === 'online'
+              ? t(
+                  'Pay now by card, Apple Pay, Google Pay, Alipay or WeChat Pay on a secure Stripe page. Your items are held for 30 minutes.',
+                )
+              : chosenMethod === 'cash'
+                ? t('Bring the exact amount when you collect.')
+                : t('Next you’ll see a QR with the amount and reference filled in. Pay within {n} hours or the items go back on sale.', {
+                    n: bag.windowHours,
+                  })}
           </Text>
         </View>
 
@@ -235,7 +252,14 @@ export default function BagScreen() {
             {hint ?? t('One reference, one pickup QR')}
           </Text>
         </View>
-        <Button title={t('Place order')} icon="checkmark" loading={busy} disabled={!!hint} onPress={place} style={{ minWidth: 150 }} />
+        <Button
+          title={chosenMethod === 'online' ? t('Pay now') : t('Place order')}
+          icon={chosenMethod === 'online' ? 'lock-closed-outline' : 'checkmark'}
+          loading={busy}
+          disabled={!!hint}
+          onPress={place}
+          style={{ minWidth: 150 }}
+        />
       </View>
     </KeyboardAvoidingView>
   );

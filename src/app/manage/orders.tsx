@@ -7,21 +7,19 @@ import { ListSkeleton } from '@/components/Skeleton';
 import { toast } from '@/components/Toast';
 import { Button, Chip, ChipRow, EmptyState, ErrorView, Icon, InfoRow, Pill, Sheet } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
-import { isExpired, itemCount, itemsSummary, orderStatus, productionSummary, toCsv } from '@/lib/commerce';
+import { isExpired, itemCount, itemsSummary, methodLabel, orderStatus, productionSummary, toCsv } from '@/lib/commerce';
 import { confirmAsync, showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { formatDay, formatTime, todayHK } from '@/lib/format';
 import { shareCsv } from '@/lib/shareFile';
 import { radius, space, useColors } from '@/lib/theme';
-import type { OrderStatus, PaymentMethod, PickupSlot, SocietyOrder } from '@/lib/types';
+import type { OrderStatus, PickupSlot, SocietyOrder } from '@/lib/types';
 import { slotWhen } from '@/components/ShopParts';
 import { useQuery } from '@/lib/useQuery';
 import { t } from '@/lib/i18n';
 
 type Filter = 'check' | 'unpaid' | 'handout' | 'done' | 'all' | 'summary' | 'picklist';
 type Change = Exclude<OrderStatus, 'payment_claimed'>;
-
-const methodLabel = (m: PaymentMethod) => (m === 'cash' ? t('Cash') : m === 'payme' ? 'PayMe' : 'FPS');
 
 /** Orders someone still has to collect: paid, ready, or cash to take at the desk. */
 const toCollect = (o: SocietyOrder) =>
@@ -104,13 +102,40 @@ export default function Orders() {
   };
 
   const bulkPaid = async () => {
-    const ids = visible.map((o) => o.id);
+    // Online orders are confirmed by the payment provider, never by hand.
+    const ids = visible.filter((o) => o.payment_method !== 'online').map((o) => o.id);
+    if (!ids.length) return;
     const ok = await confirmAsync(
       t('Mark {n} orders paid?', { n: ids.length }),
       t('Only do this for payments you can see in your bank or PayMe app.'),
       t('Mark paid'),
     );
     if (ok) change(ids, 'paid', t('{n} orders marked paid', { n: ids.length }));
+  };
+
+  const refund = async (o: SocietyOrder) => {
+    const fee = o.platform_fee_hkd ?? 0;
+    const ok = await confirmAsync(
+      t('Refund {amount} to the buyer?', { amount: formatHkd(o.total_hkd) }),
+      t('The money goes back to their card or wallet and is taken from your next payout. The {fee} fee is not returned.', {
+        fee: formatHkd(fee),
+      }),
+      t('Refund'),
+      true,
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api.refundOnlineOrder(o.id);
+      invalidate();
+      setOpen(null);
+      toast(t('{ref} refunded', { ref: o.ref }));
+      q.refresh();
+    } catch (e) {
+      showAlert(t('Could not refund'), errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const bulkReady = async () => {
@@ -134,6 +159,7 @@ export default function Orders() {
         t('Pickup time'),
         t('Total'),
         t('Method'),
+        t('Platform fee'),
         t('Status'),
         t('Ordered'),
         t('Paid'),
@@ -149,6 +175,7 @@ export default function Orders() {
           : '',
         o.total_hkd,
         methodLabel(o.payment_method),
+        o.platform_fee_hkd ?? '',
         orderStatus(o).label,
         o.created_at.slice(0, 10),
         o.paid_at?.slice(0, 10) ?? '',
@@ -332,6 +359,7 @@ export default function Orders() {
         busy={busy}
         onClose={() => setOpen(null)}
         onChange={change}
+        onRefund={refund}
       />
     </View>
   );
@@ -370,6 +398,7 @@ function OrderSheet({
   busy,
   onClose,
   onChange,
+  onRefund,
 }: {
   order: SocietyOrder | null;
   slot: PickupSlot | null;
@@ -377,6 +406,7 @@ function OrderSheet({
   busy: boolean;
   onClose: () => void;
   onChange: (ids: string[], status: Change, done: string) => void;
+  onRefund: (o: SocietyOrder) => void;
 }) {
   const c = useColors();
   if (!o)
@@ -387,6 +417,8 @@ function OrderSheet({
     );
   const st = orderStatus(o);
   const expired = isExpired(o);
+  const online = o.payment_method === 'online';
+  const paidOnline = online && ['paid', 'ready', 'collected'].includes(o.status);
   const confirmThen = async (title: string, body: string, action: string, status: Change, done: string) => {
     if (await confirmAsync(title, body, action, true)) onChange([o.id], status, done);
   };
@@ -412,16 +444,22 @@ function OrderSheet({
             icon="cash-outline"
             title={`${formatHkd(o.total_hkd)} · ${methodLabel(o.payment_method)}`}
             sub={
-              o.paid_at
-                ? t('Paid {date}', { date: `${formatDay(o.paid_at)} ${formatTime(o.paid_at)}` })
-                : o.claimed_at
-                  ? t('Buyer says they paid {date}. Look for {ref} in your account.', {
-                      date: `${formatDay(o.claimed_at)} ${formatTime(o.claimed_at)}`,
-                      ref: o.ref,
-                    })
-                  : o.expires_at && !expired
-                    ? t('Pay by {date}', { date: `${formatDay(o.expires_at)} ${formatTime(o.expires_at)}` })
-                    : undefined
+              paidOnline && o.paid_at
+                ? t('Paid online {date}. You receive {net} after the {fee} fee.', {
+                    date: `${formatDay(o.paid_at)} ${formatTime(o.paid_at)}`,
+                    net: formatHkd(o.total_hkd - (o.platform_fee_hkd ?? 0)),
+                    fee: formatHkd(o.platform_fee_hkd ?? 0),
+                  })
+                : o.paid_at
+                  ? t('Paid {date}', { date: `${formatDay(o.paid_at)} ${formatTime(o.paid_at)}` })
+                  : o.claimed_at
+                    ? t('Buyer says they paid {date}. Look for {ref} in your account.', {
+                        date: `${formatDay(o.claimed_at)} ${formatTime(o.claimed_at)}`,
+                        ref: o.ref,
+                      })
+                    : o.expires_at && !expired
+                      ? t('Pay by {date}', { date: `${formatDay(o.expires_at)} ${formatTime(o.expires_at)}` })
+                      : undefined
             }
             subColor={o.claimed_at && !o.paid_at ? c.infoText : undefined}
           />
@@ -431,7 +469,7 @@ function OrderSheet({
         {isAdmin && <ReceiptButton path={o.receipt_path} at={o.receipt_at} />}
 
         <View style={{ gap: space.sm }}>
-          {isAdmin && (o.status === 'payment_claimed' || (o.status === 'awaiting_payment' && !expired)) && (
+          {isAdmin && !online && (o.status === 'payment_claimed' || (o.status === 'awaiting_payment' && !expired)) && (
             <Button
               variant="ink"
               icon="checkmark"
@@ -466,7 +504,7 @@ function OrderSheet({
               onPress={() => onChange([o.id], 'collected', t('Collected'))}
             />
           )}
-          {isAdmin && ['awaiting_payment', 'payment_claimed', 'paid', 'ready'].includes(o.status) && !expired && (
+          {isAdmin && !paidOnline && ['awaiting_payment', 'payment_claimed', 'paid', 'ready'].includes(o.status) && !expired && (
             <Button
               variant="destructive"
               title={t('Cancel order')}
@@ -486,7 +524,21 @@ function OrderSheet({
               }
             />
           )}
-          {isAdmin && ['paid', 'ready', 'collected'].includes(o.status) && (
+          {isAdmin && paidOnline && (
+            <Button
+              variant="destructive"
+              icon="arrow-undo-outline"
+              title={t('Refund {amount}', { amount: formatHkd(o.total_hkd) })}
+              disabled={busy}
+              onPress={() => onRefund(o)}
+            />
+          )}
+          {online && o.status === 'awaiting_payment' && !expired && (
+            <Text style={{ color: c.textSecondary, fontSize: 13 }}>
+              {t('The buyer is paying online. It is marked paid as soon as the payment goes through.')}
+            </Text>
+          )}
+          {isAdmin && !online && ['paid', 'ready', 'collected'].includes(o.status) && (
             <Button
               variant="plain"
               title={t('Mark refunded')}

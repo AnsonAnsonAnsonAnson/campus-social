@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Campus Social · 返回 app</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<!-- Stripe sends the browser here after paying or setting up payouts (it only
+     accepts https links). This page reopens the app at the screen in ?to=. -->
+<h1>Campus Social</h1>
+<p id="msg">正在返回 app…</p>
+<p lang="en" id="msg-en">Taking you back to the app…</p>
+<p><a id="open" href="campussocial://">打開 Campus Social · Open Campus Social</a></p>
+</main>
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var to = q.get('to') || '';
+    // Only screens the payment flows return to.
+    if (!/^(order\/[0-9a-f-]{36}|manage\/payment-settings\?societyId=[0-9a-f-]{36})$/.test(to)) to = '';
+    var extra = [];
+    if (q.get('paid')) extra.push('paid=1');
+    if (q.get('retry')) extra.push('retry=1');
+    var url = 'campussocial://' + to + (extra.length ? (to.indexOf('?') >= 0 ? '&' : '?') + extra.join('&') : '');
+    if (q.get('paid')) {
+      document.getElementById('msg').textContent = '付款完成，正在返回 app…';
+      document.getElementById('msg-en').textContent = 'Payment done. Taking you back to the app…';
+    }
+    document.getElementById('open').href = url;
+    location.replace(url);
+  })();
+</script>
+</body>
+</html>

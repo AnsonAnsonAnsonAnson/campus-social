@@ -12,7 +12,9 @@ import type {
   Order,
   OrderItem,
   OrderStatus,
+  PaymentMethod,
   PickupSlot,
+  PlatformFee,
   Product,
   ProductWithStock,
   ReceiptKind,
@@ -47,6 +49,24 @@ export function membershipState(
 /** Payment reference for a membership fee, shown to the member and on the roster: "M-3F9A2C". */
 export function membershipRef(m: Pick<Membership, 'card_code'>) {
   return `M-${m.card_code.slice(0, 6).toUpperCase()}`;
+}
+
+/** What the platform keeps from an online order (the society gets the rest). Same sum as _platform_fee_hkd in SQL. */
+export function platformFeeHkd(total: number, fee: PlatformFee) {
+  if (total <= 0) return 0;
+  return Math.min(total, Math.round(total * fee.percent + fee.fixed_hkd * 100) / 100);
+}
+
+/** "5% + HK$3" */
+export function feeLabel(fee: PlatformFee) {
+  return fee.fixed_hkd > 0 ? `${fee.percent}% + HK$${fee.fixed_hkd}` : `${fee.percent}%`;
+}
+
+/** How an order or fee is paid, as committees see it in lists and exports. */
+export function methodLabel(m: PaymentMethod | null) {
+  if (m === 'online') return t('Online');
+  if (m === 'cash') return t('Cash');
+  return m === 'payme' ? 'PayMe' : 'FPS';
 }
 
 /** An unpaid FPS / PayMe order whose payment window has passed no longer holds stock. */

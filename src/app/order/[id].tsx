@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth';
 import { isExpired, ORDER_QR_PREFIX, orderStatus, slotState } from '@/lib/commerce';
 import { confirmAsync, showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
+import { payOnline } from '@/lib/payments';
 import { formatWhen } from '@/lib/format';
 import { radius, space, textStyle, useColors } from '@/lib/theme';
 import { walletWithFallback } from '@/lib/ticketCache';
@@ -71,6 +72,21 @@ export default function OrderScreen() {
   const stepIndex = steps.findIndex((s) => s.key.includes(o.status));
   const live = !['cancelled', 'refunded'].includes(o.status) && !expired;
 
+  const online = o.payment_method === 'online';
+
+  const pay = async () => {
+    setBusy(true);
+    try {
+      const paid = await payOnline(o.id);
+      invalidate();
+      if (paid) toast(t('Paid. We will tell you when it is ready.'));
+    } catch (e) {
+      showAlert(t('Could not open the payment page'), errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const claim = async () => {
     setBusy(true);
     try {
@@ -109,7 +125,9 @@ export default function OrderScreen() {
         ticket ? t('Give up your place?') : t('Cancel this order?'),
         ticket
           ? t('Your place goes to the next person on the waitlist. If you already paid, contact the society for a refund.')
-          : t('If you already paid, contact the society for a refund.'),
+          : online
+            ? t('If a payment goes through after you cancel, it is refunded automatically.')
+            : t('If you already paid, contact the society for a refund.'),
         ticket ? t('Give up place') : t('Cancel order'),
         true,
       ))
@@ -195,7 +213,30 @@ export default function OrderScreen() {
         </View>
       )}
 
-      {o.status === 'awaiting_payment' && !expired && (
+      {online && o.status === 'awaiting_payment' && !expired && (
+        <View style={[styles.items, { backgroundColor: c.card, gap: space.md }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600' }}>{t('Amount')}</Text>
+              <Text style={{ color: c.text, fontSize: 28, lineHeight: 34, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+                {formatHkd(o.total_hkd)}
+              </Text>
+            </View>
+            <Icon name="lock-closed-outline" size={20} color={c.textSecondary} />
+          </View>
+          <Text style={{ color: c.textSecondary, fontSize: 14, lineHeight: 20 }}>
+            {t('Card, Apple Pay, Google Pay, Alipay or WeChat Pay, on a secure Stripe page. The society gets your payment straight away.')}
+          </Text>
+          {o.expires_at && (
+            <Text style={{ color: c.textSecondary, fontSize: 13 }}>
+              {t('Pay by {when}, or the items go back on sale.', { when: formatWhen(o.expires_at) })}
+            </Text>
+          )}
+          <Button title={t('Pay now')} icon="lock-closed-outline" loading={busy} onPress={pay} disabled={!!q.data?.offline} />
+        </View>
+      )}
+
+      {!online && o.status === 'awaiting_payment' && !expired && (
         <View style={{ gap: space.md }}>
           <PaymentPanel settings={q.data?.settings ?? null} amount={o.total_hkd} reference={o.ref} method={o.payment_method} />
           {o.expires_at && (
@@ -210,6 +251,7 @@ export default function OrderScreen() {
       )}
 
       {o.payment_method !== 'cash' &&
+        !online &&
         (o.status === 'awaiting_payment' || o.status === 'payment_claimed') &&
         !expired &&
         !q.data?.offline && <ReceiptUpload kind="order" record={o} />}
@@ -262,6 +304,9 @@ export default function OrderScreen() {
           </View>
         )}
         <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('Ordered {when}', { when: formatWhen(o.created_at) })}</Text>
+        {online && o.paid_at && (
+          <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('Paid online {when}', { when: formatWhen(o.paid_at) })}</Text>
+        )}
       </View>
 
       {(o.status === 'awaiting_payment' || o.status === 'payment_claimed') && !expired && (

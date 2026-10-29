@@ -21,6 +21,8 @@ import type {
   MySociety,
   Order,
   PaymentSettings,
+  PayoutAccount,
+  PlatformFee,
   PickupResult,
   PickupSlot,
   ProductWithStock,
@@ -89,6 +91,18 @@ async function requireUserId() {
   const u = await currentUser();
   if (!u) throw new Error('Sign in first');
   return u.id;
+}
+
+/** Calls the online payments edge function (supabase/functions/payments). */
+async function payments<T>(action: string, body: Record<string, string>): Promise<T> {
+  await requireUserId();
+  const { data, error } = await db().functions.invoke('payments', { body: { action, ...body } });
+  if (error) {
+    // The function answers {error: message}; show that rather than "non-2xx status".
+    const detail = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  return data as T;
 }
 
 /** Strip characters that have meaning inside a PostgREST `or=` filter. */
@@ -503,6 +517,31 @@ export const remoteBackend: Backend = {
     const { data, error } = await db().storage.from('receipts').createSignedUrl(path, 300);
     if (error) throw new Error(error.message);
     return data.signedUrl;
+  },
+  async onlinePaymentsReady(societyId) {
+    return check(await db().rpc('shop_online_ready', { p_society_id: societyId })) as boolean;
+  },
+  async startOnlinePayment(orderId) {
+    return (await payments<{ url: string }>('checkout', { order_id: orderId })).url;
+  },
+  async platformFee(societyId) {
+    const f = check(await db().rpc('platform_fee_for', { p_society_id: societyId })) as PlatformFee;
+    return { percent: Number(f.percent), fixed_hkd: Number(f.fixed_hkd) };
+  },
+  async payoutAccount(societyId) {
+    return check(await db().from('society_payout_accounts').select('*').eq('society_id', societyId).maybeSingle()) as PayoutAccount | null;
+  },
+  async startPayoutSetup(societyId) {
+    return (await payments<{ url: string }>('connect', { society_id: societyId })).url;
+  },
+  async refreshPayoutAccount(societyId) {
+    return (await payments<{ account: PayoutAccount | null }>('refresh', { society_id: societyId })).account;
+  },
+  async payoutDashboardUrl(societyId) {
+    return (await payments<{ url: string }>('dashboard', { society_id: societyId })).url;
+  },
+  async refundOnlineOrder(orderId) {
+    await payments('refund', { order_id: orderId });
   },
   async setPaymentSettings(societyId, s) {
     check(

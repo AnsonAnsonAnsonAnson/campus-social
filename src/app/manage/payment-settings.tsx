@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 
+import { OnlinePaymentsCard } from '@/components/OnlinePayments';
 import { PaymentPanel } from '@/components/Payment';
 import { toast } from '@/components/Toast';
 import { Banner, Button, ErrorView, Field, Loading, SegmentedControl } from '@/components/ui';
@@ -94,6 +95,8 @@ export default function PaymentSettingsScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+        <OnlinePaymentsCard societyId={societyId} />
+        <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>{t('FPS, PayMe and cash')}</Text>
         <Banner
           icon="shield-checkmark-outline"
           text={t(

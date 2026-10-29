@@ -75,6 +75,25 @@ To turn on the daily clean-up:
 
 Without it nothing breaks: expired places are also released whenever someone signs up for that event, and screenshots stay until the job runs.
 
+### Online payments (Stripe Connect)
+
+Shop orders can also be paid online: card, Apple Pay, Google Pay, Alipay and WeChat Pay, on Stripe's hosted checkout page. Each society connects its own payout account (Stripe checks the treasurer's ID and bank account on its own pages); Stripe pays the society every Friday, less the platform fee, which is 5% + HK$3 per order by default. FPS, PayMe and cash keep working as above and stay free. Only Stripe's webhook can mark an online order paid or refunded; refunds go through **Orders → Refund**. Research and fee maths: [Campus Social Shop Payments](https://claude.ai/artifact/6EZR79sWgziZsDN2QmNuPD).
+
+The demo backend pretends CU Coding Society is already verified and pays instantly, so the whole flow can be tried without Stripe.
+
+To turn it on for real:
+
+1. Open a Stripe account for Hong Kong (a sole proprietorship with a Business Registration certificate is enough). In the dashboard, set up **Connect** as a platform/marketplace, and under **Settings → Payment methods** turn on Alipay and WeChat Pay.
+2. Run the migration `supabase/migrations/20261030050000_v08_online_payments.sql`.
+3. Deploy the functions: `supabase functions deploy payments` and `supabase functions deploy stripe-webhook --no-verify-jwt`.
+4. In Stripe, **Developers → Webhooks**, add two endpoints with the URL `https://<project>.supabase.co/functions/v1/stripe-webhook`:
+   - listening to events on **your account**: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`;
+   - listening to events on **connected accounts**: `account.updated`.
+5. `supabase secrets set STRIPE_SECRET_KEY=sk_test_... STRIPE_WEBHOOK_SECRET=whsec_... STRIPE_CONNECT_WEBHOOK_SECRET=whsec_...`. Optional: `PAYMENTS_RETURN_URL` (default: `docs/return.html` on GitHub Pages, which must be enabled) and `STRIPE_METHODS` (default `card,alipay,wechat_pay`).
+6. Test with test-mode keys (card `4242 4242 4242 4242`), then switch to live keys and live webhook secrets.
+
+To change the fee, run `update platform_fee set percent = 5, fixed_hkd = 3;` in the SQL editor, or `update society_payout_accounts set fee_percent = 3, fee_fixed_hkd = 0 where society_id = '<society id>';` for one society (`set_platform_fee` does the same for platform admins signed in to the app).
+
 ## Launching on the App Store
 
 You need an Apple Developer account (US$99/year) and an Expo account. No Mac is required; EAS builds in the cloud.

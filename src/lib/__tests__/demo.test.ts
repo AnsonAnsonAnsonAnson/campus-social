@@ -167,3 +167,25 @@ it('saves events privately and only ones you can see', async () => {
   expect(await api.mySavedEventIds()).toEqual(before);
   await expect(api.setEventSaved('20000000-0000-4000-8000-999999999999', true)).rejects.toThrow('Event not found');
 });
+
+it('takes online payments only where the society is verified, and only the provider marks them paid', async () => {
+  const products = await api.listProducts(CODING_SOCIETY);
+  const p = products.find((x) => x.status === 'published' && x.variants.some((v) => v.stock == null || v.stock > (x.sold[v.name] ?? 0)))!;
+  const v = p.variants.find((x) => x.stock == null || x.stock > (p.sold[x.name] ?? 0))!;
+  expect(await api.onlinePaymentsReady(CODING_SOCIETY)).toBe(true);
+  expect(await api.onlinePaymentsReady('10000000-0000-4000-8000-000000000001')).toBe(false);
+
+  const o = await api.placeBagOrder(CODING_SOCIETY, [{ product_id: p.id, variant: v.name, qty: 1 }], 'online', null);
+  expect(new Date(o.expires_at!).getTime() - Date.now()).toBeLessThanOrEqual(30 * 60_000);
+  await expect(api.claimOrderPaid(o.id)).rejects.toThrow('confirmed automatically');
+  await expect(api.setOrderStatus([o.id], 'paid')).rejects.toThrow('confirmed automatically');
+
+  expect(await api.startOnlinePayment(o.id)).toBeNull();
+  const paid = (await api.listOrders(CODING_SOCIETY)).find((x) => x.id === o.id)!;
+  expect(paid.status).toBe('paid');
+  expect(paid.platform_fee_hkd).toBe(Math.min(o.total_hkd, Math.round(o.total_hkd * 5 + 300) / 100));
+
+  await expect(api.setOrderStatus([o.id], 'refunded')).rejects.toThrow('Refund button');
+  await api.refundOnlineOrder(o.id);
+  expect((await api.myOrders()).find((x) => x.id === o.id)?.status).toBe('refunded');
+});
