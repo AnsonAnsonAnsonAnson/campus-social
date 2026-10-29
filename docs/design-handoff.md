@@ -2,7 +2,7 @@
 
 Prepared 26 Oct 2026 from the Claude Design canvas **Campus Social Redesign** (private link, ask Anson for access). Use it alongside the canvas, where every value below is drawn. Everything here maps onto `src/lib/theme.ts`, `src/components/ui.tsx` and the existing component files.
 
-> **Brand update (2026-10-28):** the app now has one signature brand colour, set by `BRAND` in `src/lib/theme.ts` (default: Lion Rock violet `#6A2BE0` with campus gold `#F5A400`). Cobalt and tangerine values below are the v2 originals; read them as `palette.brand` / `palette.accent`. The brand colour now also fills selected chips and the current tab's pill, and the brand mark sits beside the Discover title and on sign-in. Redraw the icon and splash with `BRAND=<name> python3 scripts/make-icons.py` and update the three colours in `app.json`.
+> **Brand update (2026-10-29):** the app has one signature brand colour, set by `BRAND` in `src/lib/theme.ts` (default: Brat lime `#B8F02E` with ink `#0A0A0B` and pop pink `#E0186F`; also `pink`, `blue`, `cobalt`). Cobalt and tangerine values below are the v2 originals; read them as `palette.brand` / `palette.accent`. Fills (primary button, selected chips, current-tab pill, progress) use `brand`/`onBrand`; icons, borders and links use `tint`/`tintText`, which for a light brand like lime are dark. Redraw the icon and splash with `BRAND=<name> python3 scripts/make-icons.py` and update the three colours in `app.json`.
 
 **Direction in one line:** sharp, big-tech look (Apple / Google style). True white and black surfaces, neutral greys, one electric cobalt for the single primary action per screen, a tangerine accent for dates, and vivid flat category colours for event covers. CUHK purple and gold are retired.
 

@@ -20,17 +20,19 @@ def rgb(hex_):
     return tuple(int(hex_[i : i + 2], 16) for i in (1, 3, 5))
 
 
-# Brand 500 -> 700 gradient, brand 600 sparkle, accent 500 dot; dark icon uses brand 500 and accent 400.
+# Background gradient, ticket colour, sparkle (brand), dot (accent); dark icon uses `main` for the ticket.
 BRANDS = {
-    "violet": dict(top="#7A3FF5", bottom="#5420B8", main="#6A2BE0", dot="#F5A400", dot_dark="#FFB81A"),
-    "jade": dict(top="#009670", bottom="#006349", main="#00795A", dot="#FF6F0F", dot_dark="#FF8A3D"),
-    "cobalt": dict(top="#3D63FF", bottom="#1A3CC4", main="#2450F0", dot="#FF6F0F", dot_dark="#FF8A3D"),
+    "lime": dict(top="#C8F35C", bottom="#97C526", main="#B8F02E", ticket="#0A0A0B", dot="#E0186F", dot_dark="#EA3887"),
+    "pink": dict(top="#EA3887", bottom="#B8145B", main="#E0186F", ticket="#FFFFFF", dot="#FFD84D", dot_dark="#FFE174"),
+    "blue": dict(top="#405DFF", bottom="#233ED1", main="#2B4BFF", ticket="#FFFFFF", dot="#E0186F", dot_dark="#EA3887"),
+    "cobalt": dict(top="#3D63FF", bottom="#1A3CC4", main="#2450F0", ticket="#FFFFFF", dot="#FF6F0F", dot_dark="#FF8A3D"),
 }
-B = BRANDS[os.environ.get("BRAND", "violet")]
+B = BRANDS[os.environ.get("BRAND", "lime")]
 COBALT_TOP = rgb(B["top"])
 COBALT_BOTTOM = rgb(B["bottom"])
 COBALT = rgb(B["main"])
 TANGERINE = rgb(B["dot"])
+TICKET = rgb(B["ticket"])
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
@@ -59,8 +61,9 @@ def sparkle(draw, cx, cy, r, fill):
     draw.polygon(pts, fill=fill)
 
 
-def ticket_layer(scale, ink=WHITE, star=COBALT, dot=TANGERINE, mono=False):
+def ticket_layer(scale, ink=None, star=COBALT, dot=TANGERINE, mono=False):
     """Ticket centred on a transparent N x N canvas. `scale` is ticket width / canvas."""
+    ink = ink or TICKET
     layer = Image.new("RGBA", (N, N), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     w = N * scale
@@ -109,7 +112,7 @@ save(icon, "favicon.png", size=48, mode="RGB")
 # iOS 18+ home screen: dark mode shows a brand-coloured ticket on black; tinted mode
 # recolours a greyscale icon, so the ticket is white and the dot mid-grey.
 black = Image.new("RGBA", (N, N), BLACK + (255,))
-save(Image.alpha_composite(black, ticket_layer(0.66, ink=COBALT_TOP, star=BLACK, dot=rgb(B["dot_dark"]))), "icon-dark.png", mode="RGB")
+save(Image.alpha_composite(black, ticket_layer(0.66, ink=COBALT, star=BLACK, dot=rgb(B["dot_dark"]))), "icon-dark.png", mode="RGB")
 save(Image.alpha_composite(black, ticket_layer(0.66, ink=WHITE, star=BLACK, dot=(150, 150, 150))), "icon-tinted.png", mode="RGB")
 save(bg, "android-icon-background.png")
 # Adaptive icons are cropped to a circle/squircle of ~66% of the canvas.

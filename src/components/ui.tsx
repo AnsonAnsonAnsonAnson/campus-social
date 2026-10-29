@@ -93,7 +93,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   const c = useColors();
   const colors: Record<ButtonVariant, [string, string, string]> = {
     // [background, label, pressed background]
-    primary: [c.tint, c.onTint, c.tintPressed],
+    primary: [c.brand, c.onBrand, c.brandPressed],
     secondary: [c.fill, c.text, c.fillStrong],
     tinted: [c.tintSoft, c.tintText, c.tintSoft],
     outline: ['transparent', c.textSecondary, 'transparent'],
@@ -144,7 +144,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
 /** Filter chip. Selected chips take the brand colour. */
 export function Chip({ label, selected, onPress, icon }: { label: string; selected?: boolean; onPress?: () => void; icon?: IconName }) {
   const c = useColors();
-  const fg = selected ? c.onTint : c.text;
+  const fg = selected ? c.onBrand : c.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -156,7 +156,7 @@ export function Chip({ label, selected, onPress, icon }: { label: string; select
       }}
       style={({ pressed }) => [
         styles.chip,
-        { backgroundColor: selected ? c.tint : c.card, borderColor: selected ? c.tint : c.border, opacity: pressed ? 0.8 : 1 },
+        { backgroundColor: selected ? c.brand : c.card, borderColor: selected ? c.brand : c.border, opacity: pressed ? 0.8 : 1 },
       ]}>
       {icon && <Ionicons name={icon} size={14} color={fg} />}
       <Text style={[styles.chipText, { color: fg }]}>{label}</Text>
@@ -167,7 +167,7 @@ export function Chip({ label, selected, onPress, icon }: { label: string; select
 /** Grey filter pill that opens a menu (Search): label plus a chevron; brand colour when a value is picked. */
 export function DropChip({ label, selected, onPress, icon }: { label: string; selected?: boolean; onPress: () => void; icon?: IconName }) {
   const c = useColors();
-  const fg = selected ? c.onTint : c.text;
+  const fg = selected ? c.onBrand : c.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -180,7 +180,7 @@ export function DropChip({ label, selected, onPress, icon }: { label: string; se
       style={({ pressed }) => [
         styles.dropChip,
         icon ? { paddingLeft: 12, paddingRight: 12, gap: 6 } : null,
-        { backgroundColor: selected ? c.tint : pressed ? c.fillStrong : c.fill },
+        { backgroundColor: selected ? c.brand : pressed ? c.fillStrong : c.fill },
       ]}>
       {icon && <Ionicons name={icon} size={17} color={fg} />}
       <Text style={[styles.chipText, { color: fg }]}>{label}</Text>

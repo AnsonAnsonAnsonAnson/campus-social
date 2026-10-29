@@ -9,63 +9,103 @@
  * scripts/make-icons.py and app.json and must be regenerated to match.
  */
 const BRANDS = {
-  /** Lion Rock violet with campus gold: a nod to CUHK purple and gold, brighter and more digital. */
-  violet: {
+  /** Brat lime with ink and pop pink: lime fills, ink text and icons on top, pink dates. */
+  lime: {
     brand: {
-      50: '#F4F0FF',
-      100: '#EBE3FF',
-      200: '#D3C2FF',
-      300: '#B497FF',
-      400: '#9466FF',
-      500: '#7A3FF5',
-      600: '#6A2BE0',
-      700: '#5420B8',
-      800: '#3F1890',
-      900: '#24104A',
-      950: '#160A30',
+      50: '#F9FEEE',
+      100: '#F4FDDE',
+      200: '#E6FAB6',
+      300: '#D8F78C',
+      400: '#C8F35C',
+      500: '#BFF243',
+      600: '#B8F02E',
+      700: '#97C526',
+      800: '#769A1D',
+      900: '#4A6012',
+      950: '#2E3C0C',
     },
     accent: {
-      50: '#FFF8E6',
-      100: '#FFEFC2',
-      200: '#FFDF85',
-      300: '#FFCB47',
-      400: '#FFB81A',
-      500: '#F5A400',
-      600: '#C98500',
-      700: '#8A5A00',
-      800: '#6B4500',
-      900: '#3A2500',
+      50: '#FDEDF3',
+      100: '#FADAE8',
+      200: '#F4AECD',
+      300: '#EE80B0',
+      400: '#E74B8F',
+      500: '#E32F7D',
+      600: '#E0186F',
+      700: '#B8145B',
+      800: '#8F0F47',
+      900: '#5A0A2C',
+    },
+    roles: {
+      fill: '#B8F02E',
+      onFill: '#0A0A0B',
+      tint: '#0A0A0B',
+      tintPressed: '#2C2C2E',
+      soft: '#D8F78C',
+      text: '#4A6012',
+      accentText: '#BE1C64',
     },
   },
-  /** Harbour jade with tangerine: Hong Kong jade and green hills, far from other uni apps. */
-  jade: {
+  /** Pop pink with butter yellow. */
+  pink: {
     brand: {
-      50: '#E8F7F2',
-      100: '#D2F0E6',
-      200: '#9EE0CB',
-      300: '#62C9A9',
-      400: '#2BAF88',
-      500: '#009670',
-      600: '#00795A',
-      700: '#006349',
-      800: '#004D39',
-      900: '#013326',
-      950: '#011F17',
+      50: '#FDEDF3',
+      100: '#FADAE8',
+      200: '#F4AECD',
+      300: '#EE80B0',
+      400: '#E74B8F',
+      500: '#E32F7D',
+      600: '#E0186F',
+      700: '#B8145B',
+      800: '#8F0F47',
+      900: '#5A0A2C',
+      950: '#38061C',
     },
     accent: {
-      50: '#FFF4EC',
-      100: '#FFE4D1',
-      200: '#FFC8A3',
-      300: '#FFA66B',
-      400: '#FF8A3D',
-      500: '#FF6F0F',
-      600: '#E05A00',
-      700: '#B34700',
-      800: '#853500',
-      900: '#3A1A04',
+      50: '#FFFCF1',
+      100: '#FFF9E3',
+      200: '#FFF1C1',
+      300: '#FFEA9D',
+      400: '#FFE174',
+      500: '#FFDC5F',
+      600: '#FFD84D',
+      700: '#8A6500',
+      800: '#6B4E00',
+      900: '#66561F',
+      950: '#403613',
     },
+    roles: {},
   },
-  /** Electric cobalt with tangerine: the v2 design colours, used loudly. */
+  /** Luminous blue (WGSN colour of 2027) with pop pink. */
+  blue: {
+    brand: {
+      50: '#EEF1FF',
+      100: '#DDE2FF',
+      200: '#B5C0FF',
+      300: '#8A9CFF',
+      400: '#5A73FF',
+      500: '#405DFF',
+      600: '#2B4BFF',
+      700: '#233ED1',
+      800: '#1C30A3',
+      900: '#111E66',
+      950: '#0B1340',
+    },
+    accent: {
+      50: '#FDEDF3',
+      100: '#FADAE8',
+      200: '#F4AECD',
+      300: '#EE80B0',
+      400: '#E74B8F',
+      500: '#E32F7D',
+      600: '#E0186F',
+      700: '#B8145B',
+      800: '#8F0F47',
+      900: '#5A0A2C',
+    },
+    roles: { accentText: '#BE1C64' },
+  },
+  /** Electric cobalt with tangerine: the v2 design colours. */
   cobalt: {
     brand: {
       50: '#EEF2FF',
@@ -92,13 +132,21 @@ const BRANDS = {
       800: '#853500',
       900: '#3A1A04',
     },
+    roles: {},
   },
 } as const;
 
 export type BrandName = keyof typeof BRANDS;
 export const BRAND: BrandName =
-  (process.env.EXPO_PUBLIC_BRAND as BrandName) in BRANDS ? (process.env.EXPO_PUBLIC_BRAND as BrandName) : 'violet';
+  (process.env.EXPO_PUBLIC_BRAND as BrandName) in BRANDS ? (process.env.EXPO_PUBLIC_BRAND as BrandName) : 'lime';
 const { brand, accent } = BRANDS[BRAND];
+/**
+ * Most brands are dark enough to carry white text and to draw icons and links on white, so one
+ * colour does both. A light brand (lime) splits them: `fill` paints buttons, chips and the
+ * current tab, with `onFill` on top, and `tint` (icons, borders, links) is a dark colour.
+ */
+const roles: { fill?: string; onFill?: string; tint?: string; tintPressed?: string; soft?: string; text?: string; accentText?: string } =
+  BRANDS[BRAND].roles;
 
 /** "#6A2BE0", 0.24 -> "rgba(106,43,224,0.24)" */
 function alpha(hex: string, a: number) {
@@ -137,14 +185,18 @@ const light = {
   purpleLight: brand[500] as string,
   gold: accent[500] as string,
 
-  /** Primary action, current tab, selected filter chip. */
-  tint: brand[600] as string,
-  tintPressed: brand[700] as string,
+  /** Primary button, selected filter chip, current-tab pill, progress bars. */
+  brand: roles.fill ?? (brand[600] as string),
+  brandPressed: brand[700] as string,
+  onBrand: roles.onFill ?? '#FFFFFF',
+  /** Brand-coloured icons, borders, switches and the focus ring on white. */
+  tint: roles.tint ?? (brand[600] as string),
+  tintPressed: roles.tintPressed ?? (brand[700] as string),
   onTint: '#FFFFFF',
-  /** Follow button, "Going" pill, bell-on, current tab pill. */
-  tintSoft: brand[100] as string,
-  /** Links, plain buttons, verified tick. */
-  tintText: brand[600] as string,
+  /** Follow button, "Going" pill, bell-on. */
+  tintSoft: roles.soft ?? (brand[100] as string),
+  /** Links, plain buttons, text on tintSoft. */
+  tintText: roles.text ?? (brand[600] as string),
   /** Brand-filled hero surfaces (sign-in, welcome, splash). */
   brandStrong: brand[700] as string,
 
@@ -152,7 +204,7 @@ const light = {
   accent: accent[500] as string,
   accentSoft: accent[100] as string,
   /** Event dates in lists, campus labels. */
-  accentText: accent[700] as string,
+  accentText: roles.accentText ?? (accent[700] as string),
 
   /** Grouped screens (Profile, Manage, forms). */
   background: '#F5F5F7',
@@ -177,7 +229,7 @@ const light = {
   disabledFill: '#EDEDF0',
   disabledText: '#A1A1A6',
   /** 3pt halo outside a 2pt tint border. */
-  focusRing: alpha(brand[600], 0.24),
+  focusRing: alpha(roles.fill ?? brand[600], 0.35),
 
   success: '#078040',
   successSoft: '#E3F7EA',
@@ -204,6 +256,9 @@ const dark: typeof light = {
   purpleLight: brand[300],
   gold: accent[400],
 
+  brand: roles.fill ?? brand[500],
+  brandPressed: brand[400],
+  onBrand: roles.onFill ?? '#FFFFFF',
   tint: brand[500],
   tintPressed: brand[400],
   onTint: '#FFFFFF',
@@ -347,7 +402,7 @@ export const categoryArt: Record<string, { cover: string; coverDark: string; ico
   Performance: { cover: '#7C3AED', coverDark: '#7C3AED', icon: 'musical-notes-outline' },
   Career: { cover: '#18181B', coverDark: '#3A3A3F', icon: 'briefcase-outline' },
   Volunteering: { cover: '#D92D20', coverDark: '#D92D20', icon: 'heart-outline' },
-  Orientation: { cover: brand[600], coverDark: brand[500], icon: 'compass-outline' },
+  Orientation: { cover: roles.tint ?? brand[600], coverDark: brand[500], icon: 'compass-outline' },
   Other: { cover: '#52525B', coverDark: '#5A5A63', icon: 'sparkles-outline' },
 };
 
@@ -362,7 +417,7 @@ export const avatarArt: Record<AvatarFamily, { light: readonly [string, string];
   Violet: { light: ['#EFE7FE', '#6D28D9'], dark: ['#24104A', '#B794FF'], cover: '#7C3AED' },
   Graphite: { light: ['#E8E8EB', '#18181B'], dark: ['#2C2C2E', '#D4D4D8'], cover: '#18181B' },
   Red: { light: ['#FDE8E6', '#B42318'], dark: ['#3D0F0C', '#FF6B61'], cover: '#D92D20' },
-  Cobalt: { light: [brand[100], brand[600]], dark: [brand[900], brand[300]], cover: brand[600] },
+  Cobalt: { light: [brand[100], roles.text ?? brand[600]], dark: [brand[900], brand[300]], cover: roles.tint ?? brand[600] },
   Slate: { light: ['#EDEDF0', '#48484A'], dark: ['#2C2C2E', '#C7C7CC'], cover: '#52525B' },
 };
 
