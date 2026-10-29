@@ -26,6 +26,7 @@ const ICONS: Record<NotificationKind, IconName> = {
   order_update: 'bag-handle',
   payment_settings_changed: 'warning',
   product_available: 'pricetag',
+  fair_update: 'storefront',
 };
 
 /** The button under each message, as in the design. Same tap target as the row. */
@@ -69,6 +70,7 @@ export default function Notifications() {
     else if (n.kind === 'payment_settings_changed' && n.society_id)
       router.push({ pathname: '/manage/payment-settings', params: { societyId: n.society_id } });
     else if (n.kind === 'product_available' && n.society_id) router.push({ pathname: '/shop', params: { societyId: n.society_id } });
+    else if (n.kind === 'fair_update' && n.society_id) router.push(`/manage/${n.society_id}`);
     else if (n.kind === 'committee_added' && n.society_id) router.push(`/manage/${n.society_id}`);
     else if (n.society_id) router.push(`/society/${n.society_id}`);
   };

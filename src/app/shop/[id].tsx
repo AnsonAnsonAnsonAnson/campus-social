@@ -8,8 +8,8 @@ import { toast } from '@/components/Toast';
 import { Artwork, Banner, Button, ErrorView, Icon, InfoRow, Loading, Pill, Sheet, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { addToBag, bagCount, useBag } from '@/lib/bag';
-import { membershipState, priceRange, saleState, slotState, stockLeft, unitPrice, unitsOrdered } from '@/lib/commerce';
+import { addToBag, bagCount, bagKey, useBag } from '@/lib/bag';
+import { fairState, membershipState, priceRange, saleState, slotState, stockLeft, unitPrice, unitsOrdered } from '@/lib/commerce';
 import { showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { formatWhen } from '@/lib/format';
@@ -26,7 +26,6 @@ export default function ProductScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { user, requireSignIn } = useAuth();
-  const bag = useBag(societyId);
   const [variant, setVariant] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
   const [photo, setPhoto] = useState(0);
@@ -41,8 +40,13 @@ export default function ProductScreen() {
       api.listPickupSlots(societyId).catch(() => []),
     ]);
     const isMember = memberships.some((m) => m.society_id === societyId && membershipState(m, m.plan).key === 'active');
-    return { product: products.find((p) => p.id === id) ?? null, isMember, slots };
+    const product = products.find((p) => p.id === id) ?? null;
+    // Fair presale: collected at the booth, so the fair's dates and booth number matter more than pickup times.
+    const fair = product?.fair_id ? await api.getFair(product.fair_id).catch(() => null) : null;
+    return { product, isMember, slots, fair };
   }, [id, societyId, user?.id]);
+  const key = bagKey(societyId, q.data?.product?.fair_id);
+  const bag = useBag(key);
 
   const p = q.data?.product;
   useEffect(() => {
@@ -71,9 +75,14 @@ export default function ProductScreen() {
   const max = Math.max(0, Math.min(limit - inBag, sizeLeft == null ? Infinity : sizeLeft - inBagThisSize));
   const upcomingSlots = (q.data!.slots ?? []).filter((s) => slotState(s).key !== 'past');
   const n = bagCount(bag);
+  const fair = q.data!.fair;
+  const booth = fair?.booths.find((b) => b.society_id === p.society_id && b.status === 'approved') ?? null;
+  const presaleOver = !!fair && !fairState(fair).presaleOpen;
+  const voucher = p.kind === 'voucher';
 
-  const hint =
-    state === 'closed'
+  const hint = presaleOver
+    ? t('Presale for this fair has closed')
+    : state === 'closed'
       ? t('Orders have closed')
       : state === 'upcoming'
         ? t('Orders open {when}', { when: formatWhen(p.opens_at!) })
@@ -89,7 +98,7 @@ export default function ProductScreen() {
 
   const add = () => {
     if (chosen == null) return;
-    addToBag(societyId, { product_id: p.id, variant: chosen, qty: Math.min(qty, max) });
+    addToBag(key, { product_id: p.id, variant: chosen, qty: Math.min(qty, max) });
     setQty(1);
     toast(t('Added to bag'), { icon: 'bag-check-outline' });
   };
@@ -164,6 +173,10 @@ export default function ProductScreen() {
               <Text style={{ color: c.textSecondary, fontSize: 15, textDecorationLine: 'line-through' }}>
                 {formatHkd(chosen != null ? unitPrice(p, chosen, false) : p.price_hkd)}
               </Text>
+            )}
+            {voucher && <Pill label={t('Food voucher')} tone="ink" icon="fast-food-outline" />}
+            {voucher && p.voucher_value_hkd != null && p.voucher_value_hkd > p.price_hkd && (
+              <Pill label={t('Worth {price}', { price: formatHkd(p.voucher_value_hkd) })} tone="success" />
             )}
             {memberPrice ? (
               <Pill label={t('Member price')} tone="success" icon="card-outline" />
@@ -310,7 +323,23 @@ export default function ProductScreen() {
             {p.closes_at && state !== 'closed' && (
               <InfoRow icon="time-outline" title={t('Order by {when}', { when: formatWhen(p.closes_at) })} />
             )}
-            {upcomingSlots.length > 0 ? (
+            {fair ? (
+              <InfoRow
+                icon="storefront-outline"
+                title={
+                  booth?.label
+                    ? voucher
+                      ? t('Use at booth {booth}, {fair}', { booth: booth.label, fair: fair.name })
+                      : t('Collect at booth {booth}, {fair}', { booth: booth.label, fair: fair.name })
+                    : voucher
+                      ? t('Use at the booth, {fair}', { fair: fair.name })
+                      : t('Collect at the booth, {fair}', { fair: fair.name })
+                }
+                sub={`${formatWhen(fair.starts_at, fair.ends_at)} · ${fair.venue}`}
+                action={t('See the fair')}
+                onAction={() => router.push(`/fair/${fair.id}`)}
+              />
+            ) : upcomingSlots.length > 0 ? (
               <InfoRow
                 icon="location-outline"
                 title={t('Pick up at a time you choose')}
@@ -335,7 +364,7 @@ export default function ProductScreen() {
         style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md), backgroundColor: c.elevated, borderTopColor: c.border }]}>
         {n > 0 && (
           <Pressable
-            onPress={() => router.push({ pathname: '/shop/bag', params: { societyId } })}
+            onPress={() => router.push({ pathname: '/shop/bag', params: p.fair_id ? { societyId, fairId: p.fair_id } : { societyId } })}
             accessibilityRole="button"
             accessibilityLabel={t('{n} items in your bag', { n })}
             style={({ pressed }) => [styles.bagButton, { backgroundColor: c.fill, opacity: pressed ? 0.7 : 1 }]}>

@@ -1,7 +1,19 @@
 // Sample content used by demo mode and by scripts/make-seed.ts (supabase/seed.sql).
 // Event times are relative to "today" in Hong Kong so the app always looks alive.
 // Campus dates are illustrative: replace them with the official CUHK calendar.
-import type { Banner, CampusDate, CampusEvent, Membership, MembershipPlan, PaymentSettings, PickupSlot, Product, Society } from './types';
+import type {
+  Banner,
+  CampusDate,
+  CampusEvent,
+  Fair,
+  FairBooth,
+  Membership,
+  MembershipPlan,
+  PaymentSettings,
+  PickupSlot,
+  Product,
+  Society,
+} from './types';
 
 const HK_OFFSET_HOURS = 8;
 
@@ -602,5 +614,150 @@ export function makeDemoPickupSlots(now = new Date()): PickupSlot[] {
     slot(3, 2, 1, 13, 'Room 1009, Ho Sin-Hang Engineering Building', 20),
     slot(4, 2, 3, 13, 'Room 1009, Ho Sin-Hang Engineering Building', 20),
     slot(5, 2, 5, 18, 'University Mall, outside Starbucks', 6),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Fairs (demo only, not in seed.sql). Chung Chi's Christmas fair, where CUCS has
+// booth B12, and an engineering fair CUCS organises, so both sides show.
+// ---------------------------------------------------------------------------
+const fid = (n: number) => `80000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const boid = (n: number) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+export const DEMO_FAIR = fid(1);
+export const DEMO_OWN_FAIR = fid(2);
+
+export function makeDemoFairs(now = new Date()): Fair[] {
+  return [
+    {
+      id: fid(1),
+      organiser_society_id: sid(3),
+      name: 'Chung Chi Christmas Fair',
+      description:
+        "Thirty society booths around the lake: hot food, handmade gifts and this year's merch. Pre-order here and skip the queue: pick up at the booth, or show your voucher QR for food.",
+      venue: 'Chung Chi lakeside, Lake Ad Excellentiam',
+      cover_url: null,
+      starts_at: hkAt(12, 11, 0, now),
+      ends_at: hkAt(13, 18, 0, now),
+      presale_closes_at: hkAt(11, 23, 59, now),
+      booths_open: true,
+      status: 'approved',
+      created_at: hkAt(-14, 12, 0, now),
+    },
+    {
+      id: fid(2),
+      organiser_society_id: sid(2),
+      name: 'Engineering Spring Market',
+      description: 'Engineering societies sell merch and snacks outside the Ho Sin-Hang building.',
+      venue: 'Ho Sin-Hang Engineering Building forecourt',
+      cover_url: null,
+      starts_at: hkAt(26, 12, 0, now),
+      ends_at: hkAt(26, 19, 0, now),
+      presale_closes_at: null,
+      booths_open: true,
+      status: 'approved',
+      created_at: hkAt(-3, 12, 0, now),
+    },
+  ];
+}
+
+export function makeDemoBooths(now = new Date()): Omit<FairBooth, 'society'>[] {
+  const booth = (
+    n: number,
+    fair: number,
+    society: number,
+    label: string | null,
+    status: FairBooth['status'],
+    note: string | null = null,
+  ) => ({
+    id: boid(n),
+    fair_id: fid(fair),
+    society_id: sid(society),
+    label,
+    status,
+    note,
+    created_at: hkAt(-10 + n, 12, 0, now),
+  });
+  return [
+    booth(1, 1, 3, 'A01', 'approved'),
+    booth(2, 1, 2, 'B12', 'approved', 'Bubble tea and stickers'),
+    booth(3, 1, 1, 'B07', 'approved', 'Hoodies and trail mix'),
+    booth(4, 1, 4, 'C03', 'approved', 'Photo calendars and instant portraits'),
+    booth(5, 2, 2, 'E1', 'approved'),
+    booth(6, 2, 4, 'E2', 'approved', 'Prints of the campus at night'),
+    booth(7, 2, 5, null, 'pending', 'Debate team cookies, about 200 boxes'),
+    booth(8, 2, 8, null, 'pending', 'Food from home countries: samosas, onigiri, empanadas'),
+  ];
+}
+
+/** Presale at the Christmas fair: merch to collect at the booth and food vouchers. */
+export function makeDemoFairProducts(now = new Date()): Product[] {
+  const base = makeDemoProducts(now)[0];
+  const item = (n: number, society: number, p: Partial<Product> & Pick<Product, 'title' | 'price_hkd'>): Product => ({
+    ...base,
+    id: prid(100 + n),
+    society_id: sid(society),
+    description: '',
+    member_price_hkd: null,
+    variants: [{ name: '', stock: null }],
+    size_chart: null,
+    goal_qty: null,
+    ready_on: null,
+    max_per_buyer: null,
+    opens_at: null,
+    closes_at: null,
+    pickup_note: null,
+    max_per_order: 10,
+    fair_id: fid(1),
+    kind: 'merch',
+    voucher_value_hkd: null,
+    created_at: hkAt(-2, 12, n, now),
+    ...p,
+  });
+  return [
+    item(1, 2, {
+      title: 'Bubble tea voucher',
+      price_hkd: 22,
+      kind: 'voucher',
+      voucher_value_hkd: 28,
+      description: 'Brown sugar or jasmine milk tea, made at the booth. Show the QR, one cup per voucher.',
+      variants: [{ name: '', stock: 300 }],
+    }),
+    item(2, 2, {
+      title: 'Christmas sticker set',
+      price_hkd: 30,
+      member_price_hkd: 20,
+      description: 'Eight stickers: snowy Pavilion of Harmony, reindeer on the 1A bus, and more.',
+      variants: [{ name: '', stock: 120 }],
+    }),
+    item(3, 3, {
+      title: 'Hot chocolate voucher',
+      price_hkd: 15,
+      kind: 'voucher',
+      voucher_value_hkd: 18,
+      description: 'A large hot chocolate at the Student Union booth.',
+      variants: [{ name: '', stock: 500 }],
+    }),
+    item(4, 1, {
+      title: 'Trail mix bag voucher',
+      price_hkd: 25,
+      kind: 'voucher',
+      description: 'Our hiking trail mix, 200 g, packed on the day.',
+      variants: [{ name: '', stock: 80 }],
+    }),
+    item(5, 4, {
+      title: '2027 campus photo calendar',
+      price_hkd: 85,
+      description: 'Twelve months of CUHK by our members. A4, wall hanging.',
+      variants: [{ name: '', stock: 60 }],
+      goal_qty: 50,
+    }),
+    item(6, 4, {
+      title: 'Instant portrait voucher',
+      price_hkd: 40,
+      kind: 'voucher',
+      description: 'Two instant film portraits at the photo booth, Christmas backdrop.',
+      variants: [{ name: '', stock: 40 }],
+    }),
   ];
 }

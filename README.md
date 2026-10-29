@@ -94,6 +94,12 @@ To turn it on for real:
 
 To change the fee, run `update platform_fee set percent = 5, fixed_hkd = 3;` in the SQL editor, or `update society_payout_accounts set fee_percent = 3, fee_fixed_hkd = 0 where society_id = '<society id>';` for one society (`set_platform_fee` does the same for platform admins signed in to the app).
 
+### Fairs (booths, presale and food vouchers)
+
+For the big fairs where many societies run booths in one place (O'Camp, the Christmas fair, spring markets). An organiser society creates the fair from its dashboard (**Shop → Organise a fair**); a platform admin approves it in the review queue (**Fairs** tab), and it then shows on Discover and under **Fairs**. Society admins ask for a booth from the fair page; the organiser confirms each one and gives it a booth number. A society with a confirmed booth adds products that sell at the fair: merch to collect at the booth, or food vouchers (with an optional "worth" value, e.g. HK$30 of food for HK$25).
+
+Fair items check out on their own (one booth, one order), paid ahead by card/Alipay, FPS or PayMe, and the presale closes for the whole fair at once. At the booth, the committee uses the same pickup scanner: merch is handed over, and for vouchers they tap how many are used now, so a buyer can use one voucher at lunch and the rest later. The organiser sees presale totals per booth (never buyers' details). Run `supabase/migrations/20261030060000_v09_fairs.sql` after v0.8.
+
 ## Launching on the App Store
 
 You need an Apple Developer account (US$99/year) and an Expo account. No Mac is required; EAS builds in the cloud.

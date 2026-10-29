@@ -24,10 +24,15 @@ const takeDownLabel = (type: OpenReport['target_type']) =>
 export default function Admin() {
   const c = useColors();
   const lang = useLang();
-  const [tab, setTab] = useState<'societies' | 'banners' | 'reports' | null>(null);
+  const [tab, setTab] = useState<'societies' | 'banners' | 'fairs' | 'reports' | null>(null);
   const q = useQuery(async () => {
-    const [reports, societies, banners] = await Promise.all([api.openReports(), api.pendingSocieties(), api.pendingBanners()]);
-    return { reports, societies, banners };
+    const [reports, societies, banners, fairs] = await Promise.all([
+      api.openReports(),
+      api.pendingSocieties(),
+      api.pendingBanners(),
+      api.pendingFairs().catch(() => []),
+    ]);
+    return { reports, societies, banners, fairs };
   });
 
   // One card per reported item, with every reason people gave.
@@ -65,9 +70,10 @@ export default function Admin() {
 
   if (q.loading) return <ListSkeleton rows={4} />;
   if (q.error) return <ErrorView message={q.error} onRetry={q.refresh} />;
-  const { societies, banners } = q.data!;
+  const { societies, banners, fairs } = q.data!;
   // Open on whichever list has something waiting, reports first.
-  const current = tab ?? (reported.length ? 'reports' : societies.length ? 'societies' : banners.length ? 'banners' : 'reports');
+  const current =
+    tab ?? (reported.length ? 'reports' : societies.length ? 'societies' : banners.length ? 'banners' : fairs.length ? 'fairs' : 'reports');
 
   return (
     <ScrollView
@@ -80,7 +86,7 @@ export default function Admin() {
           {t('Review queue')}
         </Text>
         <Text style={{ color: c.textSecondary, fontSize: 15 }}>
-          {t('{n} items waiting', { n: reported.length + societies.length + banners.length })}
+          {t('{n} items waiting', { n: reported.length + societies.length + banners.length + fairs.length })}
         </Text>
       </View>
       <View style={{ marginBottom: space.md }}>
@@ -90,13 +96,15 @@ export default function Admin() {
           tabs={[
             { value: 'societies', label: t('Societies'), count: societies.length },
             { value: 'banners', label: t('Banners'), count: banners.length },
+            { value: 'fairs', label: t('Fairs'), count: fairs.length },
             { value: 'reports', label: t('Reports'), count: reported.length, urgent: true },
           ]}
         />
       </View>
       {((current === 'reports' && !reported.length) ||
         (current === 'societies' && !societies.length) ||
-        (current === 'banners' && !banners.length)) && (
+        (current === 'banners' && !banners.length) ||
+        (current === 'fairs' && !fairs.length)) && (
         <EmptyState
           icon="checkmark-done-circle-outline"
           title={t('All caught up')}
@@ -201,6 +209,33 @@ export default function Admin() {
                 variant="plain"
                 title={t('Reject')}
                 onPress={() => act(() => api.reviewBanner(b.id, 'rejected', 0), t('Banner rejected'))}
+              />
+            </View>
+          </View>
+        ))}
+
+      {current === 'fairs' &&
+        fairs.map((f) => (
+          <View key={f.id} style={[styles.card, { backgroundColor: c.card }]}>
+            <Text style={{ color: c.tintText, fontWeight: '700' }}>{f.organiser.name}</Text>
+            <Text style={{ color: c.text, fontWeight: '700', fontSize: 17 }}>{f.name}</Text>
+            <Text style={{ color: c.textSecondary, fontSize: 13 }}>
+              {formatWhen(f.starts_at, f.ends_at)} · {f.venue}
+            </Text>
+            {!!f.description && <Text style={{ color: c.text }}>{f.description}</Text>}
+            <View style={styles.actions}>
+              <Button small variant="secondary" title={t('View')} onPress={() => router.push(`/fair/${f.id}`)} />
+              <Button
+                small
+                variant="ink"
+                title={t('Approve')}
+                onPress={() => act(() => api.reviewFair(f.id, 'approved'), t('Fair approved'))}
+              />
+              <Button
+                small
+                variant="plain"
+                title={t('Reject')}
+                onPress={() => act(() => api.reviewFair(f.id, 'rejected'), t('Fair not approved'))}
               />
             </View>
           </View>

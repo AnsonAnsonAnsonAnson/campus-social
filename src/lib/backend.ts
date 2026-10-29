@@ -20,6 +20,12 @@ import type {
   PickupSlot,
   PickupSlotInput,
   BagLine,
+  BoothSales,
+  FairDetail,
+  FairInput,
+  FairWithCounts,
+  ReviewState,
+  SocietyBooth,
   PlanInput,
   ProductInput,
   ProductWithStock,
@@ -194,12 +200,33 @@ export interface Backend {
   deleteProduct(id: string): Promise<void>;
   listOrders(societyId: string): Promise<SocietyOrder[]>;
   setOrderStatus(ids: string[], status: Exclude<OrderStatus, 'payment_claimed'>): Promise<number>;
-  /** `cashReceived` hands over an unpaid cash order and records the cash in one step. */
-  collectOrder(societyId: string, code: string, cashReceived?: boolean): Promise<PickupResult>;
+  /**
+   * `cashReceived` hands over an unpaid cash order and records the cash in one step.
+   * `vouchers` is how many of the order's vouchers to use now; without it, an order
+   * with vouchers left answers "How many vouchers?".
+   */
+  collectOrder(societyId: string, code: string, cashReceived?: boolean, vouchers?: number): Promise<PickupResult>;
   savePickupSlot(input: PickupSlotInput): Promise<string>;
   deletePickupSlot(id: string): Promise<void>;
 
+  // Fairs: many societies' booths in one place for a day or two
+  /** Fairs coming up or on now (organisers also see their own pending and recent ones). */
+  listFairs(): Promise<FairWithCounts[]>;
+  getFair(id: string): Promise<FairDetail | null>;
+  /** Presale items at confirmed booths, with each booth's number. */
+  listFairProducts(fairId: string): Promise<ProductWithStock[]>;
+  /** Organiser society admins. A new fair is listed once a platform admin approves it. */
+  saveFair(input: FairInput): Promise<string>;
+  applyForBooth(fairId: string, societyId: string, note?: string): Promise<void>;
+  reviewBooth(boothId: string, status: ReviewState, label: string | null): Promise<void>;
+  /** Fairs where this society has, or asked for, a booth. */
+  societyBooths(societyId: string): Promise<SocietyBooth[]>;
+  /** Presale per booth, for the organiser. */
+  fairSales(fairId: string): Promise<BoothSales[]>;
+
   // Platform admins (Student Affairs / app team)
+  pendingFairs(): Promise<FairWithCounts[]>;
+  reviewFair(id: string, status: Exclude<ReviewState, 'pending'>): Promise<void>;
   pendingSocieties(): Promise<Society[]>;
   pendingBanners(): Promise<BannerWithLinks[]>;
   reviewSociety(id: string, status: ReviewStatus, verified: boolean): Promise<void>;

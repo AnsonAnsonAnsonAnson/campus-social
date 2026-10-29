@@ -112,6 +112,10 @@ export default function RootLayout() {
           <Stack.Screen name="shop/bag" options={{ title: t('Your bag') }} />
           <Stack.Screen name="manage/pickup-times" options={{ title: t('Pickup times') }} />
           <Stack.Screen name="order/[id]" options={{ title: t('Order') }} />
+          <Stack.Screen name="fairs" options={{ title: t('Fairs') }} />
+          <Stack.Screen name="fair/[id]" options={{ title: '' }} />
+          <Stack.Screen name="manage/fair" options={{ title: t('Fair') }} />
+          <Stack.Screen name="manage/fair-form" options={{ presentation: 'modal', title: t('Fair') }} />
           <Stack.Screen name="welcome" options={{ presentation: 'modal', title: t('Welcome'), gestureEnabled: false }} />
         </Stack>
         <NotificationRouting />

@@ -190,7 +190,8 @@ export type NotificationKind =
   | 'membership_renewal'
   | 'order_update'
   | 'payment_settings_changed'
-  | 'product_available';
+  | 'product_available'
+  | 'fair_update';
 
 export type AppNotification = {
   id: string;
@@ -348,14 +349,24 @@ export type Product = {
   max_per_order: number;
   payment_window_hours: number;
   status: ProductStatus;
+  /** Sold at a fair, collected or used at the society's booth there. */
+  fair_id?: string | null;
+  kind?: ProductKind;
+  /** A voucher's value at the booth, when more than its price. */
+  voucher_value_hkd?: number | null;
   created_at: string;
 };
+
+/** Merch is handed over; a voucher is used at the booth (one unit at a time if the buyer likes). */
+export type ProductKind = 'merch' | 'voucher';
 
 export type ProductWithStock = Product & {
   /** Units held by live orders, by variant name. */
   sold: Record<string, number>;
   /** You asked to be told when it's back on sale. */
   alert?: boolean;
+  /** Booth number, on a fair's product list. */
+  booth?: string | null;
   society: SocietySummary & { category: string };
 };
 
@@ -364,7 +375,7 @@ export type ProductInput = Omit<Product, 'id' | 'created_at'> & { id?: string };
 export type OrderStatus = 'awaiting_payment' | 'payment_claimed' | 'paid' | 'ready' | 'collected' | 'cancelled' | 'refunded';
 
 /** One line of an order. Orders before v0.7 have no product_id or title on their lines (see Order.product_title). */
-export type OrderItem = { product_id?: string; title?: string; variant: string; qty: number; unit_price: number };
+export type OrderItem = { product_id?: string; title?: string; variant: string; qty: number; unit_price: number; kind?: 'voucher' };
 
 export type Order = {
   id: string;
@@ -395,6 +406,10 @@ export type Order = {
   pickup_slot_id: string | null;
   /** What the platform kept from an online payment; the society received the total less this. */
   platform_fee_hkd?: number | null;
+  /** Fair presale: collected or used at the society's booth. */
+  fair_id?: string | null;
+  vouchers_total?: number;
+  vouchers_used?: number;
   created_at: string;
 };
 
@@ -413,6 +428,11 @@ export type PickupResult = CheckInResult & {
   slot?: string | null;
   total_hkd?: number;
   payment_method?: PaymentMethod;
+  vouchers_total?: number;
+  vouchers_left?: number;
+  /** "How many vouchers?" after taking cash at the desk. */
+  cash_taken?: boolean;
+  used_now?: number;
 };
 
 /** A time and place the committee hands out orders. */
@@ -453,3 +473,68 @@ export type PlatformFee = { percent: number; fixed_hkd: number };
 
 /** Which record a payment screenshot belongs to. */
 export type ReceiptKind = 'order' | 'membership';
+
+// ---------------------------------------------------------------------------
+// Fairs (v0.9)
+// ---------------------------------------------------------------------------
+
+export type ReviewState = 'pending' | 'approved' | 'rejected';
+
+/** A day or two when many societies run booths in one place (O'Camp, Christmas fair). */
+export type Fair = {
+  id: string;
+  organiser_society_id: string;
+  name: string;
+  description: string;
+  venue: string;
+  cover_url: string | null;
+  starts_at: string;
+  ends_at: string;
+  /** Null: presale runs until the fair ends. */
+  presale_closes_at: string | null;
+  booths_open: boolean;
+  status: ReviewState;
+  created_at: string;
+};
+
+export type FairWithCounts = Fair & {
+  organiser: SocietySummary & { category: string };
+  booth_count: number;
+  product_count: number;
+  /** You are an admin of the organiser. */
+  can_manage: boolean;
+};
+
+export type FairBooth = {
+  id: string;
+  fair_id: string;
+  society_id: string;
+  /** "B12", given by the organiser. */
+  label: string | null;
+  status: ReviewState;
+  note: string | null;
+  created_at: string;
+  society: SocietySummary & { category: string };
+};
+
+export type FairDetail = FairWithCounts & { booths: FairBooth[] };
+
+export type FairInput = Pick<
+  Fair,
+  'name' | 'description' | 'venue' | 'cover_url' | 'starts_at' | 'ends_at' | 'presale_closes_at' | 'booths_open'
+> & { id?: string; organiser_society_id: string };
+
+/** A society's booth with its fair, for the society's own screens. */
+export type SocietyBooth = Omit<FairBooth, 'society'> & { fair: Fair };
+
+/** Presale at one booth, for the organiser (totals only). */
+export type BoothSales = {
+  society_id: string;
+  society_name: string;
+  booth: string | null;
+  orders: number;
+  sales_hkd: number;
+  vouchers_sold: number;
+  vouchers_used: number;
+  collected: number;
+};

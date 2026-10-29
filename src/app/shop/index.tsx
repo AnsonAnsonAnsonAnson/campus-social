@@ -37,10 +37,13 @@ export default function ShopScreen() {
   if (q.error && !q.data) return <ErrorView message={q.error} onRetry={q.refresh} />;
   const d = q.data!;
 
+  // Fair presale sells from the fair's own bag, so it gets its own section.
+  const everyday = d.products.filter((p) => !p.fair_id);
   const groups: { title: string; items: ProductWithStock[] }[] = [
-    { title: t('On sale'), items: d.products.filter((p) => saleState(p) === 'open' || saleState(p) === 'draft') },
-    { title: t('Coming soon'), items: d.products.filter((p) => saleState(p) === 'upcoming') },
-    { title: t('Sold out'), items: d.products.filter((p) => saleState(p) === 'sold_out') },
+    { title: t('On sale'), items: everyday.filter((p) => saleState(p) === 'open' || saleState(p) === 'draft') },
+    { title: t('Coming soon'), items: everyday.filter((p) => saleState(p) === 'upcoming') },
+    { title: t('Sold out'), items: everyday.filter((p) => saleState(p) === 'sold_out') },
+    { title: t('Presale at fairs'), items: d.products.filter((p) => p.fair_id && saleState(p) !== 'closed') },
   ].filter((g) => g.items.length);
   const tile = (width - space.lg * 2 - space.md) / 2;
   const next = d.slots[0];

@@ -10,7 +10,7 @@ import { toast } from '@/components/Toast';
 import { Banner, Button, ErrorView, Icon, Loading, Pill, Sheet, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { isExpired, ORDER_QR_PREFIX, orderStatus, slotState } from '@/lib/commerce';
+import { isExpired, ORDER_QR_PREFIX, orderStatus, slotState, vouchersLeft } from '@/lib/commerce';
 import { confirmAsync, showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
 import { payOnline } from '@/lib/payments';
@@ -50,14 +50,15 @@ export default function OrderScreen() {
       return { memberships, orders };
     });
     const order = wallet.orders.find((o) => o.id === id) ?? null;
-    const [settings, slots] =
+    const [settings, slots, fair] =
       order && !wallet.offline
         ? await Promise.all([
             api.getPaymentSettings(order.society_id),
-            order.event_id ? [] : api.listPickupSlots(order.society_id).catch(() => []),
+            order.event_id || order.fair_id ? [] : api.listPickupSlots(order.society_id).catch(() => []),
+            order.fair_id ? api.getFair(order.fair_id).catch(() => null) : null,
           ])
-        : [null, []];
-    return { order, settings, slots, offline: wallet.offline };
+        : [null, [], null];
+    return { order, settings, slots, fair, offline: wallet.offline };
   }, [id, user?.id]);
 
   if (q.loading) return <Loading />;
@@ -73,6 +74,11 @@ export default function OrderScreen() {
   const live = !['cancelled', 'refunded'].includes(o.status) && !expired;
 
   const online = o.payment_method === 'online';
+  // Fair presale: collected (or vouchers used) at the society's booth.
+  const fair = q.data?.fair ?? null;
+  const boothLabel = fair?.booths.find((b) => b.society_id === o.society_id)?.label ?? null;
+  const vouchers = o.vouchers_total ?? 0;
+  const left = vouchersLeft(o);
 
   const pay = async () => {
     setBusy(true);
@@ -203,14 +209,51 @@ export default function OrderScreen() {
 
       {!ticket && (o.status === 'paid' || o.status === 'ready') && (
         <View style={[styles.pickup, { backgroundColor: c.card }]}>
-          <Text style={{ color: c.text, fontSize: 17, fontWeight: '600' }}>
-            {o.status === 'ready' ? t('Ready for pickup') : t('Paid. We will tell you when it is ready.')}
+          <Text style={{ color: c.text, fontSize: 17, fontWeight: '600', textAlign: 'center' }}>
+            {vouchers
+              ? t('{left} of {total} vouchers left', { left, total: vouchers })
+              : fair
+                ? boothLabel
+                  ? t('Collect at booth {booth}', { booth: boothLabel })
+                  : t('Collect at the booth')
+                : o.status === 'ready'
+                  ? t('Ready for pickup')
+                  : t('Paid. We will tell you when it is ready.')}
           </Text>
+          {vouchers > 0 && (
+            <View style={{ flexDirection: 'row', gap: 6 }} accessibilityElementsHidden>
+              {Array.from({ length: Math.min(vouchers, 12) }, (_, n) => (
+                <View
+                  key={n}
+                  style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: n < vouchers - left ? c.fillStrong : c.success }}
+                />
+              ))}
+            </View>
+          )}
           <View style={styles.qr} accessible accessibilityLabel={t('Pickup QR code. Show this to collect your order.')}>
             <QRCode value={ORDER_QR_PREFIX + o.pickup_code} size={180} backgroundColor="#fff" color="#0A0A0B" />
           </View>
-          <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('Show this when you collect')}</Text>
+          <Text style={{ color: c.textSecondary, fontSize: 13, textAlign: 'center' }}>
+            {fair
+              ? t('Show this at {booth}, {fair}. {when}', {
+                  booth: boothLabel ? t('booth {booth}', { booth: boothLabel }) : t('the booth'),
+                  fair: fair.name,
+                  when: formatWhen(fair.starts_at, fair.ends_at),
+                })
+              : t('Show this when you collect')}
+          </Text>
+          {vouchers > 0 && (
+            <Text style={{ color: c.textSecondary, fontSize: 13, textAlign: 'center' }}>
+              {t('Use them all at once or a few at a time. The booth scans this each time.')}
+            </Text>
+          )}
         </View>
+      )}
+      {o.status === 'collected' && vouchers > 0 && (
+        <Banner tone="success" icon="checkmark-circle-outline" text={t('All {n} vouchers used. Enjoy the fair!', { n: vouchers })} />
+      )}
+      {fair && (
+        <Button variant="secondary" icon="storefront-outline" title={t('See the fair')} onPress={() => router.push(`/fair/${fair.id}`)} />
       )}
 
       {online && o.status === 'awaiting_payment' && !expired && (

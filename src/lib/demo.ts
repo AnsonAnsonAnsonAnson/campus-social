@@ -8,7 +8,10 @@ import {
   demoPaymentSettings,
   demoSocieties,
   makeDemoBanners,
+  makeDemoBooths,
   makeDemoCampusDates,
+  makeDemoFairProducts,
+  makeDemoFairs,
   makeDemoEvents,
   makeDemoMemberships,
   makeDemoPickupSlots,
@@ -24,6 +27,9 @@ import type {
   Banner,
   CampusEvent,
   EventWithSociety,
+  Fair,
+  FairBooth,
+  FairWithCounts,
   Membership,
   MembershipPlan,
   MyRegistration,
@@ -128,7 +134,9 @@ const state = {
     },
   ] as PayoutAccount[],
   platformFee: { percent: 5, fixed_hkd: 3 } as PlatformFee,
-  products: makeDemoProducts() as Product[],
+  products: [...makeDemoProducts(), ...makeDemoFairProducts()] as Product[],
+  fairs: makeDemoFairs() as Fair[],
+  booths: makeDemoBooths() as Omit<FairBooth, 'society'>[],
   pickupSlots: makeDemoPickupSlots() as PickupSlot[],
   // Products the demo user asked to hear about when they're back on sale.
   alerts: new Set<string>(),
@@ -437,6 +445,31 @@ function isAdminOf(societyId: string) {
 }
 
 const listeners = new Set<(u: AuthUser | null) => void>();
+
+/** Mirrors _has_booth(). */
+function hasBooth(fairId: string, societyId: string) {
+  return (
+    state.fairs.some((f) => f.id === fairId && f.status === 'approved') &&
+    state.booths.some((b) => b.fair_id === fairId && b.society_id === societyId && b.status === 'approved')
+  );
+}
+
+/** Mirrors _fair_json(): what the fair lists show. */
+function fairCard(f: Fair): FairWithCounts {
+  const booths = state.booths.filter((b) => b.fair_id === f.id && b.status === 'approved');
+  return {
+    ...f,
+    organiser: societyCard(f.organiser_society_id),
+    booth_count: booths.length,
+    product_count: state.products.filter((p) => p.fair_id === f.id && p.status === 'published' && hasBooth(f.id, p.society_id)).length,
+    can_manage: isAdminOf(f.organiser_society_id),
+  };
+}
+
+/** Mirrors the fairs read policy. */
+function canSeeFair(f: Fair) {
+  return f.status === 'approved' || isMember(f.organiser_society_id) || !!state.profile?.is_platform_admin;
+}
 
 function requireUser() {
   if (!state.user) throw new Error('Sign in first');
@@ -1311,6 +1344,19 @@ export const demoBackend: Backend = {
       window = Math.min(window, p.payment_window_hours);
     }
     if (slotId) checkSlot(slotId, societyId);
+    // Mirrors prepare_fair_order(): one fair per order, the booth must be confirmed, presale open.
+    const lineProducts = out.map((i) => state.products.find((x) => x.id === i.product_id)!);
+    const fairIds = [...new Set(lineProducts.map((p) => p.fair_id ?? null))];
+    if (fairIds.length > 1) throw new Error('Check out fair presale items on their own');
+    const fair = fairIds[0] ? state.fairs.find((f) => f.id === fairIds[0]) : null;
+    if (fair) {
+      if (!hasBooth(fair.id, societyId)) throw new Error('This item is not on sale');
+      if ((fair.presale_closes_at ?? fair.ends_at) < now) throw new Error('Presale for this fair has closed');
+    }
+    out.forEach((i, n) => {
+      if (lineProducts[n].kind === 'voucher') i.kind = 'voucher';
+    });
+    const vouchers = out.filter((i) => i.kind === 'voucher').reduce((n, i) => n + i.qty, 0);
     const s = state.societies.find((x) => x.id === societyId)!;
     const prefix = ((s.short_name ?? s.name).replace(/[^A-Za-z]/g, '') || 'CS').slice(0, 3).toUpperCase();
     const order: Order & { buyer_name: string; buyer_email: string } = {
@@ -1339,6 +1385,9 @@ export const demoBackend: Backend = {
       receipt_path: null,
       receipt_at: null,
       pickup_slot_id: slotId,
+      fair_id: fair?.id ?? null,
+      vouchers_total: vouchers,
+      vouchers_used: 0,
       created_at: now,
       buyer_name: state.profile?.display_name || user.email,
       buyer_email: user.email,
@@ -1498,6 +1547,11 @@ export const demoBackend: Backend = {
   async saveProduct(input) {
     await delay(300);
     if (!isMember(input.society_id)) throw new Error('Not allowed');
+    // Mirrors check_product_fair().
+    const before = input.id ? state.products.find((x) => x.id === input.id) : null;
+    if (input.fair_id && input.fair_id !== before?.fair_id && !hasBooth(input.fair_id, input.society_id)) {
+      throw new Error('Your society needs a confirmed booth at this fair first');
+    }
     if (input.id) {
       const p = state.products.find((x) => x.id === input.id)!;
       // Mirrors notify_product_alerts(): published, or more stock on any size.
@@ -1594,7 +1648,7 @@ export const demoBackend: Backend = {
     }
     return n;
   },
-  async collectOrder(societyId, code, cashReceived) {
+  async collectOrder(societyId, code, cashReceived, vouchers) {
     await delay(200);
     if (!isMember(societyId)) throw new Error('Only society committee members can hand out orders');
     const o = state.orders.find(
@@ -1605,6 +1659,8 @@ export const demoBackend: Backend = {
     const mixed = new Set(o.items.map((i) => i.title ?? o.product_title)).size > 1;
     const lines = o.items.map((i) => `${mixed ? `${i.title} ` : ''}${i.variant ? i.variant + ' ' : ''}×${i.qty}`).join(', ');
     const slot = state.pickupSlots.find((s) => s.id === o.pickup_slot_id);
+    const total = o.vouchers_total ?? 0;
+    const used = o.vouchers_used ?? 0;
     const base = {
       name: o.buyer_name,
       ref: o.ref,
@@ -1612,13 +1668,22 @@ export const demoBackend: Backend = {
       slot: slot ? slotLabel(slot) : null,
       total_hkd: o.total_hkd,
       payment_method: o.payment_method,
+      vouchers_total: total,
+      vouchers_left: total - used,
     };
     if (o.event_id) return { ...base, ok: false, message: 'This is an event ticket. Check it in from the event instead.' };
-    if (o.status === 'collected') return { ...base, ok: false, message: 'Already collected', collected_at: o.collected_at ?? undefined };
+    if (o.status === 'collected') {
+      return { ...base, ok: false, message: total ? 'All vouchers used' : 'Already collected', collected_at: o.collected_at ?? undefined };
+    }
     const now = new Date().toISOString();
+    let cashTaken = false;
     if (o.status === 'awaiting_payment' && o.payment_method === 'cash' && cashReceived) {
-      Object.assign(o, { status: 'collected', paid_at: now, collected_at: now });
-      return { ...base, ok: true, message: 'Cash taken and collected' };
+      if (!total) {
+        Object.assign(o, { status: 'collected', paid_at: now, collected_at: now });
+        return { ...base, ok: true, message: 'Cash taken and collected' };
+      }
+      Object.assign(o, { status: 'paid', paid_at: now });
+      cashTaken = true;
     }
     if (o.status !== 'paid' && o.status !== 'ready') {
       const message =
@@ -1629,9 +1694,182 @@ export const demoBackend: Backend = {
             : 'Not paid yet';
       return { ...base, ok: false, message };
     }
+    if (total) {
+      const left = total - used;
+      if (vouchers == null) return { ...base, ok: false, cash_taken: cashTaken, message: 'How many vouchers?' };
+      if (vouchers < 1 || vouchers > left) return { ...base, ok: false, message: 'Not that many vouchers left' };
+      o.vouchers_used = used + vouchers;
+      if (vouchers === left) Object.assign(o, { status: 'collected', collected_at: now });
+      return { ...base, ok: true, message: 'Vouchers used', used_now: vouchers, vouchers_left: left - vouchers };
+    }
     o.status = 'collected';
     o.collected_at = now;
     return { ...base, ok: true, message: 'Collected' };
+  },
+
+  async listFairs() {
+    await delay();
+    const now = Date.now();
+    return state.fairs
+      .filter(canSeeFair)
+      .filter((f) => new Date(f.ends_at).getTime() > now - (isMember(f.organiser_society_id) ? 30 * 86400_000 : 0))
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+      .map(fairCard);
+  },
+  async getFair(id) {
+    await delay();
+    const f = state.fairs.find((x) => x.id === id);
+    if (!f || !canSeeFair(f)) return null;
+    const organiser = isMember(f.organiser_society_id);
+    const booths = state.booths
+      .filter((b) => b.fair_id === id && ((b.status === 'approved' && f.status === 'approved') || organiser || isMember(b.society_id)))
+      .map((b) => ({ ...b, society: societyCard(b.society_id) }))
+      .sort(
+        (a, b) =>
+          Number(a.status !== 'pending') - Number(b.status !== 'pending') ||
+          (a.label ?? '~').localeCompare(b.label ?? '~') ||
+          a.society.name.localeCompare(b.society.name),
+      );
+    return { ...fairCard(f), booths };
+  },
+  async listFairProducts(fairId) {
+    await delay();
+    return state.products
+      .filter((p) => p.fair_id === fairId && p.status === 'published' && hasBooth(fairId, p.society_id))
+      .map((p) => ({
+        ...p,
+        sold: productSold(p.id),
+        alert: state.alerts.has(p.id),
+        booth: state.booths.find((b) => b.fair_id === fairId && b.society_id === p.society_id)?.label ?? null,
+        society: societyCard(p.society_id),
+      }))
+      .sort((a, b) => (a.booth ?? '~').localeCompare(b.booth ?? '~') || a.created_at.localeCompare(b.created_at));
+  },
+  async saveFair(input) {
+    await delay(300);
+    const now = new Date().toISOString();
+    const { id, organiser_society_id, ...fields } = input;
+    if (fields.ends_at <= fields.starts_at) throw new Error('The fair must end after it starts');
+    if (id) {
+      const f = state.fairs.find((x) => x.id === id);
+      if (!f || !isAdminOf(f.organiser_society_id)) throw new Error('Only the organiser can change this fair');
+      Object.assign(f, fields, { status: f.status === 'rejected' ? 'pending' : f.status });
+      return id;
+    }
+    if (!isAdminOf(organiser_society_id)) throw new Error('Only society admins can organise a fair');
+    const newId = uid();
+    state.fairs.push({
+      ...fields,
+      id: newId,
+      organiser_society_id,
+      status: state.profile?.is_platform_admin ? 'approved' : 'pending',
+      created_at: now,
+    });
+    state.booths.push({
+      id: uid(),
+      fair_id: newId,
+      society_id: organiser_society_id,
+      label: null,
+      status: 'approved',
+      note: null,
+      created_at: now,
+    });
+    return newId;
+  },
+  async applyForBooth(fairId, societyId, note) {
+    await delay(300);
+    if (!isAdminOf(societyId)) throw new Error('Only society admins can ask for a booth');
+    const f = state.fairs.find((x) => x.id === fairId && x.status === 'approved');
+    if (!f) throw new Error('Fair not found');
+    if (!f.booths_open || f.ends_at < new Date().toISOString()) throw new Error('This fair is not taking booth requests');
+    const status = isAdminOf(f.organiser_society_id) ? 'approved' : 'pending';
+    const b = state.booths.find((x) => x.fair_id === fairId && x.society_id === societyId);
+    if (b) {
+      b.note = note?.trim() || null;
+      if (b.status === 'rejected') b.status = 'pending';
+      return;
+    }
+    state.booths.push({
+      id: uid(),
+      fair_id: fairId,
+      society_id: societyId,
+      label: null,
+      status,
+      note: note?.trim() || null,
+      created_at: new Date().toISOString(),
+    });
+  },
+  async reviewBooth(boothId, status, label) {
+    await delay(200);
+    const b = state.booths.find((x) => x.id === boothId);
+    const f = b && state.fairs.find((x) => x.id === b.fair_id);
+    if (!b || !f || !isAdminOf(f.organiser_society_id)) throw new Error('Only the organiser can review booths');
+    const was = b.status;
+    Object.assign(b, { status, label: label?.trim() || null });
+    if (status !== was && status !== 'pending' && isMember(b.society_id)) {
+      notify(
+        'fair_update',
+        status === 'approved' ? t('Booth confirmed') : t('Booth request declined'),
+        status === 'approved'
+          ? t('You have a booth at {fair}. Add presale items and food vouchers from your shop.', { fair: f.name })
+          : t('{fair} could not give you a booth this time.', { fair: f.name }),
+        null,
+        b.society_id,
+      );
+    }
+  },
+  async societyBooths(societyId) {
+    await delay();
+    return state.booths
+      .filter((b) => b.society_id === societyId)
+      .map((b) => ({ ...b, fair: state.fairs.find((f) => f.id === b.fair_id)! }))
+      .filter((b) => b.fair && canSeeFair(b.fair))
+      .sort((a, b) => a.fair.starts_at.localeCompare(b.fair.starts_at));
+  },
+  async fairSales(fairId) {
+    await delay();
+    const f = state.fairs.find((x) => x.id === fairId);
+    if (!f || !(isMember(f.organiser_society_id) || state.profile?.is_platform_admin)) {
+      throw new Error('Only the organiser can see fair sales');
+    }
+    return state.booths
+      .filter((b) => b.fair_id === fairId && b.status === 'approved')
+      .map((b) => {
+        const orders = state.orders.filter(
+          (o) => o.fair_id === fairId && o.society_id === b.society_id && ['paid', 'ready', 'collected'].includes(o.status),
+        );
+        return {
+          society_id: b.society_id,
+          society_name: state.societies.find((s) => s.id === b.society_id)?.name ?? '',
+          booth: b.label,
+          orders: orders.length,
+          sales_hkd: orders.reduce((n, o) => n + o.total_hkd, 0),
+          vouchers_sold: orders.reduce((n, o) => n + (o.vouchers_total ?? 0), 0),
+          vouchers_used: orders.reduce((n, o) => n + (o.vouchers_used ?? 0), 0),
+          collected: orders.filter((o) => o.status === 'collected').length,
+        };
+      })
+      .sort((a, b) => b.sales_hkd - a.sales_hkd || a.society_name.localeCompare(b.society_name));
+  },
+  async pendingFairs() {
+    return state.fairs.filter((f) => f.status === 'pending').map(fairCard);
+  },
+  async reviewFair(id, status) {
+    if (!state.profile?.is_platform_admin) throw new Error('Only platform admins can review fairs');
+    const f = state.fairs.find((x) => x.id === id);
+    if (!f) throw new Error('Fair not found');
+    f.status = status;
+    if (isMember(f.organiser_society_id)) {
+      notify(
+        'fair_update',
+        status === 'approved' ? t('Fair approved') : t('Fair not approved'),
+        status === 'approved'
+          ? t('{fair} is listed. Societies can now ask for a booth.', { fair: f.name })
+          : t('{fair} was not approved. Edit it and it will be checked again.', { fair: f.name }),
+        null,
+        f.organiser_society_id,
+      );
+    }
   },
 
   async pendingSocieties() {

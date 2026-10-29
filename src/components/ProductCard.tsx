@@ -40,13 +40,15 @@ export function ProductCard({
           ? { label: t('Sold out'), tone: 'neutral' as const, icon: null }
           : low
             ? { label: t('Almost gone'), tone: 'warning' as const, icon: 'flame-outline' as const }
-            : p.goal_qty
-              ? {
-                  label: t('{n}/{goal} ordered', { n: unitsOrdered(p), goal: p.goal_qty }),
-                  tone: 'brand' as const,
-                  icon: 'people-outline' as const,
-                }
-              : null;
+            : p.kind === 'voucher'
+              ? { label: t('Food voucher'), tone: 'ink' as const, icon: 'fast-food-outline' as const }
+              : p.goal_qty
+                ? {
+                    label: t('{n}/{goal} ordered', { n: unitsOrdered(p), goal: p.goal_qty }),
+                    tone: 'brand' as const,
+                    icon: 'people-outline' as const,
+                  }
+                : null;
   return (
     <Pressable
       onPress={() => router.push({ pathname: '/shop/[id]', params: { id: p.id, societyId: p.society_id } })}

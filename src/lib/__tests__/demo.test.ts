@@ -189,3 +189,48 @@ it('takes online payments only where the society is verified, and only the provi
   await api.refundOnlineOrder(o.id);
   expect((await api.myOrders()).find((x) => x.id === o.id)?.status).toBe('refunded');
 });
+
+it('runs a fair: booths, presale on its own, vouchers used a few at a time, sales for the organiser', async () => {
+  const fairs = await api.listFairs();
+  const christmas = fairs.find((f) => f.name === 'Chung Chi Christmas Fair')!;
+  const own = fairs.find((f) => f.organiser_society_id === CODING_SOCIETY)!;
+  expect(christmas.can_manage).toBe(false);
+  expect(own.can_manage).toBe(true);
+
+  const products = await api.listFairProducts(christmas.id);
+  const tea = products.find((p) => p.title === 'Bubble tea voucher')!;
+  expect(tea).toMatchObject({ booth: 'B12', kind: 'voucher' });
+
+  // Fair items and everyday shop items don't share an order.
+  const shop = (await api.listProducts(CODING_SOCIETY)).find((p) => !p.fair_id && p.status === 'published')!;
+  await expect(
+    api.placeBagOrder(
+      CODING_SOCIETY,
+      [
+        { product_id: tea.id, variant: '', qty: 1 },
+        { product_id: shop.id, variant: shop.variants[0].name, qty: 1 },
+      ],
+      'cash',
+      null,
+    ),
+  ).rejects.toThrow('on their own');
+
+  const o = await api.placeBagOrder(CODING_SOCIETY, [{ product_id: tea.id, variant: '', qty: 3 }], 'cash', null);
+  expect(o).toMatchObject({ fair_id: christmas.id, vouchers_total: 3, vouchers_used: 0 });
+  expect(o.items[0].kind).toBe('voucher');
+
+  expect((await api.collectOrder(CODING_SOCIETY, o.pickup_code)).message).toBe('Take cash');
+  expect(await api.collectOrder(CODING_SOCIETY, o.pickup_code, true)).toMatchObject({ message: 'How many vouchers?', cash_taken: true });
+  expect((await api.collectOrder(CODING_SOCIETY, o.pickup_code, false, 4)).message).toBe('Not that many vouchers left');
+  expect(await api.collectOrder(CODING_SOCIETY, o.pickup_code, false, 1)).toMatchObject({ ok: true, vouchers_left: 2 });
+  expect(await api.collectOrder(CODING_SOCIETY, o.pickup_code, false, 2)).toMatchObject({ ok: true, vouchers_left: 0 });
+  expect((await api.collectOrder(CODING_SOCIETY, o.pickup_code, false, 1)).message).toBe('All vouchers used');
+
+  // Only the organiser sees sales per booth.
+  await expect(api.fairSales(christmas.id)).resolves.toBeDefined(); // the demo user is a platform admin
+  const fair = (await api.getFair(own.id))!;
+  const request = fair.booths.find((b) => b.status === 'pending')!;
+  await api.reviewBooth(request.id, 'approved', 'E3');
+  expect((await api.getFair(own.id))!.booths.find((b) => b.id === request.id)).toMatchObject({ status: 'approved', label: 'E3' });
+  expect((await api.fairSales(own.id)).some((s) => s.booth === 'E3')).toBe(true);
+});

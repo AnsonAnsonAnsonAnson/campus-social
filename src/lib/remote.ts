@@ -6,6 +6,10 @@ import type { AuthUser, Backend } from './backend';
 import { liveTicketOrder, receiptPath } from './commerce';
 import type {
   AppNotification,
+  BoothSales,
+  FairDetail,
+  FairWithCounts,
+  SocietyBooth,
   Attendee,
   Banner,
   BannerWithLinks,
@@ -578,9 +582,14 @@ export const remoteBackend: Backend = {
   async setOrderStatus(ids, status) {
     return check(await db().rpc('set_order_status', { p_ids: ids, p_status: status })) as number;
   },
-  async collectOrder(societyId, code, cashReceived) {
+  async collectOrder(societyId, code, cashReceived, vouchers) {
     return check(
-      await db().rpc('collect_order', { p_society_id: societyId, p_code: code, p_cash_received: !!cashReceived }),
+      await db().rpc('collect_order', {
+        p_society_id: societyId,
+        p_code: code,
+        p_cash_received: !!cashReceived,
+        p_vouchers: vouchers ?? null,
+      }),
     ) as PickupResult;
   },
   async savePickupSlot(input) {
@@ -604,6 +613,54 @@ export const remoteBackend: Backend = {
 
   async pendingSocieties() {
     return check(await db().from('societies').select('*').eq('status', 'pending').order('created_at')) as Society[];
+  },
+  async listFairs() {
+    return check(await db().rpc('list_fairs')) as FairWithCounts[];
+  },
+  async getFair(id) {
+    return (check(await db().rpc('get_fair', { p_id: id })) as FairDetail | null) ?? null;
+  },
+  async listFairProducts(fairId) {
+    return check(await db().rpc('list_fair_products', { p_fair_id: fairId })) as ProductWithStock[];
+  },
+  async saveFair(input) {
+    return check(
+      await db().rpc('save_fair', {
+        p_id: input.id ?? null,
+        p_society_id: input.organiser_society_id,
+        p_name: input.name,
+        p_description: input.description,
+        p_venue: input.venue,
+        p_cover_url: input.cover_url,
+        p_starts_at: input.starts_at,
+        p_ends_at: input.ends_at,
+        p_presale_closes_at: input.presale_closes_at,
+        p_booths_open: input.booths_open,
+      }),
+    ) as string;
+  },
+  async applyForBooth(fairId, societyId, note) {
+    check(await db().rpc('apply_for_booth', { p_fair_id: fairId, p_society_id: societyId, p_note: note ?? null }));
+  },
+  async reviewBooth(boothId, status, label) {
+    check(await db().rpc('review_booth', { p_booth_id: boothId, p_status: status, p_label: label }));
+  },
+  async societyBooths(societyId) {
+    const rows = check(
+      await db().from('fair_booths').select('*, fair:fairs(*)').eq('society_id', societyId).order('created_at', { ascending: false }),
+    ) as SocietyBooth[];
+    // A booth at a fair still waiting for review has no fair you can read yet.
+    return rows.filter((b) => b.fair);
+  },
+  async fairSales(fairId) {
+    return check(await db().rpc('fair_sales', { p_fair_id: fairId })) as BoothSales[];
+  },
+  async pendingFairs() {
+    const fairs = check(await db().rpc('list_fairs')) as FairWithCounts[];
+    return fairs.filter((f) => f.status === 'pending');
+  },
+  async reviewFair(id, status) {
+    check(await db().rpc('review_fair', { p_id: id, p_status: status }));
   },
   async pendingBanners() {
     return check(

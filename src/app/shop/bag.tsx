@@ -8,10 +8,11 @@ import { toast } from '@/components/Toast';
 import { Artwork, Button, EmptyState, ErrorView, Field, Icon, Loading, SegmentedControl, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { clearBag, setBagQty, useBag } from '@/lib/bag';
+import { bagKey, clearBag, setBagQty, useBag } from '@/lib/bag';
 import { checkBag, membershipState, slotState, unitPrice } from '@/lib/commerce';
 import { showAlert } from '@/lib/dialog';
 import { formatHkd } from '@/lib/fps';
+import { formatWhen } from '@/lib/format';
 import { payOnline } from '@/lib/payments';
 import { radius, space, useColors } from '@/lib/theme';
 import type { PaymentMethod } from '@/lib/types';
@@ -24,28 +25,32 @@ import { t } from '@/lib/i18n';
  * again here, so problems show before paying.
  */
 export default function BagScreen() {
-  const { societyId } = useLocalSearchParams<{ societyId: string }>();
+  // `fairId`: the bag for this society's booth at a fair (collected there, so no pickup time).
+  const { societyId, fairId } = useLocalSearchParams<{ societyId: string; fairId?: string }>();
+  const key = bagKey(societyId, fairId);
   const c = useColors();
   const insets = useSafeAreaInsets();
   const { user, requireSignIn } = useAuth();
-  const lines = useBag(societyId);
+  const lines = useBag(key);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [slotId, setSlotId] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   const q = useQuery(async () => {
-    const [society, products, settings, slots, memberships, online] = await Promise.all([
+    const [society, products, settings, slots, memberships, online, fair] = await Promise.all([
       api.getSociety(societyId),
       api.listProducts(societyId),
       api.getPaymentSettings(societyId),
-      api.listPickupSlots(societyId).catch(() => []),
+      fairId ? Promise.resolve([]) : api.listPickupSlots(societyId).catch(() => []),
       api.myMemberships(),
       api.onlinePaymentsReady(societyId).catch(() => false),
+      fairId ? api.getFair(fairId).catch(() => null) : Promise.resolve(null),
     ]);
     const isMember = memberships.some((m) => m.society_id === societyId && membershipState(m, m.plan).key === 'active');
-    return { society, products, settings, slots: slots.filter((s) => slotState(s).key !== 'past'), isMember, online };
-  }, [societyId, user?.id]);
+    const booth = fair?.booths.find((b) => b.society_id === societyId && b.status === 'approved') ?? null;
+    return { society, products, settings, slots: slots.filter((s) => slotState(s).key !== 'past'), isMember, online, fair, booth };
+  }, [societyId, fairId, user?.id]);
 
   if (q.loading && !q.data) return <Loading />;
   if (q.error && !q.data) return <ErrorView message={q.error} onRetry={q.refresh} />;
@@ -62,7 +67,7 @@ export default function BagScreen() {
             <Button
               variant="secondary"
               title={t('Back to the shop')}
-              onPress={() => router.replace({ pathname: '/shop', params: { societyId } })}
+              onPress={() => (fairId ? router.replace(`/fair/${fairId}`) : router.replace({ pathname: '/shop', params: { societyId } }))}
             />
           }
         />
@@ -79,8 +84,9 @@ export default function BagScreen() {
     ...(d.online ? [{ value: 'online' as const, label: t('Card / Alipay') }] : []),
     ...(d.settings?.fps_id ? [{ value: 'fps' as const, label: 'FPS 轉數快' }] : []),
     ...(d.settings?.payme_link ? [{ value: 'payme' as const, label: 'PayMe' }] : []),
-    { value: 'cash', label: t('Cash at pickup') },
   ];
+  // Presale is paid ahead (on the day booths take cash as usual), unless the booth has no other way to be paid.
+  if (!d.fair || !methods.length) methods.push({ value: 'cash', label: d.fair ? t('Cash at the booth') : t('Cash at pickup') });
   const chosenMethod = method ?? methods[0].value;
   const openSlots = d.slots.filter((s) => slotState(s).key === 'open');
   const chosenSlot = slotId && d.slots.some((s) => s.id === slotId) ? slotId : null;
@@ -88,14 +94,14 @@ export default function BagScreen() {
 
   const hint = bag.hasProblems
     ? t('Fix the items marked in red first')
-    : openSlots.length && !chosenSlot
+    : !d.fair && openSlots.length && !chosenSlot
       ? t('Choose a pickup time')
       : undefined;
 
   const removeUnavailable = () => {
     for (const r of bag.rows) {
       if (!r.problem) continue;
-      setBagQty(societyId, r.line.product_id, r.line.variant, Math.min(r.line.qty, r.max));
+      setBagQty(key, r.line.product_id, r.line.variant, Math.min(r.line.qty, r.max));
     }
   };
 
@@ -103,8 +109,8 @@ export default function BagScreen() {
     if (!requireSignIn()) return;
     setBusy(true);
     try {
-      const o = await api.placeBagOrder(societyId, lines, chosenMethod, chosenSlot, note);
-      clearBag(societyId);
+      const o = await api.placeBagOrder(societyId, lines, chosenMethod, d.fair ? null : chosenSlot, note);
+      clearBag(key);
       invalidate();
       router.replace(`/order/${o.id}`);
       if (chosenMethod === 'online' && o.status === 'awaiting_payment') {
@@ -168,7 +174,7 @@ export default function BagScreen() {
                     <Stepper
                       value={r.line.qty}
                       max={r.problem ? r.line.qty : r.max}
-                      onChange={(v) => setBagQty(societyId, r.line.product_id, r.line.variant, v)}
+                      onChange={(v) => setBagQty(key, r.line.product_id, r.line.variant, v)}
                       label={label}
                     />
                     <Text style={{ color: c.text, fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] }}>
@@ -184,23 +190,42 @@ export default function BagScreen() {
           )}
         </View>
 
-        <View style={{ gap: space.sm }}>
-          <Text style={[styles.heading, { color: c.text }]}>{t('Pickup time')}</Text>
-          {d.slots.length ? (
-            <>
-              <SlotPicker slots={d.slots} value={chosenSlot} onChange={setSlotId} />
-              <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19 }}>
-                {t('You can change it later from your order. We’ll remind you an hour before.')}
+        {d.fair ? (
+          <View style={{ gap: space.sm }}>
+            <Text style={[styles.heading, { color: c.text }]}>{t('At the fair')}</Text>
+            <View style={[styles.card, { backgroundColor: c.card, gap: 4 }]}>
+              <Text style={{ color: c.text, fontSize: 15, fontWeight: '600' }}>
+                {d.booth?.label ? t('Booth {booth}, {fair}', { booth: d.booth.label, fair: d.fair.name }) : d.fair.name}
               </Text>
-            </>
-          ) : (
-            <View style={[styles.card, { backgroundColor: c.card }]}>
-              <Text style={{ color: c.text, fontSize: 15, lineHeight: 22 }}>
-                {pickupNotes.length ? pickupNotes.join('\n') : t('The society will tell you when and where to collect.')}
+              <Text style={{ color: c.textSecondary, fontSize: 14, lineHeight: 20 }}>
+                {formatWhen(d.fair.starts_at, d.fair.ends_at)} · {d.fair.venue}
+              </Text>
+              <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 4 }}>
+                {bag.vouchers
+                  ? t('Show your order QR at the booth. Use your vouchers all at once or a few at a time.')
+                  : t('Show your order QR at the booth to collect.')}
               </Text>
             </View>
-          )}
-        </View>
+          </View>
+        ) : (
+          <View style={{ gap: space.sm }}>
+            <Text style={[styles.heading, { color: c.text }]}>{t('Pickup time')}</Text>
+            {d.slots.length ? (
+              <>
+                <SlotPicker slots={d.slots} value={chosenSlot} onChange={setSlotId} />
+                <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19 }}>
+                  {t('You can change it later from your order. We’ll remind you an hour before.')}
+                </Text>
+              </>
+            ) : (
+              <View style={[styles.card, { backgroundColor: c.card }]}>
+                <Text style={{ color: c.text, fontSize: 15, lineHeight: 22 }}>
+                  {pickupNotes.length ? pickupNotes.join('\n') : t('The society will tell you when and where to collect.')}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={{ gap: space.sm }}>
           <Text style={[styles.heading, { color: c.text }]}>{t('How will you pay?')}</Text>

@@ -16,6 +16,8 @@ import type { MemberCardResult, PickupResult } from '@/lib/types';
 import { t } from '@/lib/i18n';
 
 const SAME_CODE_COOLDOWN_MS = 3000;
+// Only read when a code is scanned, never while rendering.
+const clock = () => Date.now();
 
 type Mode = 'event' | 'member' | 'pickup';
 type Result = (MemberCardResult & PickupResult) & { ok: boolean };
@@ -31,6 +33,9 @@ const TONES = {
 const WARNINGS = [
   'Already checked in',
   'Already collected',
+  'All vouchers used',
+  'How many vouchers?',
+  'Not that many vouchers left',
   'Not paid yet',
   'Take cash',
   'This membership has expired',
@@ -68,6 +73,25 @@ export default function Scan() {
         ? api.collectOrder(societyId!, code, cash)
         : api.checkIn(eventId!, code);
 
+  // Food vouchers at a fair booth: use some now, the rest later.
+  const redeemVouchers = async (n: number) => {
+    const code = last.current?.code;
+    if (!code || busy.current) return;
+    busy.current = true;
+    try {
+      const r = await api.collectOrder(societyId!, code, false, n);
+      setResult(r);
+      if (r.ok) setCount((x) => x + 1);
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(r.ok ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error);
+      }
+    } catch (e) {
+      setResult({ ok: false, message: errorMessage(e) });
+    } finally {
+      busy.current = false;
+    }
+  };
+
   // Unpaid cash order at the desk: the committee takes the money and hands it over in one tap.
   const takeCash = async () => {
     const code = last.current?.code;
@@ -87,7 +111,7 @@ export default function Scan() {
   const handle = async (raw: string) => {
     const prefix = PREFIXES[mode].find((p) => raw.startsWith(p));
     const code = prefix ? raw.slice(prefix.length) : raw.trim();
-    const now = Date.now();
+    const now = clock();
     if (busy.current || (last.current?.code === code && now - last.current.at < SAME_CODE_COOLDOWN_MS)) return;
     busy.current = true;
     last.current = { code, at: now };
@@ -192,6 +216,30 @@ export default function Scan() {
             </View>
           </View>
         )}
+        {result?.message === 'How many vouchers?' && !!result.vouchers_left && (
+          <View style={styles.voucherRow}>
+            {[1, 2, 3, 4]
+              .filter((n) => n <= result.vouchers_left!)
+              .map((n) => (
+                <Pressable
+                  key={n}
+                  onPress={() => redeemVouchers(n)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('Use {n}', { n })}
+                  style={({ pressed }) => [styles.voucherButton, { opacity: pressed ? 0.7 : 1 }]}>
+                  <Text style={styles.voucherNumber}>{n}</Text>
+                </Pressable>
+              ))}
+            {result.vouchers_left > 1 && (
+              <Pressable
+                onPress={() => redeemVouchers(result.vouchers_left!)}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.voucherButton, styles.voucherAll, { opacity: pressed ? 0.7 : 1 }]}>
+                <Text style={[styles.voucherNumber, { color: '#000' }]}>{t('All {n}', { n: result.vouchers_left })}</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
         {result?.message === 'Take cash' && result.total_hkd != null && (
           <Button
             variant="ink"
@@ -252,6 +300,9 @@ function resultMeta(mode: Mode, r: Result) {
       r.items,
       r.message === 'Take cash' && r.total_hkd != null ? t('{amount} cash', { amount: formatHkd(r.total_hkd) }) : null,
       r.slot ? t('Booked {slot}', { slot: r.slot }) : null,
+      r.cash_taken && r.total_hkd != null ? t('{amount} cash taken', { amount: formatHkd(r.total_hkd) }) : null,
+      r.used_now ? t('{n} used now', { n: r.used_now }) : null,
+      r.vouchers_total ? t('{left} of {total} vouchers left', { left: r.vouchers_left ?? 0, total: r.vouchers_total }) : null,
       r.collected_at ? t('Collected at {time}', { time: formatTime(r.collected_at) }) : null,
     ]
       .filter(Boolean)
@@ -277,6 +328,17 @@ function Viewfinder({ color }: { color: string }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
+  voucherRow: { flexDirection: 'row', gap: space.sm },
+  voucherButton: {
+    flex: 1,
+    height: 56,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  voucherAll: { flex: 1.6, backgroundColor: '#fff' },
+  voucherNumber: { color: '#fff', fontSize: 20, fontWeight: '700' },
   permission: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.lg, padding: space.xl },
   permissionText: { color: '#fff', fontSize: 17, textAlign: 'center' },
   top: {

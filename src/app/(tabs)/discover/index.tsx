@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { FlatList, RefreshControl, ScrollView, View } from 'react-native';
+import { FlatList, RefreshControl, ScrollView, useWindowDimensions, View } from 'react-native';
 
 import { BannerCarousel } from '@/components/BannerCarousel';
 import { EventCardLarge, EventRow, NextEventCard } from '@/components/EventCard';
+import { FairCard } from '@/components/FairCard';
 import { NotificationBell } from '@/components/NotificationBell';
 import { ProductRow } from '@/components/ProductCard';
 import { FeedSkeleton } from '@/components/Skeleton';
@@ -22,20 +23,22 @@ export default function Discover() {
   const c = useColors();
   const { followIds, hiddenIds, user } = useAuth();
   const [category, setCategory] = useState<string | null>(null);
+  const { width } = useWindowDimensions();
 
   const feed = useQuery(async () => {
     const now = Date.now();
     const nowIso = new Date(now).toISOString();
-    const [banners, events, products, tickets] = await Promise.all([
+    const [banners, events, products, tickets, fairs] = await Promise.all([
       api.listBanners(),
       api.listEvents({ from: nowIso, to: new Date(now + 60 * DAY).toISOString(), limit: 150 }),
       api.listProducts(null).catch(() => []),
       user ? api.myTickets().catch(() => []) : Promise.resolve([]),
+      api.listFairs().catch(() => []),
     ]);
     const next = tickets
       .filter((tk) => tk.status === 'confirmed' && tk.event.status !== 'cancelled' && tk.event.ends_at >= nowIso)
       .sort((a, b) => a.event.starts_at.localeCompare(b.event.starts_at))[0];
-    return { banners, events, products, next };
+    return { banners, events, products, next, fairs: fairs.filter((f) => f.status === 'approved' && f.ends_at > nowIso) };
   }, [user?.id]);
 
   const sections = useMemo(() => {
@@ -52,7 +55,9 @@ export default function Discover() {
       more: picks.length > PICKS,
       following: events.filter((e) => followIds.has(e.society_id)).slice(0, 10),
       banners: visible(feed.data?.banners ?? []),
-      products: visible(feed.data?.products ?? []),
+      // Fair presale shows under the fair, not mixed into society merch.
+      products: visible(feed.data?.products ?? []).filter((p) => !p.fair_id),
+      fairs: feed.data?.fairs ?? [],
     };
   }, [feed.data, followIds, hiddenIds, category]);
 
@@ -92,6 +97,22 @@ export default function Discover() {
             <View style={{ marginTop: space.lg }}>
               <BannerCarousel banners={sections.banners} />
             </View>
+          )}
+
+          {!category && sections.fairs.length > 0 && (
+            <>
+              <SectionHeader title={t('Fairs')} action={t('See all')} onAction={() => router.push('/fairs')} />
+              <FlatList
+                horizontal
+                data={sections.fairs}
+                keyExtractor={(f) => f.id}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.md }}
+                renderItem={({ item }) => (
+                  <FairCard fair={item} width={sections.fairs.length > 1 ? Math.min(width * 0.8, 360) : width - space.lg * 2} />
+                )}
+              />
+            </>
           )}
 
           <SectionHeader title={t('Picked for you')} action={t('See all')} onAction={seeAll} />

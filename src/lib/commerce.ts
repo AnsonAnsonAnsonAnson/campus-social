@@ -1,9 +1,10 @@
 // Shared rules for member cards and shop orders: what state a membership or an
 // order is in, what is left in stock, and the spreadsheet formats committees
 // import and export. Kept here (not in screens) so they can be unit tested.
-import { todayHK } from './format';
+import { formatDay, todayHK } from './format';
 import { t } from './i18n';
 import type {
+  Fair,
   ImportRow,
   Membership,
   MembershipPlan,
@@ -189,6 +190,19 @@ export function saleState(
   return isSoldOut(p) ? 'sold_out' : 'open';
 }
 
+/** Where a fair is (before, on, over) and whether buyers can still pre-pay. Mirrors prepare_fair_order(). */
+export function fairState(f: Pick<Fair, 'starts_at' | 'ends_at' | 'presale_closes_at'>, now = new Date().toISOString()) {
+  const presaleOpen = now < (f.presale_closes_at ?? f.ends_at);
+  if (now >= f.ends_at) return { key: 'over' as const, label: t('Over'), tone: 'neutral' as Tone, presaleOpen };
+  if (now >= f.starts_at) return { key: 'on' as const, label: t('On now'), tone: 'success' as Tone, presaleOpen };
+  return { key: 'upcoming' as const, label: t('Starts {when}', { when: formatDay(f.starts_at) }), tone: 'brand' as Tone, presaleOpen };
+}
+
+/** Food vouchers on an order not used yet. */
+export function vouchersLeft(o: Pick<Order, 'vouchers_total' | 'vouchers_used'>) {
+  return (o.vouchers_total ?? 0) - (o.vouchers_used ?? 0);
+}
+
 export type BagRow = {
   line: BagLine;
   product: ProductWithStock | null;
@@ -239,6 +253,8 @@ export function checkBag(lines: BagLine[], products: ProductWithStock[], member:
     rows,
     total: ok.reduce((n, r) => n + r.unit * r.line.qty, 0),
     count: ok.reduce((n, r) => n + r.line.qty, 0),
+    /** Food vouchers in the bag (fair presale). */
+    vouchers: ok.filter((r) => r.product!.kind === 'voucher').reduce((n, r) => n + r.line.qty, 0),
     hasProblems: rows.some((r) => r.problem),
     /** The shortest payment window of anything in the bag. */
     windowHours: ok.length ? Math.min(...ok.map((r) => r.product!.payment_window_hours)) : 48,

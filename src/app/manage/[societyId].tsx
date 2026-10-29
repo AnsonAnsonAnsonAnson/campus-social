@@ -27,11 +27,13 @@ import { pickAndUploadImage } from '@/lib/pickImage';
 import { coverFor, radius, space, textStyle, useColors, useIsDark } from '@/lib/theme';
 import type {
   EventWithSociety,
+  FairWithCounts,
   Membership,
   MembershipPlan,
   PaymentSettings,
   ProductWithStock,
   ReviewStatus,
+  SocietyBooth,
   SocietyOrder,
 } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
@@ -50,7 +52,7 @@ export default function ManageSociety() {
 
   const q = useQuery(async () => {
     const monthAgo = new Date(Date.now() - 30 * 86400_000).toISOString();
-    const [society, events, banners, mine, plans, memberships, products, orders, payment] = await Promise.all([
+    const [society, events, banners, mine, plans, memberships, products, orders, payment, booths, fairs] = await Promise.all([
       api.getSociety(societyId),
       api.listEvents({ societyIds: [societyId], from: monthAgo, includeDrafts: true }),
       api.societyBanners(societyId),
@@ -60,9 +62,23 @@ export default function ManageSociety() {
       api.listProducts(societyId),
       api.listOrders(societyId),
       api.getPaymentSettings(societyId),
+      api.societyBooths(societyId).catch(() => []),
+      api.listFairs().catch(() => []),
     ]);
     const role = mine.find((m) => m.id === societyId)?.role ?? 'editor';
-    return { society, events, banners, role, plans, memberships, products, orders, payment };
+    return {
+      society,
+      events,
+      banners,
+      role,
+      plans,
+      memberships,
+      products,
+      orders,
+      payment,
+      booths,
+      organising: fairs.filter((f) => f.organiser_society_id === societyId),
+    };
   }, [societyId]);
 
   if (q.loading) return <Loading />;
@@ -155,6 +171,8 @@ type Data = {
   products: ProductWithStock[];
   orders: SocietyOrder[];
   payment: PaymentSettings | null;
+  booths: SocietyBooth[];
+  organising: FairWithCounts[];
 };
 
 function EventsSection({
@@ -431,9 +449,15 @@ function ShopSection({ societyId, data, isAdmin }: { societyId: string; data: Da
           {data.products.map((p) => (
             <ListRow
               key={p.id}
-              icon="pricetag-outline"
+              icon={p.kind === 'voucher' ? 'fast-food-outline' : p.fair_id ? 'storefront-outline' : 'pricetag-outline'}
               title={p.title}
-              subtitle={`${formatHkd(p.price_hkd)} · ${p.status === 'draft' ? t('Draft') : p.status === 'closed' ? t('Closed') : t('On sale')}`}
+              subtitle={[
+                formatHkd(p.price_hkd),
+                p.status === 'draft' ? t('Draft') : p.status === 'closed' ? t('Closed') : t('On sale'),
+                p.fair_id ? data.booths.find((b) => b.fair_id === p.fair_id)?.fair.name : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
               onPress={() => router.push({ pathname: '/manage/product-form', params: { societyId, productId: p.id } })}
             />
           ))}
@@ -442,6 +466,60 @@ function ShopSection({ societyId, data, isAdmin }: { societyId: string; data: Da
             title={t('Add a product')}
             onPress={() => router.push({ pathname: '/manage/product-form', params: { societyId } })}
           />
+        </ListGroup>
+        <ListGroup title={t('Fairs')}>
+          {data.organising.map((f) => (
+            <ListRow
+              key={f.id}
+              icon="flag-outline"
+              title={f.name}
+              subtitle={`${t('You organise')} · ${formatWhen(f.starts_at, f.ends_at)}`}
+              value={f.status === 'pending' ? t('Pending review') : t('{n} booths', { n: f.booth_count })}
+              onPress={() => router.push({ pathname: '/manage/fair', params: { fairId: f.id } })}
+            />
+          ))}
+          {data.booths
+            .filter((b) => !data.organising.some((f) => f.id === b.fair_id) && b.fair.ends_at > new Date().toISOString())
+            .map((b) => (
+              <ListRow
+                key={b.id}
+                icon="storefront-outline"
+                title={b.fair.name}
+                subtitle={formatWhen(b.fair.starts_at, b.fair.ends_at)}
+                value={
+                  b.status === 'approved'
+                    ? b.label
+                      ? t('Booth {booth}', { booth: b.label })
+                      : t('Confirmed')
+                    : b.status === 'pending'
+                      ? t('Requested')
+                      : t('Declined')
+                }
+                onPress={() => router.push(`/fair/${b.fair_id}`)}
+              />
+            ))}
+          {data.booths.some((b) => b.status === 'approved' && b.fair.ends_at > new Date().toISOString()) && (
+            <ListRow
+              icon="add-circle-outline"
+              title={t('Add presale or a food voucher')}
+              subtitle={t('Buyers pay before the fair and skip the queue')}
+              onPress={() =>
+                router.push({
+                  pathname: '/manage/product-form',
+                  params: { societyId, fairId: data.booths.find((b) => b.status === 'approved')!.fair_id },
+                })
+              }
+            />
+          )}
+          <ListRow icon="search-outline" title={t('Find a fair to join')} onPress={() => router.push('/fairs')} />
+          {isAdmin && (
+            <ListRow
+              icon="flag-outline"
+              title={t('Organise a fair')}
+              subtitle={t('Many societies’ booths in one place, with presale for each')}
+              onPress={() => router.push({ pathname: '/manage/fair-form', params: { societyId } })}
+            />
+          )}
         </ListGroup>
         <ListGroup title={t('Payments and pickup')}>
           {isAdmin && (
@@ -468,7 +546,7 @@ function ShopSection({ societyId, data, isAdmin }: { societyId: string; data: Da
           />
           <ListRow
             icon="scan-outline"
-            title={t('Pickup scanner')}
+            title={t('Pickup and voucher scanner')}
             onPress={() => router.push({ pathname: '/manage/scan', params: { mode: 'pickup', societyId, title: t('Pickup') } })}
           />
         </ListGroup>

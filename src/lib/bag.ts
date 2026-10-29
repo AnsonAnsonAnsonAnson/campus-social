@@ -40,8 +40,22 @@ function subscribe(l: () => void) {
 
 const EMPTY: BagLine[] = [];
 
-export function useBag(societyId: string | undefined): BagLine[] {
-  return useSyncExternalStore(subscribe, () => (societyId ? (bags[societyId] ?? EMPTY) : EMPTY));
+/**
+ * Fair presale items check out apart from a society's everyday shop (they are
+ * collected at the booth), so they get their own bag.
+ */
+export function bagKey(societyId: string, fairId?: string | null) {
+  return fairId ? `${societyId}@${fairId}` : societyId;
+}
+
+/** Every bag, by key, e.g. to list a fair's bags. */
+export function useAllBags(): Readonly<Bags> {
+  return useSyncExternalStore(subscribe, () => bags);
+}
+
+/** `key` is a society id, or bagKey(society, fair) for a fair booth. */
+export function useBag(key: string | undefined): BagLine[] {
+  return useSyncExternalStore(subscribe, () => (key ? (bags[key] ?? EMPTY) : EMPTY));
 }
 
 export function bagCount(lines: BagLine[]) {
@@ -49,22 +63,22 @@ export function bagCount(lines: BagLine[]) {
 }
 
 /** Adds units, merging with a line for the same product and size. */
-export function addToBag(societyId: string, line: BagLine) {
-  const cur = bags[societyId] ?? [];
+export function addToBag(key: string, line: BagLine) {
+  const cur = bags[key] ?? [];
   const i = cur.findIndex((l) => l.product_id === line.product_id && l.variant === line.variant);
   if (i < 0 && cur.length >= MAX_LINES) return;
   const next = i >= 0 ? cur.map((l, j) => (j === i ? { ...l, qty: l.qty + line.qty } : l)) : [...cur, line];
-  commit({ ...bags, [societyId]: next });
+  commit({ ...bags, [key]: next });
 }
 
 /** Sets a line's quantity; 0 removes it. */
-export function setBagQty(societyId: string, productId: string, variant: string, qty: number) {
-  const cur = bags[societyId] ?? [];
+export function setBagQty(key: string, productId: string, variant: string, qty: number) {
+  const cur = bags[key] ?? [];
   const next = cur.map((l) => (l.product_id === productId && l.variant === variant ? { ...l, qty } : l)).filter((l) => l.qty > 0);
-  commit({ ...bags, [societyId]: next });
+  commit({ ...bags, [key]: next });
 }
 
-export function clearBag(societyId: string) {
-  const { [societyId]: _gone, ...rest } = bags;
+export function clearBag(key: string) {
+  const { [key]: _gone, ...rest } = bags;
   commit(rest);
 }

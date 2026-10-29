@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 
 import {
+  fairState,
+  vouchersLeft,
   amountsIn,
   checkBag,
   parseSizeChart,
@@ -320,5 +322,20 @@ describe('size guide', () => {
       ],
     });
     expect(parseSizeChart('Size, Chest')).toBeNull();
+  });
+});
+
+describe('fairs', () => {
+  const fair = { starts_at: '2026-12-20T03:00:00Z', ends_at: '2026-12-21T10:00:00Z', presale_closes_at: '2026-12-19T15:59:00Z' };
+  it('knows before, during and after, and when presale closes', () => {
+    expect(fairState(fair, '2026-12-01T00:00:00Z')).toMatchObject({ key: 'upcoming', presaleOpen: true });
+    expect(fairState(fair, '2026-12-19T16:00:00Z')).toMatchObject({ key: 'upcoming', presaleOpen: false });
+    expect(fairState(fair, '2026-12-20T05:00:00Z')).toMatchObject({ key: 'on', presaleOpen: false });
+    expect(fairState({ ...fair, presale_closes_at: null }, '2026-12-20T05:00:00Z')).toMatchObject({ key: 'on', presaleOpen: true });
+    expect(fairState(fair, '2026-12-22T00:00:00Z').key).toBe('over');
+  });
+  it('counts vouchers left', () => {
+    expect(vouchersLeft({ vouchers_total: 3, vouchers_used: 1 })).toBe(2);
+    expect(vouchersLeft({})).toBe(0);
   });
 });

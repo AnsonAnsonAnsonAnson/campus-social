@@ -6,13 +6,14 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Swit
 import { DateTimeField } from '@/components/DateTimeField';
 import { SizeChart } from '@/components/ShopParts';
 import { toast } from '@/components/Toast';
-import { Banner, Button, ErrorView, Field, Icon, Loading, SegmentedControl } from '@/components/ui';
+import { Banner, Button, Chip, ErrorView, Field, Icon, Loading, SegmentedControl } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { orderHasProduct, parseSizeChart } from '@/lib/commerce';
 import { confirmAsync, showAlert } from '@/lib/dialog';
+import { formatWhen } from '@/lib/format';
 import { pickAndUploadImage } from '@/lib/pickImage';
 import { radius, space, useColors } from '@/lib/theme';
-import type { ProductStatus } from '@/lib/types';
+import type { ProductKind, ProductStatus } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
 import { t } from '@/lib/i18n';
 
@@ -24,17 +25,23 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const money = (s: string) => (s.trim() ? Number(s) : NaN);
 
 export default function ProductForm() {
-  const { societyId, productId } = useLocalSearchParams<{ societyId: string; productId?: string }>();
+  // `fairId` starts a new product as presale at that fair.
+  const { societyId, productId, fairId: fairParam } = useLocalSearchParams<{ societyId: string; productId?: string; fairId?: string }>();
   const c = useColors();
 
   const q = useQuery(async () => {
-    const [products, orders, payment] = await Promise.all([
+    const [products, orders, payment, booths] = await Promise.all([
       api.listProducts(societyId),
       productId ? api.listOrders(societyId) : Promise.resolve([]),
       api.getPaymentSettings(societyId),
+      api.societyBooths(societyId).catch(() => []),
     ]);
+    const product = products.find((p) => p.id === productId) ?? null;
+    const now = new Date().toISOString();
     return {
-      product: products.find((p) => p.id === productId) ?? null,
+      product,
+      // Fairs this society can sell at: a confirmed booth at a fair not over yet (or the one it already sells at).
+      booths: booths.filter((b) => (b.status === 'approved' && b.fair.ends_at > now) || b.fair_id === product?.fair_id),
       orders: productId ? orders.filter((o) => orderHasProduct(o, productId)).length : 0,
       hasPayment: !!payment?.fps_id || !!payment?.payme_link,
     };
@@ -60,6 +67,9 @@ export default function ProductForm() {
   const [windowHours, setWindowHours] = useState('48');
   const [pickupNote, setPickupNote] = useState('');
   const [status, setStatus] = useState<ProductStatus>('draft');
+  const [fairId, setFairId] = useState<string | null>(fairParam ?? null);
+  const [kind, setKind] = useState<ProductKind>('merch');
+  const [voucherValue, setVoucherValue] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -92,6 +102,9 @@ export default function ProductForm() {
     setWindowHours(String(p.payment_window_hours));
     setPickupNote(p.pickup_note ?? '');
     setStatus(p.status);
+    setFairId(p.fair_id ?? null);
+    setKind(p.kind ?? 'merch');
+    setVoucherValue(p.voucher_value_hkd != null ? String(p.voucher_value_hkd) : '');
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [q.data?.product]);
 
@@ -135,7 +148,13 @@ export default function ProductForm() {
   const buyerError = buyerN != null && !(buyerN >= 1 && buyerN <= 50) ? t('Between 1 and 50') : null;
   const windowError = opensAt && closesAt && closesAt <= opensAt ? t('Orders must close after they open') : null;
   const chartError = sizeChart.trim() && !parseSizeChart(sizeChart) ? t('Add a header line and at least one size') : null;
+  const booth = q.data?.booths.find((b) => b.fair_id === fairId) ?? null;
+  const voucher = !!booth && kind === 'voucher';
+  const valueN = money(voucherValue);
+  const valueError =
+    voucher && voucherValue.trim() && !(valueN >= priceN && valueN <= 10000) ? t('At least the price, e.g. 30 for a HK$25 voucher') : null;
   const valid =
+    !valueError &&
     title.trim().length >= 2 &&
     Number.isFinite(priceN) &&
     !priceError &&
@@ -186,6 +205,9 @@ export default function ProductForm() {
         max_per_order: Math.floor(maxN),
         payment_window_hours: Math.floor(hoursN),
         status,
+        fair_id: booth ? booth.fair_id : null,
+        kind: voucher ? 'voucher' : 'merch',
+        voucher_value_hkd: voucher && voucherValue.trim() ? valueN : null,
       });
       invalidate();
       router.back();
@@ -289,6 +311,57 @@ export default function ProductForm() {
             />
           </View>
         </View>
+
+        {q.data!.booths.length > 0 && (
+          <View style={[styles.fairBox, { backgroundColor: c.card }]}>
+            <Text style={[styles.groupTitle, { color: c.text }]}>{t('Where it sells')}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              <Chip label={t('Our shop')} icon="bag-handle-outline" selected={!booth} onPress={() => setFairId(null)} />
+              {q.data!.booths.map((b) => (
+                <Chip
+                  key={b.id}
+                  icon="storefront-outline"
+                  label={b.label ? `${b.fair.name} · ${b.label}` : b.fair.name}
+                  selected={fairId === b.fair_id}
+                  onPress={() => setFairId(b.fair_id)}
+                />
+              ))}
+            </View>
+            {booth && (
+              <>
+                <SegmentedControl
+                  grey
+                  value={kind}
+                  onChange={setKind}
+                  options={[
+                    { value: 'merch', label: t('Merch to collect') },
+                    { value: 'voucher', label: t('Food voucher') },
+                  ]}
+                />
+                {voucher && (
+                  <Field
+                    label={t('Worth at the booth (HK$)')}
+                    value={voucherValue}
+                    onChangeText={setVoucherValue}
+                    keyboardType="decimal-pad"
+                    placeholder={t('Optional, e.g. 30')}
+                    error={valueError}
+                    hint={t('A small presale discount sells more vouchers: “HK$30 of food for HK$25”.')}
+                  />
+                )}
+                <Text style={{ color: c.textSecondary, fontSize: 13, lineHeight: 19 }}>
+                  {voucher
+                    ? t(
+                        'Buyers pay now and show a QR at your booth. You scan it and choose how many vouchers they use, so they can use some today and the rest later.',
+                      )
+                    : t(
+                        'Buyers pay now and collect at your booth during the fair. Fair items check out on their own, apart from your shop.',
+                      )}
+                </Text>
+              </>
+            )}
+          </View>
+        )}
 
         <View style={{ gap: space.sm }}>
           <View style={styles.toggle}>
@@ -477,12 +550,24 @@ export default function ProductForm() {
           maxLength={300}
           placeholder={t('e.g. Bring your student card')}
         />
-        <Button
-          variant="secondary"
-          icon="calendar-outline"
-          title={t('Pickup times')}
-          onPress={() => router.push({ pathname: '/manage/pickup-times', params: { societyId } })}
-        />
+        {booth ? (
+          <Banner
+            tone="info"
+            icon="storefront-outline"
+            text={t('Collected at your booth{label} at {fair}, {when}.', {
+              label: booth.label ? ` ${booth.label}` : '',
+              fair: booth.fair.name,
+              when: formatWhen(booth.fair.starts_at, booth.fair.ends_at),
+            })}
+          />
+        ) : (
+          <Button
+            variant="secondary"
+            icon="calendar-outline"
+            title={t('Pickup times')}
+            onPress={() => router.push({ pathname: '/manage/pickup-times', params: { societyId } })}
+          />
+        )}
 
         <View style={{ gap: space.sm }}>
           <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600' }}>{t('Status')}</Text>
@@ -533,6 +618,7 @@ const styles = StyleSheet.create({
   photoTools: { position: 'absolute', right: 6, bottom: 6, flexDirection: 'row', gap: 6 },
   photoTool: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   groupTitle: { fontSize: 17, fontWeight: '600' },
+  fairBox: { borderRadius: radius.lg, padding: space.lg, gap: space.md },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   variants: { borderRadius: radius.lg, overflow: 'hidden' },
   variantRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg, minHeight: 48 },
