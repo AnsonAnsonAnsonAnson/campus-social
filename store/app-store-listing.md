@@ -125,8 +125,8 @@ Tracking: **No**. Every type below is **linked to the user** and **not used for 
 | Contact info › Email address | App functionality |
 | Contact info › Name | App functionality |
 | Contact info › Phone number (only when joining a society) | App functionality |
-| User content › Photos (profile, society uploads, optional payment screenshots) | App functionality |
-| User content › Other user content (sign-up answers, reports) | App functionality |
+| User content › Photos (profile, society uploads and posts, optional payment screenshots) | App functionality |
+| User content › Other user content (sign-up answers, interests picked at sign-up, society posts and likes, reports) | App functionality |
 | Identifiers › User ID | App functionality |
 | Purchases › Purchase history (orders and tickets with societies) | App functionality |
 | Other data › Student ID (only when joining a society) | App functionality |

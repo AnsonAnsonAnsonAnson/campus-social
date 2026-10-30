@@ -105,7 +105,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Choose a photo for your profile, society logo, event cover or banner, or a screenshot of your payment for the society treasurer.",
+          "photosPermission": "Choose photos for your profile, a society logo, event cover, banner, post or product, or a screenshot of your payment for the society treasurer.",
           "cameraPermission": false,
           "microphonePermission": false
         }

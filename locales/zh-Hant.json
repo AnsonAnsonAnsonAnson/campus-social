@@ -2,7 +2,7 @@
   "ios": {
     "CFBundleDisplayName": "Campus Social",
     "NSCameraUsageDescription": "當你協助管理學會時，Campus Social 會用相機掃描門票、會員證及取貨二維碼，唔會錄影或者儲存任何畫面。",
-    "NSPhotoLibraryUsageDescription": "選擇個人頭像、學會標誌、活動封面或橫幅相片，或者付款截圖畀學會司庫核對。",
+    "NSPhotoLibraryUsageDescription": "選擇個人頭像、學會標誌、活動封面、橫幅、帖文或貨品相片，或者付款截圖畀學會司庫核對。",
     "NSCalendarsUsageDescription": "Campus Social 會將你報名嘅活動加入日曆，唔會讀取你其他嘅行程。",
     "NSCalendarsWriteOnlyAccessUsageDescription": "Campus Social 會將你報名嘅活動加入日曆，唔會讀取你其他嘅行程。"
   },
