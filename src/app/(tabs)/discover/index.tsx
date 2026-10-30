@@ -3,15 +3,16 @@ import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, ScrollView, useWindowDimensions, View } from 'react-native';
 
 import { BannerCarousel } from '@/components/BannerCarousel';
-import { EventCardLarge, EventRow, NextEventCard } from '@/components/EventCard';
+import { EventCardLarge, EventRow, NextEventCard, TopEventCard } from '@/components/EventCard';
 import { FairCard } from '@/components/FairCard';
 import { NotificationBell } from '@/components/NotificationBell';
 import { ProductRow } from '@/components/ProductCard';
 import { FeedSkeleton } from '@/components/Skeleton';
-import { Button, Chip, ChipRow, EmptyState, ErrorView, PageHeader, SearchField, SectionHeader } from '@/components/ui';
+import { Button, Chip, ChipRow, EmptyState, ErrorView, PageHeader, SearchField, SectionHeader, SegmentedControl } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { EVENT_CATEGORIES } from '@/lib/constants';
+import { topEvents, type TopRange } from '@/lib/ranking';
 import { space, useColors } from '@/lib/theme';
 import { useQuery } from '@/lib/useQuery';
 import { t } from '@/lib/i18n';
@@ -24,6 +25,7 @@ export default function Discover() {
   const { followIds, hiddenIds, user } = useAuth();
   const [category, setCategory] = useState<string | null>(null);
   const { width } = useWindowDimensions();
+  const [range, setRange] = useState<TopRange | null>(null);
 
   const feed = useQuery(async () => {
     const now = Date.now();
@@ -55,11 +57,16 @@ export default function Discover() {
       more: picks.length > PICKS,
       following: events.filter((e) => followIds.has(e.society_id)).slice(0, 10),
       banners: visible(feed.data?.banners ?? []),
+      top: { week: topEvents(inCategory, 'week'), month: topEvents(inCategory, 'month') },
       // Fair presale shows under the fair, not mixed into society merch.
       products: visible(feed.data?.products ?? []).filter((p) => !p.fair_id),
       fairs: feed.data?.fairs ?? [],
     };
   }, [feed.data, followIds, hiddenIds, category]);
+
+  // Week by default; a quiet week opens on the month instead.
+  const topRange: TopRange = range ?? (sections.top.week.length ? 'week' : 'month');
+  const top = sections.top[topRange];
 
   const seeAll = () => router.push({ pathname: '/search', params: category ? { category } : {} });
 
@@ -112,6 +119,33 @@ export default function Discover() {
                   <FairCard fair={item} width={sections.fairs.length > 1 ? Math.min(width * 0.8, 360) : width - space.lg * 2} />
                 )}
               />
+            </>
+          )}
+
+          {sections.top.month.length > 0 && (
+            <>
+              <SectionHeader title={t('Most anticipated')} />
+              <SegmentedControl
+                style={{ marginHorizontal: space.lg, marginBottom: space.md }}
+                options={[
+                  { value: 'week', label: t('This week') },
+                  { value: 'month', label: t('This month') },
+                ]}
+                value={topRange}
+                onChange={setRange}
+              />
+              {top.length ? (
+                <FlatList
+                  horizontal
+                  data={top}
+                  keyExtractor={(e) => e.id}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.md }}
+                  renderItem={({ item, index }) => <TopEventCard event={item} rank={index + 1} />}
+                />
+              ) : (
+                <EmptyState icon="flame-outline" title={t('Nothing big this week yet')} body={t('See what’s coming up this month.')} />
+              )}
             </>
           )}
 

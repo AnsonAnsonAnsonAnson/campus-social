@@ -126,6 +126,8 @@ type EventSeed = Omit<
   | 'waitlist_enabled'
   | 'confirmed_count'
   | 'waitlist_count'
+  | 'save_count'
+  | 'featured_at'
   | 'signup_question'
   | 'members_only'
   | 'price_hkd'
@@ -145,6 +147,8 @@ function event(n: number, e: EventSeed): CampusEvent {
     waitlist_enabled: true,
     confirmed_count: 0,
     waitlist_count: 0,
+    save_count: 0,
+    featured_at: null,
     signup_question: null,
     members_only: false,
     price_hkd: null,
@@ -173,6 +177,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       price_text: 'Free',
       confirmed_count: 30,
       waitlist_count: 4,
+      save_count: 41,
     }),
     event(2, {
       society_id: sid(2),
@@ -187,6 +192,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       price_text: 'Free',
       signup_question: 'What would you like to build? (Helps us form teams)',
       confirmed_count: 61,
+      save_count: 35,
     }),
     event(3, {
       society_id: sid(3),
@@ -199,6 +205,8 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       registration_required: false,
       capacity: null,
       price_text: 'Free',
+      save_count: 120,
+      featured_at: at(-2, 10),
     }),
     event(4, {
       society_id: sid(4),
@@ -212,6 +220,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 25,
       price_text: 'Free',
       confirmed_count: 12,
+      save_count: 6,
     }),
     event(5, {
       society_id: sid(5),
@@ -225,6 +234,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 40,
       price_text: 'Free',
       confirmed_count: 18,
+      save_count: 9,
     }),
     event(6, {
       society_id: sid(6),
@@ -238,6 +248,8 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 300,
       price_text: 'Free (ticket required)',
       confirmed_count: 212,
+      save_count: 96,
+      featured_at: at(-5, 10),
     }),
     event(7, {
       society_id: sid(7),
@@ -252,6 +264,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       waitlist_enabled: false,
       price_text: 'Free',
       confirmed_count: 15,
+      save_count: 4,
     }),
     event(8, {
       society_id: sid(8),
@@ -265,6 +278,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 120,
       price_text: 'HK$20 at the door',
       confirmed_count: 87,
+      save_count: 52,
     }),
     event(9, {
       society_id: sid(2),
@@ -279,6 +293,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       price_text: 'Free',
       confirmed_count: 22,
       registration_opens_at: at(1, 12),
+      save_count: 14,
     }),
     event(10, {
       society_id: sid(1),
@@ -294,6 +309,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       price_text: 'Coach to Pak Tam Chung and back',
       price_hkd: 60,
       confirmed_count: 9,
+      save_count: 11,
     }),
     event(11, {
       society_id: sid(8),
@@ -307,6 +323,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 30,
       price_text: 'Bring your own Octopus',
       confirmed_count: 3,
+      save_count: 18,
     }),
     event(12, {
       society_id: sid(3),
@@ -320,6 +337,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 150,
       price_text: 'Free',
       confirmed_count: 44,
+      save_count: 23,
     }),
     event(13, {
       society_id: sid(4),
@@ -333,6 +351,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 8,
       price_text: 'HK$50 materials',
       confirmed_count: 8,
+      save_count: 5,
     }),
     event(14, {
       society_id: sid(2),
@@ -350,6 +369,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       payment_window_hours: 72,
       signup_question: 'Any dietary needs?',
       confirmed_count: 41,
+      save_count: 17,
     }),
   ];
 }

@@ -677,6 +677,9 @@ export const remoteBackend: Backend = {
   async reviewBanner(id, status, priority) {
     check(await db().rpc('review_banner', { p_id: id, p_status: status, p_priority: priority }));
   },
+  async setEventFeatured(id, featured) {
+    check(await db().rpc('set_event_featured', { p_event_id: id, p_featured: featured }));
+  },
   async openReports() {
     return check(await db().rpc('list_open_reports')) as OpenReport[];
   },

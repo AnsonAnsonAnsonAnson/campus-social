@@ -46,7 +46,7 @@ export default function EventScreen() {
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
   const dark = useIsDark();
-  const { user, requireSignIn } = useAuth();
+  const { user, profile, requireSignIn } = useAuth();
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState('');
@@ -189,21 +189,38 @@ export default function EventScreen() {
       message: `${event.title} · ${formatWhen(event.starts_at, event.ends_at)} @ ${event.location}\n${Linking.createURL(`/event/${event.id}`)}`,
     });
 
+  const toggleFeatured = async () => {
+    try {
+      await api.setEventFeatured(event.id, !event.featured_at);
+      invalidate();
+      toast(event.featured_at ? t('No longer a major event') : t('Marked as a major event'), { icon: 'star-outline' });
+    } catch (e) {
+      toast(errorMessage(e), { tone: 'error' });
+    }
+  };
+
   const more = () => {
-    const options = [t('Add to calendar'), t('Share'), t('Report event'), t('Cancel')];
-    const run = (i: number) => {
-      if (i === 0) addToCalendar();
-      if (i === 1) share();
-      if (i === 2 && requireSignIn()) router.push({ pathname: '/report', params: { type: 'event', id: event.id, name: event.title } });
-    };
+    // Platform admins can mark major events so they lead "Most anticipated".
+    const admin = !!profile?.is_platform_admin && event.status === 'published';
+    const items = [
+      { text: t('Add to calendar'), run: addToCalendar },
+      { text: t('Share'), run: share },
+      ...(admin ? [{ text: event.featured_at ? t('Stop featuring') : t('Feature as major event'), run: toggleFeatured }] : []),
+      {
+        text: t('Report event'),
+        run: () => requireSignIn() && router.push({ pathname: '/report', params: { type: 'event', id: event.id, name: event.title } }),
+      },
+    ];
+    const options = [...items.map((i) => i.text), t('Cancel')];
     if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 3, destructiveButtonIndex: 2 }, run);
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: items.length, destructiveButtonIndex: items.length - 1 },
+        (i) => items[i]?.run(),
+      );
     } else {
       showAlert(event.title, undefined, [
-        { text: options[0], onPress: () => run(0) },
-        { text: options[1], onPress: () => run(1) },
-        { text: options[2], onPress: () => run(2) },
-        { text: t('Cancel'), style: 'cancel' },
+        ...items.map((i) => ({ text: i.text, onPress: () => void i.run() })),
+        { text: t('Cancel'), style: 'cancel' as const },
       ]);
     }
   };
@@ -342,6 +359,7 @@ export default function EventScreen() {
 
         <View style={{ padding: space.lg, gap: 14 }}>
           <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+            {!!event.featured_at && <Pill label={t('Major event')} tone="brand" icon="star" />}
             {event.members_only && <Pill label={t('Members only')} tone="ink" icon="card-outline" />}
             {event.status === 'draft' && <Pill label={t('Draft')} tone="warning" />}
             {event.status === 'cancelled' && <Pill label={t('Cancelled')} tone="danger" />}

@@ -4,7 +4,7 @@ import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { availability, formatDay, formatTime, formatWhen } from '@/lib/format';
+import { availability, compactNumber, formatDay, formatTime, formatWhen } from '@/lib/format';
 import { palette, radius, space, useColors, useIsDark } from '@/lib/theme';
 import type { EventWithSociety, Ticket } from '@/lib/types';
 import { t } from '@/lib/i18n';
@@ -54,6 +54,57 @@ export function EventCardLarge({ event, width = 280 }: { event: EventWithSociety
         <View style={{ marginTop: 4, flexDirection: 'row' }}>
           <AvailabilityPill event={event} />
         </View>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * "Most anticipated" (this week / month) on Discover: a large card with its rank on the
+ * cover, a star for major events, and how many are going and saved it.
+ */
+export function TopEventCard({ event, rank, width = 260 }: { event: EventWithSociety; rank: number; width?: number }) {
+  const c = useColors();
+  const going = event.confirmed_count + event.waitlist_count;
+  const stats = [
+    event.registration_required && going > 0 ? t('{n} going', { n: compactNumber(going) }) : null,
+    event.save_count > 0 ? t('{n} saved', { n: compactNumber(event.save_count) }) : null,
+  ].filter(Boolean);
+  return (
+    <Pressable
+      onPress={() => router.push(`/event/${event.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={`${t('No. {n}', { n: rank })}, ${event.title}`}
+      style={({ pressed }) => [styles.large, { width, opacity: pressed ? 0.85 : 1 }]}>
+      <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={styles.largeArt}>
+        <View style={styles.rank} pointerEvents="none">
+          <Text style={styles.rankText}>{rank}</Text>
+        </View>
+        {!!event.featured_at && (
+          <View style={styles.featured} pointerEvents="none">
+            <Icon name="star" size={12} color={palette.neutral[850]} />
+            <Text style={styles.featuredText}>{t('Major event')}</Text>
+          </View>
+        )}
+      </Artwork>
+      <View style={{ paddingTop: space.sm, gap: 3 }}>
+        <Text style={{ color: c.accentText, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+          {formatWhen(event.starts_at)}
+        </Text>
+        <Text style={[styles.title, { color: c.text }]} numberOfLines={2}>
+          {event.title}
+        </Text>
+        <Text style={{ color: c.textSecondary, fontSize: 13 }} numberOfLines={1}>
+          {event.society.short_name ?? event.society.name}
+        </Text>
+        {stats.length > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <Icon name="flame" size={14} color={c.warningText} />
+            <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+              {stats.join(' · ')}
+            </Text>
+          </View>
+        )}
       </View>
     </Pressable>
   );
@@ -196,6 +247,32 @@ export function NextEventCard({ ticket }: { ticket: Ticket }) {
 const styles = StyleSheet.create({
   large: { borderRadius: radius.lg },
   largeArt: { height: 140, borderRadius: 16 },
+  rank: {
+    position: 'absolute',
+    left: 10,
+    bottom: 10,
+    minWidth: 36,
+    height: 36,
+    paddingHorizontal: 8,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  rankText: { color: '#FFFFFF', fontSize: 20, lineHeight: 24, fontWeight: '800' },
+  featured: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 24,
+    paddingHorizontal: 9,
+    borderRadius: radius.pill,
+    backgroundColor: '#FFFFFF',
+  },
+  featuredText: { color: palette.neutral[850], fontSize: 12, fontWeight: '700' },
   title: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
   row: { marginHorizontal: space.lg },
   rowLink: { flexDirection: 'row', gap: 14 },

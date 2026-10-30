@@ -744,12 +744,16 @@ export const demoBackend: Backend = {
   },
   async setEventSaved(eventId, saved) {
     requireUser();
-    state.saved = state.saved.filter((id) => id !== eventId);
-    if (saved) {
-      const e = state.events.find((x) => x.id === eventId);
+    const e = state.events.find((x) => x.id === eventId);
+    const was = state.saved.includes(eventId);
+    if (saved && !was) {
       // Mirrors the "save a visible event" policy.
       if (!e || !visibleEvent(e) || e.status === 'draft' || e.removed_at) throw new Error('Event not found');
       state.saved.unshift(eventId);
+      e.save_count++; // count_event_saves()
+    } else if (!saved && was) {
+      state.saved = state.saved.filter((id) => id !== eventId);
+      if (e) e.save_count = Math.max(0, e.save_count - 1);
     }
   },
   async myFollowIds() {
@@ -948,7 +952,7 @@ export const demoBackend: Backend = {
       return e.id;
     }
     const id = uid();
-    state.events.push({ ...input, id, confirmed_count: 0, waitlist_count: 0, removed_at: null });
+    state.events.push({ ...input, id, confirmed_count: 0, waitlist_count: 0, save_count: 0, featured_at: null, removed_at: null });
     return id;
   },
   async deleteEvent(id) {
@@ -1897,6 +1901,13 @@ export const demoBackend: Backend = {
       state.banners.find((b) => b.id === id)!,
       { status, priority },
     );
+  },
+  async setEventFeatured(id, featured) {
+    await delay();
+    if (!state.profile?.is_platform_admin) throw new Error('Admins only');
+    const e = state.events.find((x) => x.id === id);
+    if (!e) throw new Error('Event not found');
+    e.featured_at = featured ? (e.featured_at ?? new Date().toISOString()) : null;
   },
   async openReports() {
     await delay();
