@@ -74,7 +74,7 @@ export function TopEventCard({ event, rank, width = 260 }: { event: EventWithSoc
     <Pressable
       onPress={() => router.push(`/event/${event.id}`)}
       accessibilityRole="button"
-      accessibilityLabel={`${t('No. {n}', { n: rank })}, ${event.title}`}
+      accessibilityLabel={`${t('Rank {n}', { n: rank })}, ${event.title}`}
       style={({ pressed }) => [styles.large, { width, opacity: pressed ? 0.85 : 1 }]}>
       <Artwork seed={event.id} uri={event.cover_url} category={event.category} style={styles.largeArt}>
         <View style={styles.rank} pointerEvents="none">
