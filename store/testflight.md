@@ -48,10 +48,7 @@ cash work without it. Set them up later from the README.
 App Store Connect needs a working privacy policy URL before external testers
 can install.
 
-- [ ] Tell Claude which support email to show (or edit `docs/index.html`,
-      `docs/privacy.html`, `docs/terms.html` and replace
-      `REPLACE_WITH_SUPPORT_EMAIL`).
-- [ ] Merge the release PR into `main`.
+- [x] Merge the release PR into `main`.
 - [ ] Repo **Settings → Pages → Deploy from a branch → `main` / `docs`**.
 - [ ] Open https://ansonansonansonanson.github.io/campus-social/privacy.html
       and check it loads.
