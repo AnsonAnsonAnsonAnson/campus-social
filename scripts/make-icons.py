@@ -23,8 +23,16 @@ def rgb(hex_):
 # Background gradient, ticket colour, sparkle (brand), dot (accent); dark icon uses `main` for the ticket.
 BRANDS = {
     "lime": dict(top="#C8F35C", bottom="#97C526", main="#B8F02E", ticket="#0A0A0B", dot="#E0186F", dot_dark="#EA3887"),
-    "pink": dict(top="#EA3887", bottom="#B8145B", main="#E0186F", ticket="#FFFFFF", dot="#FFD84D", dot_dark="#FFE174"),
-    "blue": dict(top="#405DFF", bottom="#233ED1", main="#2B4BFF", ticket="#FFFFFF", dot="#E0186F", dot_dark="#EA3887"),
+    "tomato": dict(top="#CE5332", bottom="#A33012", main="#C73B16", ticket="#FFFFFF", dot="#2443B5", dot_dark="#455FC0"),
+    "ultramarine": dict(top="#3D57CF", bottom="#1D34A4", main="#2340C8", ticket="#FFFFFF", dot="#F06A28", dot_dark="#F28048"),
+    "cherry": dict(top="#C14238", bottom="#972118", main="#B8281D", ticket="#FFFFFF", dot="#F2C24E", dot_dark="#F4CB69"),
+    "periwinkle": dict(top="#5372CD", bottom="#304EA2", main="#3B5FC6", ticket="#FFFFFF", dot="#E2522A", dot_dark="#E66C4A"),
+    "teal": dict(top="#2F6570", bottom="#10424B", main="#13505C", ticket="#FFFFFF", dot="#C8562A", dot_dark="#D06F4A"),
+    "butter": dict(top="#F4CF61", bottom="#C6A53E", main="#F2C94C", ticket="#14110F", dot="#2443B5", dot_dark="#455FC0"),
+    "pool": dict(top="#3A80C8", bottom="#195B9D", main="#1F6FC0", ticket="#FFFFFF", dot="#F3D046", dot_dark="#F5D762"),
+    "oxblood": dict(top="#8C3830", bottom="#661810", main="#7C1D14", ticket="#FFFFFF", dot="#D9A46A", dot_dark="#DFB280"),
+    "strawberry": dict(top="#DE678A", bottom="#B24364", main="#D9527A", ticket="#14110F", dot="#5B8FD9", dot_dark="#74A0DF"),
+    "cobaltcherry": dict(top="#4456B9", bottom="#223490", main="#2A3FAF", ticket="#FFFFFF", dot="#B12A1F", dot_dark="#BD4A41"),
     "cobalt": dict(top="#3D63FF", bottom="#1A3CC4", main="#2450F0", ticket="#FFFFFF", dot="#FF6F0F", dot_dark="#FF8A3D"),
 }
 B = BRANDS[os.environ.get("BRAND", "lime")]
