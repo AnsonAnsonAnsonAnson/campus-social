@@ -68,7 +68,7 @@
       "package": "com.ansonchow.campussocial",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#2450F0",
+        "backgroundColor": "#B8F02E",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -91,7 +91,7 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 160,
-          "backgroundColor": "#FFFFFF"
+          "backgroundColor": "#B8F02E"
         }
       ],
       [
@@ -123,7 +123,7 @@
       [
         "expo-notifications",
         {
-          "color": "#2450F0"
+          "color": "#B8F02E"
         }
       ]
     ],

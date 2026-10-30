@@ -76,7 +76,7 @@ export default function Discover() {
       style={{ backgroundColor: c.backgroundPlain }}
       contentContainerStyle={{ paddingBottom: 40 }}
       refreshControl={<RefreshControl refreshing={feed.refreshing} onRefresh={feed.refresh} />}>
-      <PageHeader title={t('Discover')}>
+      <PageHeader title={t('Discover')} brand>
         <NotificationBell />
       </PageHeader>
       <SearchField placeholder={t('Events, societies, places')} onPress={() => router.push('/search')} />

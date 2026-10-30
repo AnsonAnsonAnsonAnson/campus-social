@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BrandMark } from '@/components/BrandMark';
 import { Button, Field, Icon } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { isCuhkEmail } from '@/lib/backend';
@@ -103,6 +104,11 @@ export default function SignIn() {
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         <View style={{ gap: 22 }}>
           <View style={{ gap: space.sm }}>
+            {step === 'email' && (
+              <View style={{ marginBottom: space.sm }}>
+                <BrandMark size={56} />
+              </View>
+            )}
             <Text style={[textStyle('title1', lang), { color: c.text, letterSpacing: -0.3 }]} accessibilityRole="header">
               {step === 'code' ? t('Enter the code') : t('Sign in with your CUHK email')}
             </Text>
