@@ -83,7 +83,7 @@ export default function Welcome() {
         )}
         <View style={{ flexDirection: 'row', gap: 4 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {[1, 2].map((n) => (
-            <View key={n} style={[styles.stepBar, { backgroundColor: n <= step ? c.tint : c.border }]} />
+            <View key={n} style={[styles.stepBar, { backgroundColor: n <= step ? c.brand : c.border }]} />
           ))}
         </View>
         <Text style={{ flex: 1, fontSize: 13, color: c.textSecondary }}>{t('Step {n} of {total}', { n: step, total: 2 })}</Text>
@@ -104,8 +104,8 @@ export default function Welcome() {
         {step === 1 ? (
           <>
             <View style={{ gap: 10 }}>
-              <View style={[styles.appIcon, { backgroundColor: c.tint }]}>
-                <Icon name="ticket-outline" size={28} color="#FFFFFF" />
+              <View style={[styles.appIcon, { backgroundColor: c.brand }]}>
+                <Icon name="ticket-outline" size={28} color={c.onBrand} />
               </View>
               <Text style={[textStyle('title1', lang), { color: c.text, marginTop: 4, letterSpacing: -0.3 }]} accessibilityRole="header">
                 {t('Welcome to Campus Social')}

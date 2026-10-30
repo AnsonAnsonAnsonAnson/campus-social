@@ -1,34 +1,503 @@
-
 /**
- * Design system v2 (see docs/design-handoff.md). Neutral surfaces, one cobalt for the single
- * primary action per screen, tangerine for dates, vivid flat colours for event covers.
+ * Design system v2 (see docs/design-handoff.md). Neutral surfaces, one brand colour for the
+ * primary action, the current tab, selected filters and links, a warm accent for dates, and
+ * vivid flat colours for event covers.
+ *
+ * The brand is picked in one place, `BRAND` below. Every screen reads it through `useColors()`
+ * (`tint`, `tintSoft`, `tintText`, `accent`...) or `palette.brand` / `palette.accent`, so a new
+ * brand needs no screen changes. The icon, splash and notification colour come from
+ * scripts/make-icons.py and app.json and must be regenerated to match.
  */
-export const palette = {
+const BRANDS = {
+  /** Brat lime with ink and pop pink: lime fills, ink text and icons on top, pink dates. */
+  lime: {
+    brand: {
+      50: '#F9FEEE',
+      100: '#F4FDDE',
+      200: '#E6FAB6',
+      300: '#D8F78C',
+      400: '#C8F35C',
+      500: '#BFF243',
+      600: '#B8F02E',
+      700: '#97C526',
+      800: '#769A1D',
+      900: '#4A6012',
+      950: '#2E3C0C',
+    },
+    accent: {
+      50: '#FDEDF3',
+      100: '#FADAE8',
+      200: '#F4AECD',
+      300: '#EE80B0',
+      400: '#E74B8F',
+      500: '#E32F7D',
+      600: '#E0186F',
+      700: '#B8145B',
+      800: '#8F0F47',
+      900: '#5A0A2C',
+    },
+    roles: {
+      fill: '#B8F02E',
+      onFill: '#0A0A0B',
+      tint: '#0A0A0B',
+      tintPressed: '#2C2C2E',
+      soft: '#D8F78C',
+      text: '#4A6012',
+      accentText: '#BE1C64',
+    },
+  },
+  /** Lamine tomato + cobalt (from Lamine sofa & rug). */
+  tomato: {
+    brand: {
+      50: '#FBEFEC',
+      100: '#F6E0DA',
+      200: '#EBBAAD',
+      300: '#E0937F',
+      400: '#D36649',
+      500: '#CD4F2D',
+      600: '#C73B16',
+      700: '#A33012',
+      800: '#7F260E',
+      900: '#501809',
+      950: '#320F06',
+    },
+    accent: {
+      50: '#EDF0F9',
+      100: '#DCE1F3',
+      200: '#B2BDE5',
+      300: '#8798D6',
+      400: '#546CC5',
+      500: '#3A56BC',
+      600: '#2443B5',
+      700: '#1E3794',
+      800: '#172B74',
+      900: '#0E1B48',
+      950: '#09112D',
+    },
+    roles: {
+      fill: '#C73B16',
+      onFill: '#FFFFFF',
+      tint: '#C73B16',
+      text: '#C73B16',
+      soft: '#EDCBBC',
+      accentText: '#2443B5',
+      covers: ['#C73B16', '#2443B5', '#2A1A12'],
+    },
+  },
+  /** Ultramarine + tangerine (from Lamine rug & armchair). */
+  ultramarine: {
+    brand: {
+      50: '#EDF0FB',
+      100: '#DCE0F6',
+      200: '#B2BCEC',
+      300: '#8696E1',
+      400: '#536AD4',
+      500: '#3953CE',
+      600: '#2340C8',
+      700: '#1D34A4',
+      800: '#162980',
+      900: '#0E1A50',
+      950: '#091032',
+    },
+    accent: {
+      50: '#FEF3EE',
+      100: '#FDE7DD',
+      200: '#FACBB4',
+      300: '#F7AD89',
+      400: '#F38B57',
+      500: '#F2793E',
+      600: '#F06A28',
+      700: '#C55721',
+      800: '#9A441A',
+      900: '#602A10',
+      950: '#3C1A0A',
+    },
+    roles: {
+      fill: '#2340C8',
+      onFill: '#FFFFFF',
+      tint: '#2340C8',
+      text: '#2340C8',
+      soft: '#CACBE0',
+      accentText: '#A84A1C',
+      covers: ['#2340C8', '#F06A28', '#14183A'],
+    },
+  },
+  /** Rocket cherry + butter (from Rocket 'Meet wet food'). */
+  cherry: {
+    brand: {
+      50: '#F9EEED',
+      100: '#F4DDDB',
+      200: '#E6B4B0',
+      300: '#D88983',
+      400: '#C8574F',
+      500: '#BF3E34',
+      600: '#B8281D',
+      700: '#972118',
+      800: '#761A13',
+      900: '#4A100C',
+      950: '#2E0A07',
+    },
+    accent: {
+      50: '#FEFAF1',
+      100: '#FDF5E3',
+      200: '#FAEAC1',
+      300: '#F8DD9E',
+      400: '#F5CF75',
+      500: '#F3C860',
+      600: '#F2C24E',
+      700: '#C69F40',
+      800: '#9B7C32',
+      900: '#614E1F',
+      950: '#3C3014',
+    },
+    roles: {
+      fill: '#B8281D',
+      onFill: '#FFFFFF',
+      tint: '#B8281D',
+      text: '#B8281D',
+      soft: '#EAC7BB',
+      accentText: '#796127',
+      covers: ['#B8281D', '#3A120D'],
+    },
+  },
+  /** Periwinkle + tomato (from Taily Tales / Rocket blue). */
+  periwinkle: {
+    brand: {
+      50: '#EFF2FA',
+      100: '#E0E5F6',
+      200: '#BAC7EB',
+      300: '#93A7E0',
+      400: '#6682D3',
+      500: '#4F6FCC',
+      600: '#3B5FC6',
+      700: '#304EA2',
+      800: '#263D7F',
+      900: '#18264F',
+      950: '#0F1832',
+    },
+    accent: {
+      50: '#FDF1EE',
+      100: '#FAE3DD',
+      200: '#F5C2B4',
+      300: '#EFA08A',
+      400: '#E87859',
+      500: '#E5633F',
+      600: '#E2522A',
+      700: '#B94322',
+      800: '#91341B',
+      900: '#5A2111',
+      950: '#38140A',
+    },
+    roles: {
+      fill: '#3B5FC6',
+      onFill: '#FFFFFF',
+      tint: '#3B5FC6',
+      text: '#3B5FC6',
+      soft: '#CAD5EF',
+      accentText: '#C04624',
+      covers: ['#3B5FC6', '#E2522A', '#1C2440'],
+    },
+  },
+  /** Deep teal + rust (from Rocket husky sofa). */
+  teal: {
+    brand: {
+      50: '#ECF1F2',
+      100: '#D9E3E5',
+      200: '#ACC2C6',
+      300: '#7D9FA5',
+      400: '#477680',
+      500: '#2B626C',
+      600: '#13505C',
+      700: '#10424B',
+      800: '#0C333B',
+      900: '#082025',
+      950: '#051417',
+    },
+    accent: {
+      50: '#FBF1EE',
+      100: '#F6E4DD',
+      200: '#ECC4B4',
+      300: '#E1A28A',
+      400: '#D47B59',
+      500: '#CE673F',
+      600: '#C8562A',
+      700: '#A44722',
+      800: '#80371B',
+      900: '#502211',
+      950: '#32160A',
+    },
+    roles: {
+      fill: '#13505C',
+      onFill: '#FFFFFF',
+      tint: '#13505C',
+      text: '#13505C',
+      soft: '#C6CCC6',
+      accentText: '#AA4924',
+      covers: ['#13505C', '#C8562A', '#0B2328'],
+    },
+  },
+  /** Butter + cobalt (from Rocket poolside). */
+  butter: {
+    brand: {
+      50: '#FEFBF1',
+      100: '#FDF6E2',
+      200: '#FAECC0',
+      300: '#F8E19D',
+      400: '#F5D573',
+      500: '#F3CE5E',
+      600: '#F2C94C',
+      700: '#C6A53E',
+      800: '#9B8131',
+      900: '#61501E',
+      950: '#3C3213',
+    },
+    accent: {
+      50: '#EDF0F9',
+      100: '#DCE1F3',
+      200: '#B2BDE5',
+      300: '#8798D6',
+      400: '#546CC5',
+      500: '#3A56BC',
+      600: '#2443B5',
+      700: '#1E3794',
+      800: '#172B74',
+      900: '#0E1B48',
+      950: '#09112D',
+    },
+    roles: {
+      fill: '#F2C94C',
+      onFill: '#14110F',
+      tint: '#2B2414',
+      text: '#856F2A',
+      soft: '#F9EDCA',
+      accentText: '#2443B5',
+      tintPressed: '#4B4537',
+      covers: ['#2443B5', '#2B2414'],
+    },
+  },
+  /** Pool blue + lemon (from Rocket poolside / YOA). */
+  pool: {
+    brand: {
+      50: '#EDF3FA',
+      100: '#DBE8F5',
+      200: '#B1CDE9',
+      300: '#84B0DC',
+      400: '#508FCE',
+      500: '#357DC6',
+      600: '#1F6FC0',
+      700: '#195B9D',
+      800: '#14477B',
+      900: '#0C2C4D',
+      950: '#081C30',
+    },
+    accent: {
+      50: '#FEFBF0',
+      100: '#FDF7E1',
+      200: '#FBEFBE',
+      300: '#F8E599',
+      400: '#F6DA6F',
+      500: '#F4D558',
+      600: '#F3D046',
+      700: '#C7AB39',
+      800: '#9C852D',
+      900: '#61531C',
+      950: '#3D3412',
+    },
+    roles: {
+      fill: '#1F6FC0',
+      onFill: '#FFFFFF',
+      tint: '#1F6FC0',
+      text: '#1F6FC0',
+      soft: '#C8DBEE',
+      accentText: '#7A6823',
+      covers: ['#1F6FC0', '#0F2A45'],
+    },
+  },
+  /** Oxblood + oat (from Rocket red, Lamine cream). */
+  oxblood: {
+    brand: {
+      50: '#F5EDEC',
+      100: '#EADBD9',
+      200: '#D1B0AD',
+      300: '#B7837E',
+      400: '#994F48',
+      500: '#89342C',
+      600: '#7C1D14',
+      700: '#661810',
+      800: '#4F130D',
+      900: '#320C08',
+      950: '#1F0705',
+    },
+    accent: {
+      50: '#FCF8F3',
+      100: '#F9F0E7',
+      200: '#F2DFCB',
+      300: '#EACDAD',
+      400: '#E1B88B',
+      500: '#DDAD79',
+      600: '#D9A46A',
+      700: '#B28657',
+      800: '#8B6944',
+      900: '#57422A',
+      950: '#36291A',
+    },
+    roles: {
+      fill: '#7C1D14',
+      onFill: '#FFFFFF',
+      tint: '#7C1D14',
+      text: '#7C1D14',
+      soft: '#DDC3B7',
+      accentText: '#826240',
+      covers: ['#7C1D14', '#2A0E0A'],
+    },
+  },
+  /** Strawberry milk + sky (from YOA milk). */
+  strawberry: {
+    brand: {
+      50: '#FCF1F4',
+      100: '#F9E3EA',
+      200: '#F2C2D0',
+      300: '#EAA0B6',
+      400: '#E17897',
+      500: '#DD6387',
+      600: '#D9527A',
+      700: '#B24364',
+      800: '#8B344E',
+      900: '#572131',
+      950: '#36141E',
+    },
+    accent: {
+      50: '#F2F6FC',
+      100: '#E5EDF9',
+      200: '#C6D8F2',
+      300: '#A5C1EA',
+      400: '#7FA8E1',
+      500: '#6B9ADD',
+      600: '#5B8FD9',
+      700: '#4B75B2',
+      800: '#3A5C8B',
+      900: '#243957',
+      950: '#172436',
+    },
+    roles: {
+      fill: '#D9527A',
+      onFill: '#14110F',
+      tint: '#3A1622',
+      text: '#B84668',
+      soft: '#F4D1DB',
+      accentText: '#446BA3',
+      tintPressed: '#583943',
+      covers: ['#D9527A', '#5B8FD9', '#3A1622'],
+    },
+  },
+  /** Cobalt + cherry (from Lamine + Rocket). */
+  cobaltcherry: {
+    brand: {
+      50: '#EEF0F9',
+      100: '#DDE0F2',
+      200: '#B4BCE3',
+      300: '#8A95D3',
+      400: '#5969C1',
+      500: '#3F52B7',
+      600: '#2A3FAF',
+      700: '#223490',
+      800: '#1B2870',
+      900: '#111946',
+      950: '#0A102C',
+    },
+    accent: {
+      50: '#F9EEED',
+      100: '#F3DDDB',
+      200: '#E4B4B1',
+      300: '#D48A84',
+      400: '#C25950',
+      500: '#B93F35',
+      600: '#B12A1F',
+      700: '#912219',
+      800: '#711B14',
+      900: '#47110C',
+      950: '#2C0A08',
+    },
+    roles: {
+      fill: '#2A3FAF',
+      onFill: '#FFFFFF',
+      tint: '#2A3FAF',
+      text: '#2A3FAF',
+      soft: '#CCCDDE',
+      accentText: '#B12A1F',
+      covers: ['#2A3FAF', '#B12A1F', '#141A3A'],
+    },
+  },
+  /** Electric cobalt with tangerine: the v2 design colours. */
   cobalt: {
-    50: '#EEF2FF',
-    100: '#E6ECFF',
-    200: '#B9C8FF',
-    300: '#8FA6FF',
-    400: '#6283FF',
-    500: '#3D63FF',
-    600: '#2450F0',
-    700: '#1A3CC4',
-    800: '#152F96',
-    900: '#0E1A4D',
-    950: '#0A1033',
+    brand: {
+      50: '#EEF2FF',
+      100: '#E6ECFF',
+      200: '#B9C8FF',
+      300: '#8FA6FF',
+      400: '#6283FF',
+      500: '#3D63FF',
+      600: '#2450F0',
+      700: '#1A3CC4',
+      800: '#152F96',
+      900: '#0E1A4D',
+      950: '#0A1033',
+    },
+    accent: {
+      50: '#FFF4EC',
+      100: '#FFE4D1',
+      200: '#FFC8A3',
+      300: '#FFA66B',
+      400: '#FF8A3D',
+      500: '#FF6F0F',
+      600: '#E05A00',
+      700: '#B34700',
+      800: '#853500',
+      900: '#3A1A04',
+    },
+    roles: {},
   },
-  tangerine: {
-    50: '#FFF4EC',
-    100: '#FFE4D1',
-    200: '#FFC8A3',
-    300: '#FFA66B',
-    400: '#FF8A3D',
-    500: '#FF6F0F',
-    600: '#E05A00',
-    700: '#B34700',
-    800: '#853500',
-    900: '#3A1A04',
-  },
+} as const;
+
+export type BrandName = keyof typeof BRANDS;
+export const BRAND: BrandName =
+  (process.env.EXPO_PUBLIC_BRAND as BrandName) in BRANDS ? (process.env.EXPO_PUBLIC_BRAND as BrandName) : 'cobalt';
+const { brand, accent } = BRANDS[BRAND];
+/**
+ * Most brands are dark enough to carry white text and to draw icons and links on white, so one
+ * colour does both. A light brand (lime) splits them: `fill` paints buttons, chips and the
+ * current tab, with `onFill` on top, and `tint` (icons, borders, links) is a dark colour.
+ */
+const roles: {
+  fill?: string;
+  onFill?: string;
+  tint?: string;
+  tintPressed?: string;
+  soft?: string;
+  text?: string;
+  accentText?: string;
+  /** Flat cover and logo colours, drawn from the palette, instead of the per-category colours. */
+  covers?: readonly string[];
+  /** Warm paper instead of white for feed screens, with matching grouped, fill, border and tab bar. */
+  paper?: string;
+  grouped?: string;
+  surfaceFill?: string;
+  surfaceBorder?: string;
+  tabBar?: string;
+} = BRANDS[BRAND].roles;
+
+/** "#6A2BE0", 0.24 -> "rgba(106,43,224,0.24)" */
+function alpha(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+export const palette = {
+  brand,
+  accent,
+  /** Deprecated names from v2, now the brand and accent scales. */
+  cobalt: brand,
+  tangerine: accent,
   neutral: {
     0: '#FFFFFF',
     50: '#F5F5F7',
@@ -50,29 +519,35 @@ export const palette = {
 
 const light = {
   // Deprecated v1 names, kept until every screen has moved to the role tokens below.
-  purple: '#2450F0',
-  purpleLight: '#3D63FF',
-  gold: '#FF6F0F',
+  purple: brand[600] as string,
+  purpleLight: brand[500] as string,
+  gold: accent[500] as string,
 
-  /** The one primary action per screen. */
-  tint: '#2450F0',
-  tintPressed: '#1A3CC4',
+  /** Primary button, selected filter chip, current-tab pill, progress bars. */
+  brand: roles.fill ?? (brand[600] as string),
+  brandPressed: brand[700] as string,
+  onBrand: roles.onFill ?? '#FFFFFF',
+  /** Brand-coloured icons, borders, switches and the focus ring on white. */
+  tint: roles.tint ?? (brand[600] as string),
+  tintPressed: roles.tintPressed ?? (brand[700] as string),
   onTint: '#FFFFFF',
   /** Follow button, "Going" pill, bell-on. */
-  tintSoft: '#E6ECFF',
-  /** Links, plain buttons, verified tick. */
-  tintText: '#2450F0',
+  tintSoft: roles.soft ?? (brand[100] as string),
+  /** Links, plain buttons, text on tintSoft. */
+  tintText: roles.text ?? (brand[600] as string),
+  /** Brand-filled hero surfaces (sign-in, welcome, splash). */
+  brandStrong: brand[700] as string,
 
   /** Campus-date markers, "New" dot. */
-  accent: '#FF6F0F',
-  accentSoft: '#FFE4D1',
+  accent: accent[500] as string,
+  accentSoft: accent[100] as string,
   /** Event dates in lists, campus labels. */
-  accentText: '#B34700',
+  accentText: roles.accentText ?? (accent[700] as string),
 
   /** Grouped screens (Profile, Manage, forms). */
-  background: '#F5F5F7',
+  background: roles.grouped ?? '#F5F5F7',
   /** Feed screens (Discover, Search, Tickets, Calendar, Societies, Event). */
-  backgroundPlain: '#FFFFFF',
+  backgroundPlain: roles.paper ?? '#FFFFFF',
   card: '#FFFFFF',
   /** Sheets, menus, bottom action bar. */
   elevated: '#FFFFFF',
@@ -80,19 +555,19 @@ const light = {
   textSecondary: '#6E6E73',
   /** Placeholders, timestamps. */
   textTertiary: '#76767C',
-  border: '#E0E0E5',
+  border: roles.surfaceBorder ?? '#E0E0E5',
   /** Search field, secondary buttons, icon tiles. */
-  fill: '#F2F2F5',
+  fill: roles.surfaceFill ?? '#F2F2F5',
   /** Neutral pills, segmented-control track. */
-  fillStrong: '#EDEDF0',
-  /** Selected chip, "Checked in", toast. */
+  fillStrong: roles.surfaceBorder ?? '#EDEDF0',
+  /** "Checked in", toast, step markers. */
   ink: '#0A0A0B',
   onInk: '#FFFFFF',
 
   disabledFill: '#EDEDF0',
   disabledText: '#A1A1A6',
   /** 3pt halo outside a 2pt tint border. */
-  focusRing: 'rgba(36,80,240,0.24)',
+  focusRing: alpha(roles.fill ?? brand[600], 0.35),
 
   success: '#078040',
   successSoft: '#E3F7EA',
@@ -111,23 +586,27 @@ const light = {
   toast: '#0A0A0B',
   onToast: '#FFFFFF',
   scrim: 'rgba(10,10,11,0.45)',
-  tabBar: 'rgba(255,255,255,0.94)',
+  tabBar: roles.tabBar ?? 'rgba(255,255,255,0.94)',
 };
 
 const dark: typeof light = {
-  purple: '#3D63FF',
-  purpleLight: '#8FA6FF',
-  gold: '#FF8A3D',
+  purple: brand[500],
+  purpleLight: brand[300],
+  gold: accent[400],
 
-  tint: '#3D63FF',
-  tintPressed: '#6283FF',
+  brand: roles.fill ?? brand[500],
+  brandPressed: brand[400],
+  onBrand: roles.onFill ?? '#FFFFFF',
+  tint: brand[500],
+  tintPressed: brand[400],
   onTint: '#FFFFFF',
-  tintSoft: '#0E1A4D',
-  tintText: '#8FA6FF',
+  tintSoft: brand[900],
+  tintText: brand[300],
+  brandStrong: brand[800],
 
-  accent: '#FF8A3D',
-  accentSoft: '#3A1A04',
-  accentText: '#FFA66B',
+  accent: accent[400],
+  accentSoft: accent[900],
+  accentText: accent[300],
 
   background: '#000000',
   backgroundPlain: '#000000',
@@ -144,7 +623,7 @@ const dark: typeof light = {
 
   disabledFill: '#2C2C2E',
   disabledText: '#636366',
-  focusRing: 'rgba(61,99,255,0.45)',
+  focusRing: alpha(brand[500], 0.45),
 
   success: '#30D158',
   successSoft: '#0E2E19',
@@ -261,7 +740,7 @@ export const categoryArt: Record<string, { cover: string; coverDark: string; ico
   Performance: { cover: '#7C3AED', coverDark: '#7C3AED', icon: 'musical-notes-outline' },
   Career: { cover: '#18181B', coverDark: '#3A3A3F', icon: 'briefcase-outline' },
   Volunteering: { cover: '#D92D20', coverDark: '#D92D20', icon: 'heart-outline' },
-  Orientation: { cover: '#2450F0', coverDark: '#3D63FF', icon: 'compass-outline' },
+  Orientation: { cover: roles.tint ?? brand[600], coverDark: brand[500], icon: 'compass-outline' },
   Other: { cover: '#52525B', coverDark: '#5A5A63', icon: 'sparkles-outline' },
 };
 
@@ -276,9 +755,18 @@ export const avatarArt: Record<AvatarFamily, { light: readonly [string, string];
   Violet: { light: ['#EFE7FE', '#6D28D9'], dark: ['#24104A', '#B794FF'], cover: '#7C3AED' },
   Graphite: { light: ['#E8E8EB', '#18181B'], dark: ['#2C2C2E', '#D4D4D8'], cover: '#18181B' },
   Red: { light: ['#FDE8E6', '#B42318'], dark: ['#3D0F0C', '#FF6B61'], cover: '#D92D20' },
-  Cobalt: { light: ['#E6ECFF', '#2450F0'], dark: ['#0E1A4D', '#8FA6FF'], cover: '#2450F0' },
+  Cobalt: { light: [brand[100], roles.text ?? brand[600]], dark: [brand[900], brand[300]], cover: roles.tint ?? brand[600] },
   Slate: { light: ['#EDEDF0', '#48484A'], dark: ['#2C2C2E', '#C7C7CC'], cover: '#52525B' },
 };
+
+// A palette with its own cover colours paints society logos solid in them too, with white initials.
+if (roles.covers?.length) {
+  const covers = roles.covers;
+  (Object.keys(avatarArt) as AvatarFamily[]).forEach((f, i) => {
+    const color = covers[i % covers.length];
+    avatarArt[f] = { light: [color, '#FFFFFF'], dark: [color, '#FFFFFF'], cover: color };
+  });
+}
 
 /** Society category → avatar family. Faith and Other share Slate; the initials tell them apart. */
 export const societyFamily: Record<string, AvatarFamily> = {
@@ -331,6 +819,10 @@ export function coverVariant(seed: string): 'corner' | 'topRight' | 'tilted' {
  */
 export function coverFor(category: string | null | undefined, seed: string, dark: boolean) {
   const event = category ? categoryArt[category] : undefined;
+  if (roles.covers?.length) {
+    const icon = event?.icon ?? ((category && SOCIETY_ICONS[category]) || 'sparkles-outline');
+    return { color: roles.covers[hash(category || seed) % roles.covers.length], icon };
+  }
   if (event) return { color: dark ? event.coverDark : event.cover, icon: event.icon };
   const family = familyFor(category, seed);
   return { color: avatarArt[family].cover, icon: (category && SOCIETY_ICONS[category]) || 'sparkles-outline' };

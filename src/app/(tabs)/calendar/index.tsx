@@ -164,7 +164,7 @@ export default function CalendarScreen() {
 
       <View style={styles.legend}>
         <View style={{ flexDirection: 'row', gap: 2 }}>
-          {[c.fill, '#DCE4FF', palette.cobalt[200]].map((col) => (
+          {[c.fill, palette.brand[100], palette.cobalt[200]].map((col) => (
             <View key={col} style={{ width: 8, height: 12, borderRadius: 2, backgroundColor: dark ? c.tintSoft : col }} />
           ))}
         </View>
@@ -288,7 +288,7 @@ function MonthGrid({
       ? 'transparent'
       : dark
         ? [c.tintSoft, palette.cobalt[800], palette.cobalt[700]][Math.min(n, 3) - 1]
-        : [c.fill, '#DCE4FF', palette.cobalt[200]][Math.min(n, 3) - 1];
+        : [c.fill, palette.brand[100], palette.cobalt[200]][Math.min(n, 3) - 1];
 
   return (
     <View style={{ paddingHorizontal: 13, marginTop: space.lg }}>

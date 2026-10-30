@@ -1,34 +1,48 @@
 """Draws the app icon set into assets/ (run: python3 scripts/make-icons.py, needs Pillow).
 
-A white event ticket with a sparkle on the brand cobalt, plus the iOS 18+
-dark and tinted variants. Drawn at 4x and
-downsampled for smooth edges.
+A white event ticket with a sparkle on the brand colour, plus the iOS 18+
+dark and tinted variants and the splash mark. Drawn at 4x and downsampled
+for smooth edges. The colours must match BRAND in src/lib/theme.ts; set
+BRAND=jade (etc.) and OUT=some/dir to draw another brand somewhere else.
 """
+import os
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-ASSETS = Path(__file__).resolve().parent.parent / "assets"
+ASSETS = Path(os.environ.get("OUT") or Path(__file__).resolve().parent.parent / "assets")
+ASSETS.mkdir(parents=True, exist_ok=True)
 S = 4  # supersampling factor
 N = 1024 * S
 
-# Design system v2: cobalt 500 -> 700 gradient, cobalt 600 sparkle, tangerine 500 dot.
-COBALT_TOP = (61, 99, 255)
-COBALT_BOTTOM = (26, 60, 196)
-COBALT = (36, 80, 240)
-TANGERINE = (255, 111, 15)
+
+def rgb(hex_):
+    return tuple(int(hex_[i : i + 2], 16) for i in (1, 3, 5))
+
+
+# Background (`main`, flat; top/bottom are kept for reference), ticket colour, sparkle (brand), dot (accent); dark icon uses `main` for the ticket.
+BRANDS = {
+    "lime": dict(top="#C8F35C", bottom="#97C526", main="#B8F02E", ticket="#0A0A0B", dot="#E0186F", dot_dark="#EA3887"),
+    "tomato": dict(top="#CE5332", bottom="#A33012", main="#C73B16", ticket="#FFFFFF", dot="#2443B5", dot_dark="#455FC0"),
+    "ultramarine": dict(top="#3D57CF", bottom="#1D34A4", main="#2340C8", ticket="#FFFFFF", dot="#F06A28", dot_dark="#F28048"),
+    "cherry": dict(top="#C14238", bottom="#972118", main="#B8281D", ticket="#FFFFFF", dot="#F2C24E", dot_dark="#F4CB69"),
+    "periwinkle": dict(top="#5372CD", bottom="#304EA2", main="#3B5FC6", ticket="#FFFFFF", dot="#E2522A", dot_dark="#E66C4A"),
+    "teal": dict(top="#2F6570", bottom="#10424B", main="#13505C", ticket="#FFFFFF", dot="#C8562A", dot_dark="#D06F4A"),
+    "butter": dict(top="#F4CF61", bottom="#C6A53E", main="#F2C94C", ticket="#14110F", dot="#2443B5", dot_dark="#455FC0"),
+    "pool": dict(top="#3A80C8", bottom="#195B9D", main="#1F6FC0", ticket="#FFFFFF", dot="#F3D046", dot_dark="#F5D762"),
+    "oxblood": dict(top="#8C3830", bottom="#661810", main="#7C1D14", ticket="#FFFFFF", dot="#D9A46A", dot_dark="#DFB280"),
+    "strawberry": dict(top="#DE678A", bottom="#B24364", main="#D9527A", ticket="#14110F", dot="#5B8FD9", dot_dark="#74A0DF"),
+    "cobaltcherry": dict(top="#4456B9", bottom="#223490", main="#2A3FAF", ticket="#FFFFFF", dot="#B12A1F", dot_dark="#BD4A41"),
+    "cobalt": dict(top="#3D63FF", bottom="#1A3CC4", main="#2450F0", ticket="#FFFFFF", dot="#FF6F0F", dot_dark="#FF8A3D"),
+}
+B = BRANDS[os.environ.get("BRAND", "lime")]
+COBALT_TOP = rgb(B["top"])
+COBALT_BOTTOM = rgb(B["bottom"])
+COBALT = rgb(B["main"])
+TANGERINE = rgb(B["dot"])
+TICKET = rgb(B["ticket"])
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-
-
-def gradient(size):
-    img = Image.new("RGBA", (size, size))
-    px = img.load()
-    for y in range(size):
-        for x in range(size):
-            t = (x + y) / (2 * size - 2)
-            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(COBALT_TOP, COBALT_BOTTOM)) + (255,)
-    return img
 
 
 def sparkle(draw, cx, cy, r, fill):
@@ -45,8 +59,9 @@ def sparkle(draw, cx, cy, r, fill):
     draw.polygon(pts, fill=fill)
 
 
-def ticket_layer(scale, ink=WHITE, star=COBALT, dot=TANGERINE, mono=False):
+def ticket_layer(scale, ink=None, star=COBALT, dot=TANGERINE, mono=False):
     """Ticket centred on a transparent N x N canvas. `scale` is ticket width / canvas."""
+    ink = ink or TICKET
     layer = Image.new("RGBA", (N, N), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     w = N * scale
@@ -88,24 +103,21 @@ def save(img, name, size=1024, mode="RGBA"):
     img.resize((size, size), Image.LANCZOS).convert(mode).save(ASSETS / name)
 
 
-bg = gradient(1024).resize((N, N), Image.BICUBIC)
+# Flat brand colour, no gradient: the palette used as is.
+bg = Image.new("RGBA", (N, N), COBALT + (255,))
 icon = Image.alpha_composite(bg, ticket_layer(0.66))
 save(icon, "icon.png", mode="RGB")
 save(icon, "favicon.png", size=48, mode="RGB")
-# iOS 18+ home screen: dark mode shows a cobalt ticket on black; tinted mode
+# iOS 18+ home screen: dark mode shows a brand-coloured ticket on black; tinted mode
 # recolours a greyscale icon, so the ticket is white and the dot mid-grey.
 black = Image.new("RGBA", (N, N), BLACK + (255,))
-save(Image.alpha_composite(black, ticket_layer(0.66, ink=(61, 99, 255), star=BLACK, dot=(255, 138, 61))), "icon-dark.png", mode="RGB")
+save(Image.alpha_composite(black, ticket_layer(0.66, ink=COBALT, star=BLACK, dot=rgb(B["dot_dark"]))), "icon-dark.png", mode="RGB")
 save(Image.alpha_composite(black, ticket_layer(0.66, ink=WHITE, star=BLACK, dot=(150, 150, 150))), "icon-tinted.png", mode="RGB")
 save(bg, "android-icon-background.png")
 # Adaptive icons are cropped to a circle/squircle of ~66% of the canvas.
 save(ticket_layer(0.5), "android-icon-foreground.png")
 save(ticket_layer(0.5, ink=WHITE, mono=True), "android-icon-monochrome.png")
 
-# Splash: the icon as a rounded tile on a transparent canvas.
-tile = Image.new("RGBA", (N, N), (0, 0, 0, 0))
-m = Image.new("L", (N, N), 0)
-ImageDraw.Draw(m).rounded_rectangle((0, 0, N - 1, N - 1), radius=N * 0.225, fill=255)
-tile.paste(icon, (0, 0), m)
-save(tile, "splash-icon.png")
+# Splash: the white ticket alone, drawn on the brand colour set in app.json.
+save(ticket_layer(0.9), "splash-icon.png")
 print("Wrote icons to", ASSETS)
