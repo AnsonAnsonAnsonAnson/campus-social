@@ -7,6 +7,7 @@ import { SocietyCard, SocietyRow } from '@/components/SocietyRow';
 import { Button, Chip, ChipRow, CircleButton, EmptyState, ErrorView, PageHeader, SearchField, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { recommendSocieties } from '@/lib/recommend';
 import { SOCIETY_CATEGORIES } from '@/lib/constants';
 import { space, useColors } from '@/lib/theme';
 import { useDebouncedValue } from '@/lib/useDebouncedValue';
@@ -32,17 +33,11 @@ export default function Societies() {
   }, [upcoming.data]);
 
   const list = useMemo(() => (q.data ?? []).filter((s) => !showFollowing || followIds.has(s.id)), [q.data, showFollowing, followIds]);
-  // Picks: ones you don't follow yet, your college first, then the most followed.
+  // Picks: ones you don't follow yet, your interests first, then your college, then the most followed.
+  const interests = profile?.interests;
   const picks = useMemo(
-    () =>
-      (q.data ?? [])
-        .filter((s) => !followIds.has(s.id))
-        .sort(
-          (a, b) =>
-            Number(!!college && b.college === college) - Number(!!college && a.college === college) || b.follower_count - a.follower_count,
-        )
-        .slice(0, 8),
-    [q.data, followIds, college],
+    () => recommendSocieties(q.data ?? [], { interests: interests ?? [], college, exclude: followIds }).map((s) => s.society),
+    [q.data, followIds, college, interests],
   );
   const browsing = !query && !showFollowing;
 
@@ -86,7 +81,7 @@ export default function Societies() {
           {browsing && picks.length > 0 && (
             <>
               <SectionHeader title={t('Picked for you')} />
-              {!!profile?.college && (
+              {(!!interests?.length || !!profile?.college) && (
                 <Text
                   style={{
                     color: c.textSecondary,
@@ -95,7 +90,9 @@ export default function Societies() {
                     marginTop: -space.sm,
                     marginBottom: space.sm,
                   }}>
-                  {t('Based on your college: {college}', { college: t(profile.college) })}
+                  {interests?.length
+                    ? t('Based on your interests: {interests}', { interests: interests.map((i) => t(i)).join(t(', ')) })
+                    : t('Based on your college: {college}', { college: t(profile!.college!) })}
                 </Text>
               )}
               <ScrollView

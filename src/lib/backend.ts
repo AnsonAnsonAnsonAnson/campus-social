@@ -56,7 +56,7 @@ import type {
 
 export type AuthUser = { id: string; email: string };
 
-export type ProfilePatch = Partial<Pick<Profile, 'display_name' | 'college' | 'major' | 'year_of_study' | 'avatar_url' | 'locale'>>;
+export type ProfilePatch = Partial<Pick<Profile, 'display_name' | 'college' | 'major' | 'year_of_study' | 'avatar_url' | 'locale' | 'interests'>>;
 
 export type SocietyPatch = Partial<
   Pick<

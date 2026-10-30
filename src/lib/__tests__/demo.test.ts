@@ -273,3 +273,9 @@ it('lets the committee post, pin one post and take reports down', async () => {
   await api.deletePost(id);
   expect(await api.getPost(id)).toBeNull();
 });
+
+it('saves interests from the society categories only', async () => {
+  await api.updateProfile({ interests: ['Music', 'Tech'] });
+  expect((await api.getProfile())?.interests).toEqual(['Music', 'Tech']);
+  await expect(api.updateProfile({ interests: ['Gambling'] })).rejects.toThrow('interests');
+});

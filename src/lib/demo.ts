@@ -3,6 +3,7 @@
 import type { AuthUser, Backend } from './backend';
 import { isCuhkEmail } from './backend';
 import { liveTicketOrder, platformFeeHkd, receiptPath, slotState, unitPrice } from './commerce';
+import { SOCIETY_CATEGORIES } from './constants';
 import {
   DEMO_DINNER,
   demoPaymentSettings,
@@ -700,6 +701,7 @@ export const demoBackend: Backend = {
       year_of_study: null,
       avatar_url: null,
       is_platform_admin: true,
+      interests: [],
     };
     seedDemoInbox();
     listeners.forEach((l) => l(state.user));
@@ -723,6 +725,10 @@ export const demoBackend: Backend = {
   },
   async updateProfile(patch) {
     requireUser();
+    // Mirrors the check constraint on profiles.interests.
+    if (patch.interests?.some((i) => !(SOCIETY_CATEGORIES as readonly string[]).includes(i))) {
+      throw new Error('Pick interests from the list');
+    }
     state.profile = { ...state.profile!, ...patch };
   },
 

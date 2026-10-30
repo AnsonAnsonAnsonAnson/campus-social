@@ -294,7 +294,7 @@ export const societyFamily: Record<string, AvatarFamily> = {
   Other: 'Slate',
 };
 
-const SOCIETY_ICONS: Record<string, IconName> = {
+export const SOCIETY_ICONS: Record<string, IconName> = {
   Academic: 'book-outline',
   Tech: 'code-slash-outline',
   Arts: 'color-palette-outline',
