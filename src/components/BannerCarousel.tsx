@@ -77,7 +77,7 @@ export function BannerCarousel({ banners }: { banners: BannerWithLinks[] }) {
       {banners.length > 1 && (
         <View style={styles.dots}>
           {banners.map((b, i) => (
-            <View key={b.id} style={[styles.dot, { backgroundColor: i === index ? c.brand : c.border, width: i === index ? 18 : 6 }]} />
+            <View key={b.id} style={[styles.dot, { backgroundColor: i === index ? c.tint : c.border, width: i === index ? 18 : 6 }]} />
           ))}
         </View>
       )}

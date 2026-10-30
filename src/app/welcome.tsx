@@ -180,7 +180,7 @@ export default function Welcome() {
         )}
         <View style={{ flex: 1, flexDirection: 'row', gap: 4 }} accessibilityLabel={t('Step {n} of {total}', { n: step, total: STEPS })}>
           {Array.from({ length: STEPS }, (_, i) => (
-            <View key={i} style={[styles.stepBar, { backgroundColor: i < step ? c.brand : c.fillStrong }]} />
+            <View key={i} style={[styles.stepBar, { backgroundColor: i < step ? c.ink : c.fillStrong }]} />
           ))}
         </View>
         <Pressable

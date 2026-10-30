@@ -29,8 +29,8 @@ const tabTitle = (name: string) =>
 type Item = { key: string; name: string; label: string; focused: boolean; badge?: boolean; onPress: () => void; onLongPress?: () => void };
 
 /**
- * The bottom tab bar from the design: five line icons with labels, the brand
- * colour and a soft brand pill for the current tab, translucent white with a hairline on top.
+ * The bottom tab bar from the design: five line icons with labels, cobalt for
+ * the current tab, translucent white with a hairline on top.
  */
 function TabBarView({ items }: { items: Item[] }) {
   const c = useColors();
@@ -47,7 +47,7 @@ function TabBarView({ items }: { items: Item[] }) {
         },
       ]}>
       {items.map((item) => {
-        const color = item.focused ? c.tint : palette.neutral[500];
+        const color = item.focused ? c.tint : palette.neutral[450];
         return (
           <Pressable
             key={item.key}
@@ -57,7 +57,7 @@ function TabBarView({ items }: { items: Item[] }) {
             accessibilityState={{ selected: item.focused }}
             accessibilityLabel={item.label}
             style={styles.item}>
-            <View style={[styles.pill, item.focused && { backgroundColor: c.tintSoft }]}>
+            <View>
               <Svg width={25} height={25} viewBox="0 0 24 24" fill="none">
                 <Path
                   d={ICONS[item.name] ?? ICONS.discover}
@@ -135,6 +135,5 @@ const styles = StyleSheet.create({
   },
   item: { flex: 1, alignItems: 'center', gap: 3, minHeight: 44 },
   label: { fontSize: 10, fontWeight: '600' },
-  pill: { width: 56, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  dot: { position: 'absolute', top: 1, right: 12, width: 9, height: 9, borderRadius: 5, borderWidth: 1.5 },
+  dot: { position: 'absolute', top: 0, right: -3, width: 9, height: 9, borderRadius: 5, borderWidth: 1.5 },
 });

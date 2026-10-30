@@ -35,7 +35,6 @@ import {
 } from '@/lib/theme';
 import { t, useLang } from '@/lib/i18n';
 
-import { BrandMark } from './BrandMark';
 import { FilledHeart, Glyph, IONICON_TO_GLYPH } from './Glyph';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -93,7 +92,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   const c = useColors();
   const colors: Record<ButtonVariant, [string, string, string]> = {
     // [background, label, pressed background]
-    primary: [c.brand, c.onBrand, c.brandPressed],
+    primary: [c.tint, c.onTint, c.tintPressed],
     secondary: [c.fill, c.text, c.fillStrong],
     tinted: [c.tintSoft, c.tintText, c.tintSoft],
     outline: ['transparent', c.textSecondary, 'transparent'],
@@ -141,10 +140,10 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   );
 }
 
-/** Filter chip. Selected chips take the brand colour. */
+/** Filter chip. Selected chips use ink, not the brand colour, so the primary action still stands out. */
 export function Chip({ label, selected, onPress, icon }: { label: string; selected?: boolean; onPress?: () => void; icon?: IconName }) {
   const c = useColors();
-  const fg = selected ? c.onBrand : c.text;
+  const fg = selected ? c.onInk : c.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -156,7 +155,7 @@ export function Chip({ label, selected, onPress, icon }: { label: string; select
       }}
       style={({ pressed }) => [
         styles.chip,
-        { backgroundColor: selected ? c.brand : c.card, borderColor: selected ? c.brand : c.border, opacity: pressed ? 0.8 : 1 },
+        { backgroundColor: selected ? c.ink : c.card, borderColor: selected ? c.ink : c.border, opacity: pressed ? 0.8 : 1 },
       ]}>
       {icon && <Ionicons name={icon} size={14} color={fg} />}
       <Text style={[styles.chipText, { color: fg }]}>{label}</Text>
@@ -164,10 +163,10 @@ export function Chip({ label, selected, onPress, icon }: { label: string; select
   );
 }
 
-/** Grey filter pill that opens a menu (Search): label plus a chevron; brand colour when a value is picked. */
+/** Grey filter pill that opens a menu (Search): label plus a chevron; ink when a value is picked. */
 export function DropChip({ label, selected, onPress, icon }: { label: string; selected?: boolean; onPress: () => void; icon?: IconName }) {
   const c = useColors();
-  const fg = selected ? c.onBrand : c.text;
+  const fg = selected ? c.onInk : c.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -180,7 +179,7 @@ export function DropChip({ label, selected, onPress, icon }: { label: string; se
       style={({ pressed }) => [
         styles.dropChip,
         icon ? { paddingLeft: 12, paddingRight: 12, gap: 6 } : null,
-        { backgroundColor: selected ? c.brand : pressed ? c.fillStrong : c.fill },
+        { backgroundColor: selected ? c.ink : pressed ? c.fillStrong : c.fill },
       ]}>
       {icon && <Ionicons name={icon} size={17} color={fg} />}
       <Text style={[styles.chipText, { color: fg }]}>{label}</Text>
@@ -285,7 +284,7 @@ export function SectionHeader({ title, action, onAction }: { title: string; acti
   const lang = useLang();
   return (
     <View style={styles.sectionHeader}>
-      <Text style={[textStyle('title2', lang), { color: c.text, flex: 1 }]} accessibilityRole="header">
+      <Text style={[textStyle('title2', lang), { color: c.text, flexShrink: 1 }]} accessibilityRole="header">
         {title}
       </Text>
       {action && (
@@ -773,16 +772,14 @@ export function ListGroup({ children, title }: { children: ReactNode; title?: st
 /**
  * Large page title drawn in the content, as in the design: 34pt, with round
  * buttons on the right. Tab screens use it instead of a navigation bar.
- * `brand` puts the app's mark before the title (Discover, the home tab).
  */
-export function PageHeader({ title, brand, children }: { title: string; brand?: boolean; children?: ReactNode }) {
+export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
   const c = useColors();
   const lang = useLang();
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.pageHeader, { paddingTop: insets.top + 10 }]}>
-      {brand && <BrandMark />}
-      <Text style={[textStyle('largeTitle', lang), { color: c.text, flex: 1 }]} accessibilityRole="header" numberOfLines={1}>
+      <Text style={[textStyle('largeTitle', lang), { color: c.text, flexShrink: 1 }]} accessibilityRole="header" numberOfLines={1}>
         {title}
       </Text>
       {children && <View style={styles.pageHeaderActions}>{children}</View>}
