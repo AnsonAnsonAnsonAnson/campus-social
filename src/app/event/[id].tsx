@@ -11,7 +11,7 @@ import { SaveButton } from '@/components/EventCard';
 import { VerifiedBadge } from '@/components/Glyph';
 import { Skeleton } from '@/components/Skeleton';
 import { FollowButton } from '@/components/SocietyRow';
-import { TicketQR } from '@/components/TicketCard';
+import { LiveTicketQR } from '@/components/TicketCard';
 import { toast } from '@/components/Toast';
 import {
   Artwork,
@@ -488,8 +488,18 @@ export default function EventScreen() {
                   <Text style={{ color: c.success, fontWeight: '700', fontSize: 17 }}>
                     {reg.checked_in_at ? t('Checked in ✓') : t("You're going")}
                   </Text>
-                  <TicketQR code={reg.ticket_code} size={200} />
-                  <Text style={{ color: c.textSecondary, fontSize: 13 }}>{t('Show this QR code at the door')}</Text>
+                  {!reg.checked_in_at && (
+                    <>
+                      <LiveTicketQR registrationId={reg.id} code={reg.ticket_code} size={200} />
+                      <Button
+                        small
+                        variant="ink"
+                        icon="ticket-outline"
+                        title={t('Open ticket')}
+                        onPress={() => router.push(`/ticket/${reg.id}`)}
+                      />
+                    </>
+                  )}
                   {!!reg.answer && <YourAnswer question={event.signup_question} answer={reg.answer} />}
                 </>
               ) : (

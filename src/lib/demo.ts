@@ -23,6 +23,7 @@ import {
 import { DEMO_RECEIPT_MEMBERSHIP, DEMO_RECEIPT_TICKET } from './demoReceipts';
 import { formatDay, formatTime } from './format';
 import { t } from './i18n';
+import { checkTicketToken, parseTicketToken, tokenIdMatches } from './ticketToken';
 import type {
   AppNotification,
   Attendee,
@@ -1069,13 +1070,25 @@ export const demoBackend: Backend = {
     await delay(200);
     const e = state.events.find((x) => x.id === eventId)!;
     if (!isMember(e.society_id)) throw new Error('Only society committee members can check people in');
-    const typed = code.trim().toLowerCase();
-    const reg =
-      state.registrations.find((r) => r.ticket_code === typed) ??
-      (typed.length === 8 ? state.registrations.find((r) => r.event_id === eventId && r.ticket_code.startsWith(typed)) : undefined);
+    // Same rules as public.check_in: a rotating QR token, or the 8-character backup code.
+    const typed = code.replace(/\s/g, '').toLowerCase();
+    const token = parseTicketToken(typed);
+    let expired = false;
+    let reg: (typeof state.registrations)[number] | undefined;
+    if (token) {
+      reg = state.registrations.find((r) => tokenIdMatches(token, r.id));
+      const verdict = reg ? checkTicketToken(token, reg.ticket_code) : 'bad';
+      if (verdict === 'bad') return { ok: false, message: 'Ticket not found' };
+      expired = verdict === 'expired';
+    } else if (typed.length === 8) {
+      reg = state.registrations.find((r) => r.event_id === eventId && r.ticket_code.startsWith(typed));
+    } else if (state.registrations.some((r) => r.ticket_code === typed)) {
+      return { ok: false, message: 'Old QR code. Ask them to update the app, or type the backup code' };
+    }
     if (!reg) return { ok: false, message: 'Ticket not found' };
     const name = state.profile?.display_name ?? 'Student';
     if (reg.event_id !== eventId) return { ok: false, name, message: 'This ticket is for a different event' };
+    if (expired) return { ok: false, name, message: 'QR code expired. Ask them to open the ticket in the app, or type the backup code' };
     if (reg.status !== 'confirmed') return { ok: false, name, message: `Ticket is ${reg.status}, not confirmed` };
     const unpaid = unpaidTicket(reg.id);
     if (unpaid) return { ok: false, name, ref: unpaid.ref, message: 'Not paid yet' };

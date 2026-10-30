@@ -22,7 +22,7 @@ type Tab = 'upcoming' | 'saved' | 'cards' | 'orders' | 'past';
 
 export default function Tickets() {
   const c = useColors();
-  const { user, savedIds } = useAuth();
+  const { user, profile, savedIds } = useAuth();
   const params = useLocalSearchParams<{ tab?: Tab }>();
   const [tab, setTab] = useState<Tab>(params.tab ?? 'upcoming');
   useEffect(() => {
@@ -133,16 +133,16 @@ export default function Tickets() {
       ) : tab === 'upcoming' ? (
         upcoming.length ? (
           <View style={{ gap: space.md, marginTop: space.md }}>
-            <TicketCard ticket={upcoming[0]} showQR />
+            <TicketCard ticket={upcoming[0]} holder={profile?.display_name || user.email} />
             {upcoming.length > 1 && (
               <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600', marginHorizontal: space.lg, marginTop: space.sm }}>
                 {t('Later')}
               </Text>
             )}
-            {upcoming.slice(1).map((tk) =>
-              // The event page can't load offline, so then every ticket shows its QR here.
-              offline ? <TicketCard key={tk.id} ticket={tk} showQR /> : <TicketStub key={tk.id} ticket={tk} />,
-            )}
+            {/* Each stub opens its full ticket, which also works offline. */}
+            {upcoming.slice(1).map((tk) => (
+              <TicketStub key={tk.id} ticket={tk} />
+            ))}
           </View>
         ) : (
           <EmptyState

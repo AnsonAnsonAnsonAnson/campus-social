@@ -118,6 +118,7 @@ export default function RootLayout() {
           <Stack.Screen name="fair/[id]" options={{ title: '' }} />
           <Stack.Screen name="manage/fair" options={{ title: t('Fair') }} />
           <Stack.Screen name="manage/fair-form" options={{ presentation: 'modal', title: t('Fair') }} />
+          <Stack.Screen name="ticket/[id]" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="welcome" options={{ presentation: 'modal', title: t('Welcome'), gestureEnabled: false }} />
         </Stack>
         <NotificationRouting />
