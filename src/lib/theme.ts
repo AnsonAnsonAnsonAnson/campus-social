@@ -461,7 +461,7 @@ const BRANDS = {
 
 export type BrandName = keyof typeof BRANDS;
 export const BRAND: BrandName =
-  (process.env.EXPO_PUBLIC_BRAND as BrandName) in BRANDS ? (process.env.EXPO_PUBLIC_BRAND as BrandName) : 'lime';
+  (process.env.EXPO_PUBLIC_BRAND as BrandName) in BRANDS ? (process.env.EXPO_PUBLIC_BRAND as BrandName) : 'cobalt';
 const { brand, accent } = BRANDS[BRAND];
 /**
  * Most brands are dark enough to carry white text and to draw icons and links on white, so one
