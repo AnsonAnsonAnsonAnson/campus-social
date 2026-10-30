@@ -23,9 +23,12 @@ create table auth.users (id uuid primary key default gen_random_uuid(), email te
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
-create table storage.buckets (id text primary key, name text, public boolean);
-create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+create table storage.objects (
+  id uuid primary key default gen_random_uuid(), bucket_id text, name text, created_at timestamptz default now()
+);
 alter table storage.objects enable row level security;
+grant select, insert, update, delete on storage.objects, storage.buckets to authenticated;
 create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 
 grant usage on schema public, auth, storage to anon, authenticated;
@@ -82,3 +85,16 @@ create function tests.login(p_user uuid) returns void language sql as $$
 $$;
 
 grant execute on all functions in schema tests to anon, authenticated;
+
+-- The QR token the app would show right now for a ticket (see src/lib/ticketToken.ts).
+-- p_steps moves the phone clock by that many 30-second steps.
+create function tests.ticket_token(p_code text, p_steps int default 0) returns text
+language plpgsql security definer as $$
+declare
+  v_id text;
+  v_step bigint := floor(extract(epoch from now()) / 30) + p_steps;
+begin
+  select replace(id::text, '-', '') into v_id from public.registrations where ticket_code = p_code;
+  return v_id || '.' || v_step || '.' || left(public._hmac_sha256_hex(p_code, v_id || '.' || v_step), 24);
+end $$;
+grant execute on function tests.ticket_token(text, int) to authenticated;

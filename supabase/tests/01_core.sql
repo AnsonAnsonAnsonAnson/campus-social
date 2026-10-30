@@ -55,8 +55,8 @@ select tests.eq(:'b_status', 'confirmed', 'waitlist promoted when a seat frees u
 
 select tests.throws(format('select public.check_in(%L, %L)', :'eid', :'code'), 'committee', 'attendees cannot check themselves in');
 select tests.login('00000000-0000-0000-0000-0000000000a1');
-select tests.eq((public.check_in(:'eid', :'code') ->> 'ok')::boolean, true, 'check-in with full code');
-select tests.eq(public.check_in(:'eid', :'code') ->> 'message' like 'Already checked in%', true, 'duplicate check-in detected');
+select tests.eq((public.check_in(:'eid', tests.ticket_token(:'code')) ->> 'ok')::boolean, true, 'check-in with the QR token');
+select tests.eq(public.check_in(:'eid', tests.ticket_token(:'code')) ->> 'message' like 'Already checked in%', true, 'duplicate check-in detected');
 
 -- capacity raise moves the waitlist
 select tests.login('00000000-0000-0000-0000-0000000000a2');

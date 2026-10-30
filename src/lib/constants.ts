@@ -40,6 +40,8 @@ export const TICKET_QR_PREFIX = 'campussocial:ticket:';
 /** Tickets issued before the app was renamed. */
 export const LEGACY_TICKET_QR_PREFIX = 'cuhkcampus:ticket:';
 
-export const SUPPORT_EMAIL = 'support@example.com';
-export const PRIVACY_URL = 'https://example.com/privacy';
-export const TERMS_URL = 'https://example.com/terms';
+/** Public pages in docs/, served by GitHub Pages (Settings › Pages › main /docs). */
+const SITE = 'https://ansonansonansonanson.github.io/campus-social';
+export const SUPPORT_URL = `${SITE}/`;
+export const PRIVACY_URL = `${SITE}/privacy.html`;
+export const TERMS_URL = `${SITE}/terms.html`;

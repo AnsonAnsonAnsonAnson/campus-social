@@ -41,7 +41,7 @@ for (const s of demoSocieties) {
 }
 for (const e of makeDemoEvents(now)) {
   out.push(
-    `insert into public.events (id, society_id, title, description, category, location, starts_at, ends_at, status, registration_required, capacity, waitlist_enabled, registration_opens_at, price_text, signup_question) values (${[
+    `insert into public.events (id, society_id, title, description, category, location, starts_at, ends_at, status, registration_required, capacity, waitlist_enabled, registration_opens_at, price_text, signup_question, members_only, price_hkd, member_price_hkd, payment_window_hours, featured_at) values (${[
       q(e.id),
       q(e.society_id),
       q(e.title),
@@ -57,6 +57,11 @@ for (const e of makeDemoEvents(now)) {
       ts(e.registration_opens_at),
       q(e.price_text),
       q(e.signup_question),
+      q(e.members_only),
+      q(e.price_hkd),
+      q(e.member_price_hkd),
+      q(e.payment_window_hours),
+      ts(e.featured_at),
     ].join(', ')}) on conflict (id) do nothing;`,
   );
 }

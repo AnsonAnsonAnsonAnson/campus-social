@@ -3,21 +3,42 @@ import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 
 import type { AuthUser, Backend } from './backend';
+import { liveTicketOrder, receiptPath } from './commerce';
 import type {
   AppNotification,
+  BoothSales,
+  FairDetail,
+  FairWithCounts,
+  SocietyBooth,
   Attendee,
   Banner,
   BannerWithLinks,
   CampusDate,
   CheckInResult,
   EventWithSociety,
+  MemberCardResult,
+  Membership,
+  MembershipPlan,
+  MyMembership,
+  MyOrder,
+  MyRegistration,
   MySociety,
+  Order,
+  PaymentSettings,
+  PayoutAccount,
+  PlatformFee,
+  PickupResult,
+  PickupSlot,
+  ProductWithStock,
+  SocietyOrder,
   OpenReport,
   Profile,
   Registration,
   Society,
   SocietyMember,
+  SocietyPost,
   Ticket,
+  TicketOrder,
 } from './types';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -44,8 +65,17 @@ if (supabase && Platform.OS !== 'web') {
   });
 }
 
-const SOCIETY_SUMMARY = 'id, name, short_name, logo_url, verified';
+const SOCIETY_SUMMARY = 'id, name, short_name, logo_url, verified, college';
+const SOCIETY_CARD = `${SOCIETY_SUMMARY}, category`;
 const EVENT_WITH_SOCIETY = `*, society:societies!inner(${SOCIETY_SUMMARY})`;
+const POST_FIELDS = `*, society:societies!inner(${SOCIETY_CARD}), event:events(id, title, starts_at, ends_at, location, cover_url, category, status)`;
+const TICKET_ORDER = 'orders(id, ref, status, total_hkd, expires_at, payment_method, member_price, receipt_at, created_at)';
+
+/** Registrations come back with every order they ever had; keep the one that counts. */
+function withTicketOrder<T extends Registration>(r: T & { orders?: TicketOrder[] }): T & { order: TicketOrder | null } {
+  const { orders, ...rest } = r;
+  return { ...(rest as unknown as T), order: liveTicketOrder(orders) };
+}
 
 function db() {
   if (!supabase) throw new Error('Supabase is not configured');
@@ -67,6 +97,18 @@ async function requireUserId() {
   const u = await currentUser();
   if (!u) throw new Error('Sign in first');
   return u.id;
+}
+
+/** Calls the online payments edge function (supabase/functions/payments). */
+async function payments<T>(action: string, body: Record<string, string>): Promise<T> {
+  await requireUserId();
+  const { data, error } = await db().functions.invoke('payments', { body: { action, ...body } });
+  if (error) {
+    // The function answers {error: message}; show that rather than "non-2xx status".
+    const detail = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  return data as T;
 }
 
 /** Strip characters that have meaning inside a PostgREST `or=` filter. */
@@ -134,6 +176,7 @@ export const remoteBackend: Backend = {
     if (q.from) query = query.gte('ends_at', q.from);
     if (q.to) query = query.lte('starts_at', q.to);
     if (q.societyIds) query = query.in('society_id', q.societyIds);
+    if (q.ids) query = query.in('id', q.ids);
     if (q.category) query = query.eq('category', q.category);
     const s = q.search && cleanSearch(q.search);
     if (s) query = query.or(`title.ilike.*${s}*,location.ilike.*${s}*`);
@@ -156,6 +199,36 @@ export const remoteBackend: Backend = {
     return check(await db().from('campus_dates').select('*').lte('starts_on', to).gte('ends_on', from).order('starts_on')) as CampusDate[];
   },
 
+  async listPosts(societyId) {
+    return check(
+      await db()
+        .from('society_posts')
+        .select(POST_FIELDS)
+        .eq('society_id', societyId)
+        .order('pinned', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(50),
+    ) as SocietyPost[];
+  },
+
+  async getPost(id) {
+    return check(await db().from('society_posts').select(POST_FIELDS).eq('id', id).maybeSingle()) as SocietyPost | null;
+  },
+
+  async myHiddenSocietyIds() {
+    if (!(await currentUser())) return [];
+    const rows = check(await db().from('society_blocks').select('society_id'));
+    return (rows ?? []).map((r: { society_id: string }) => r.society_id);
+  },
+  async setSocietyHidden(societyId, hidden) {
+    await requireUserId();
+    if (hidden) {
+      const { error } = await db().from('society_blocks').insert({ society_id: societyId });
+      if (error && error.code !== '23505') throw new Error(error.message);
+    } else {
+      check(await db().from('society_blocks').delete().eq('society_id', societyId));
+    }
+  },
   async myFollowIds() {
     if (!(await currentUser())) return [];
     const rows = check(await db().from('follows').select('society_id'));
@@ -170,23 +243,56 @@ export const remoteBackend: Backend = {
       check(await db().from('follows').delete().eq('society_id', societyId));
     }
   },
+  async mySavedEventIds() {
+    if (!(await currentUser())) return [];
+    const rows = check(await db().from('saved_events').select('event_id').order('created_at', { ascending: false }));
+    return (rows ?? []).map((r: { event_id: string }) => r.event_id);
+  },
+  async setEventSaved(eventId, saved) {
+    await requireUserId();
+    if (saved) {
+      const { error } = await db().from('saved_events').insert({ event_id: eventId });
+      if (error && error.code !== '23505') throw new Error(error.message);
+    } else {
+      check(await db().from('saved_events').delete().eq('event_id', eventId));
+    }
+  },
+  async myLikedPostIds(postIds) {
+    if (!postIds.length || !(await currentUser())) return [];
+    const rows = check(await db().from('post_likes').select('post_id').in('post_id', postIds));
+    return (rows ?? []).map((r: { post_id: string }) => r.post_id);
+  },
+  async setPostLiked(postId, liked) {
+    await requireUserId();
+    if (liked) {
+      const { error } = await db().from('post_likes').insert({ post_id: postId });
+      if (error && error.code !== '23505') throw new Error(error.message);
+    } else {
+      check(await db().from('post_likes').delete().eq('post_id', postId));
+    }
+  },
   async myTickets() {
     if (!(await currentUser())) return [];
-    const rows = check(await db().from('registrations').select(`*, event:events(${EVENT_WITH_SOCIETY})`).neq('status', 'cancelled'));
-    return (rows as Ticket[]).filter((t) => t.event);
+    const rows = check(
+      await db().from('registrations').select(`*, event:events(${EVENT_WITH_SOCIETY}), ${TICKET_ORDER}`).neq('status', 'cancelled'),
+    );
+    return (rows as (Ticket & { orders: TicketOrder[] })[]).filter((t) => t.event).map(withTicketOrder);
   },
   async myRegistration(eventId) {
     const u = await currentUser();
     if (!u) return null;
-    return check(
-      await db().from('registrations').select('*').eq('event_id', eventId).eq('user_id', u.id).maybeSingle(),
-    ) as Registration | null;
+    const row = check(
+      await db().from('registrations').select(`*, ${TICKET_ORDER}`).eq('event_id', eventId).eq('user_id', u.id).maybeSingle(),
+    ) as (MyRegistration & { orders: TicketOrder[] }) | null;
+    return row && withTicketOrder(row);
   },
   async waitlistPosition(eventId) {
     return check(await db().rpc('waitlist_position', { p_event_id: eventId })) as number;
   },
-  async register(eventId, answer) {
-    return check(await db().rpc('register_for_event', { p_event_id: eventId, p_answer: answer ?? null })) as Registration;
+  async register(eventId, answer, method) {
+    return check(
+      await db().rpc('register_for_event', { p_event_id: eventId, p_answer: answer ?? null, p_payment_method: method ?? null }),
+    ) as Registration;
   },
   async cancelRegistration(eventId) {
     check(await db().rpc('cancel_registration', { p_event_id: eventId }));
@@ -258,6 +364,27 @@ export const remoteBackend: Backend = {
     );
     return (row as { id: string }).id;
   },
+  async savePost(input) {
+    const { id, society_id, ...fields } = input;
+    if (id) {
+      check(await db().from('society_posts').update(fields).eq('id', id));
+      return id;
+    }
+    const row = check(
+      await db()
+        .from('society_posts')
+        .insert({ society_id, ...fields })
+        .select('id')
+        .single(),
+    );
+    return (row as { id: string }).id;
+  },
+  async setPostPinned(id, pinned) {
+    check(await db().from('society_posts').update({ pinned }).eq('id', id));
+  },
+  async deletePost(id) {
+    check(await db().from('society_posts').delete().eq('id', id));
+  },
   async deleteEvent(id) {
     check(await db().from('events').delete().eq('id', id));
   },
@@ -306,8 +433,287 @@ export const remoteBackend: Backend = {
     return db().storage.from('media').getPublicUrl(path).data.publicUrl;
   },
 
+  async listPlans(societyId) {
+    return check(
+      await db().from('membership_plans').select('*').eq('society_id', societyId).order('valid_until', { ascending: false }),
+    ) as MembershipPlan[];
+  },
+  async myMemberships() {
+    const u = await currentUser();
+    if (!u) return [];
+    return check(
+      await db()
+        .from('memberships')
+        .select(`*, plan:membership_plans(*), society:societies(${SOCIETY_CARD})`)
+        .eq('user_id', u.id)
+        .in('status', ['pending', 'active'])
+        .order('created_at', { ascending: false }),
+    ) as MyMembership[];
+  },
+  async joinSociety(input) {
+    return check(
+      await db().rpc('join_society', {
+        p_plan_id: input.plan_id,
+        p_full_name: input.full_name,
+        p_student_id: input.student_id,
+        p_college: input.college,
+        p_major: input.major,
+        p_phone: input.phone,
+        p_answers: input.answers,
+        p_payment_method: input.payment_method,
+      }),
+    ) as Membership;
+  },
+  async claimMembershipPaid(id) {
+    check(await db().rpc('claim_membership_paid', { p_id: id }));
+  },
+  async cancelMembership(id) {
+    check(await db().rpc('cancel_membership', { p_id: id }));
+  },
+  async savePlan(input) {
+    const { id, society_id, ...fields } = input;
+    if (id) {
+      check(await db().from('membership_plans').update(fields).eq('id', id));
+      return id;
+    }
+    const row = check(
+      await db()
+        .from('membership_plans')
+        .insert({ society_id, ...fields })
+        .select('id')
+        .single(),
+    );
+    return (row as { id: string }).id;
+  },
+  async deletePlan(id) {
+    check(await db().from('membership_plans').delete().eq('id', id));
+  },
+  async listMemberships(societyId) {
+    return check(
+      await db().from('memberships').select('*').eq('society_id', societyId).order('created_at', { ascending: false }).limit(5000),
+    ) as Membership[];
+  },
+  async setMembershipStatus(ids, status) {
+    return check(await db().rpc('set_membership_status', { p_ids: ids, p_status: status })) as number;
+  },
+  async importMemberships(planId, rows) {
+    return check(await db().rpc('import_memberships', { p_plan_id: planId, p_rows: rows })) as number;
+  },
+  async logMembershipExport(societyId, rows) {
+    check(await db().rpc('log_membership_export', { p_society_id: societyId, p_rows: rows }));
+  },
+  async checkMemberCard(societyId, code) {
+    return check(await db().rpc('check_member_card', { p_society_id: societyId, p_code: code })) as MemberCardResult;
+  },
+
+  async getPaymentSettings(societyId) {
+    return check(
+      await db().from('society_payment_settings').select('*').eq('society_id', societyId).maybeSingle(),
+    ) as PaymentSettings | null;
+  },
+  async listProducts(societyId) {
+    return check(await db().rpc('list_products', { p_society_id: societyId })) as ProductWithStock[];
+  },
+  async placeBagOrder(societyId, lines, method, slotId, note) {
+    return check(
+      await db().rpc('place_cart_order', {
+        p_society_id: societyId,
+        p_lines: lines,
+        p_payment_method: method,
+        p_slot_id: slotId,
+        p_note: note ?? null,
+      }),
+    ) as Order;
+  },
+  async listPickupSlots(societyId) {
+    return check(await db().rpc('list_pickup_slots', { p_society_id: societyId })) as PickupSlot[];
+  },
+  async choosePickupSlot(orderId, slotId) {
+    check(await db().rpc('choose_pickup_slot', { p_order_id: orderId, p_slot_id: slotId }));
+  },
+  async setProductAlert(productId, on) {
+    if (on) check(await db().from('product_alerts').upsert({ product_id: productId }, { ignoreDuplicates: true }));
+    else
+      check(
+        await db()
+          .from('product_alerts')
+          .delete()
+          .eq('product_id', productId)
+          .eq('user_id', await requireUserId()),
+      );
+  },
+  async myOrders() {
+    const u = await currentUser();
+    if (!u) return [];
+    return check(
+      await db()
+        .from('orders')
+        .select(`*, society:societies(${SOCIETY_CARD}), pickup_slot:pickup_slots(*)`)
+        .eq('user_id', u.id)
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ) as MyOrder[];
+  },
+  async claimOrderPaid(id, note) {
+    check(await db().rpc('claim_order_paid', { p_order_id: id, p_note: note ?? null }));
+  },
+  async cancelMyOrder(id) {
+    check(await db().rpc('cancel_my_order', { p_order_id: id }));
+  },
+  async uploadReceipt(kind, record, jpegUri) {
+    await requireUserId();
+    const body = await (await fetch(jpegUri)).arrayBuffer();
+    // Fixed path per record, so a second upload replaces the first instead of adding a file.
+    const { error } = await db()
+      .storage.from('receipts')
+      .upload(receiptPath(kind, record.society_id, record.id), body, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw new Error(error.message);
+    check(await db().rpc('attach_receipt', { p_kind: kind, p_id: record.id }));
+  },
+  async receiptUrl(path) {
+    const { data, error } = await db().storage.from('receipts').createSignedUrl(path, 300);
+    if (error) throw new Error(error.message);
+    return data.signedUrl;
+  },
+  async onlinePaymentsReady(societyId) {
+    return check(await db().rpc('shop_online_ready', { p_society_id: societyId })) as boolean;
+  },
+  async startOnlinePayment(orderId) {
+    return (await payments<{ url: string }>('checkout', { order_id: orderId })).url;
+  },
+  async platformFee(societyId) {
+    const f = check(await db().rpc('platform_fee_for', { p_society_id: societyId })) as PlatformFee;
+    return { percent: Number(f.percent), fixed_hkd: Number(f.fixed_hkd) };
+  },
+  async payoutAccount(societyId) {
+    return check(await db().from('society_payout_accounts').select('*').eq('society_id', societyId).maybeSingle()) as PayoutAccount | null;
+  },
+  async startPayoutSetup(societyId) {
+    return (await payments<{ url: string }>('connect', { society_id: societyId })).url;
+  },
+  async refreshPayoutAccount(societyId) {
+    return (await payments<{ account: PayoutAccount | null }>('refresh', { society_id: societyId })).account;
+  },
+  async payoutDashboardUrl(societyId) {
+    return (await payments<{ url: string }>('dashboard', { society_id: societyId })).url;
+  },
+  async refundOnlineOrder(orderId) {
+    await payments('refund', { order_id: orderId });
+  },
+  async setPaymentSettings(societyId, s) {
+    check(
+      await db().rpc('set_payment_settings', {
+        p_society_id: societyId,
+        p_fps_id: s.fps_id,
+        p_payee_name: s.payee_name,
+        p_payme_link: s.payme_link,
+        p_instructions: s.instructions,
+      }),
+    );
+  },
+  async saveProduct(input) {
+    const { id, society_id, ...fields } = input;
+    if (id) {
+      check(await db().from('products').update(fields).eq('id', id));
+      return id;
+    }
+    const row = check(
+      await db()
+        .from('products')
+        .insert({ society_id, ...fields })
+        .select('id')
+        .single(),
+    );
+    return (row as { id: string }).id;
+  },
+  async deleteProduct(id) {
+    check(await db().from('products').delete().eq('id', id));
+  },
+  async listOrders(societyId) {
+    return check(await db().rpc('list_orders', { p_society_id: societyId })) as SocietyOrder[];
+  },
+  async setOrderStatus(ids, status) {
+    return check(await db().rpc('set_order_status', { p_ids: ids, p_status: status })) as number;
+  },
+  async collectOrder(societyId, code, cashReceived, vouchers) {
+    return check(
+      await db().rpc('collect_order', {
+        p_society_id: societyId,
+        p_code: code,
+        p_cash_received: !!cashReceived,
+        p_vouchers: vouchers ?? null,
+      }),
+    ) as PickupResult;
+  },
+  async savePickupSlot(input) {
+    const { id, society_id, ...fields } = input;
+    if (id) {
+      check(await db().from('pickup_slots').update(fields).eq('id', id));
+      return id;
+    }
+    const row = check(
+      await db()
+        .from('pickup_slots')
+        .insert({ society_id, ...fields })
+        .select('id')
+        .single(),
+    );
+    return (row as { id: string }).id;
+  },
+  async deletePickupSlot(id) {
+    check(await db().from('pickup_slots').delete().eq('id', id));
+  },
+
   async pendingSocieties() {
     return check(await db().from('societies').select('*').eq('status', 'pending').order('created_at')) as Society[];
+  },
+  async listFairs() {
+    return check(await db().rpc('list_fairs')) as FairWithCounts[];
+  },
+  async getFair(id) {
+    return (check(await db().rpc('get_fair', { p_id: id })) as FairDetail | null) ?? null;
+  },
+  async listFairProducts(fairId) {
+    return check(await db().rpc('list_fair_products', { p_fair_id: fairId })) as ProductWithStock[];
+  },
+  async saveFair(input) {
+    return check(
+      await db().rpc('save_fair', {
+        p_id: input.id ?? null,
+        p_society_id: input.organiser_society_id,
+        p_name: input.name,
+        p_description: input.description,
+        p_venue: input.venue,
+        p_cover_url: input.cover_url,
+        p_starts_at: input.starts_at,
+        p_ends_at: input.ends_at,
+        p_presale_closes_at: input.presale_closes_at,
+        p_booths_open: input.booths_open,
+      }),
+    ) as string;
+  },
+  async applyForBooth(fairId, societyId, note) {
+    check(await db().rpc('apply_for_booth', { p_fair_id: fairId, p_society_id: societyId, p_note: note ?? null }));
+  },
+  async reviewBooth(boothId, status, label) {
+    check(await db().rpc('review_booth', { p_booth_id: boothId, p_status: status, p_label: label }));
+  },
+  async societyBooths(societyId) {
+    const rows = check(
+      await db().from('fair_booths').select('*, fair:fairs(*)').eq('society_id', societyId).order('created_at', { ascending: false }),
+    ) as SocietyBooth[];
+    // A booth at a fair still waiting for review has no fair you can read yet.
+    return rows.filter((b) => b.fair);
+  },
+  async fairSales(fairId) {
+    return check(await db().rpc('fair_sales', { p_fair_id: fairId })) as BoothSales[];
+  },
+  async pendingFairs() {
+    const fairs = check(await db().rpc('list_fairs')) as FairWithCounts[];
+    return fairs.filter((f) => f.status === 'pending');
+  },
+  async reviewFair(id, status) {
+    check(await db().rpc('review_fair', { p_id: id, p_status: status }));
   },
   async pendingBanners() {
     return check(
@@ -323,6 +729,9 @@ export const remoteBackend: Backend = {
   },
   async reviewBanner(id, status, priority) {
     check(await db().rpc('review_banner', { p_id: id, p_status: status, p_priority: priority }));
+  },
+  async setEventFeatured(id, featured) {
+    check(await db().rpc('set_event_featured', { p_event_id: id, p_featured: featured }));
   },
   async openReports() {
     return check(await db().rpc('list_open_reports')) as OpenReport[];

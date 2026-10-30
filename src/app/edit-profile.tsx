@@ -6,7 +6,7 @@ import { toast } from '@/components/Toast';
 import { Button, Chip, ChipRow, Field, SocietyAvatar } from '@/components/ui';
 import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { COLLEGES } from '@/lib/constants';
+import { COLLEGES, SOCIETY_CATEGORIES } from '@/lib/constants';
 import { showAlert } from '@/lib/dialog';
 import { pickAndUploadImage } from '@/lib/pickImage';
 import { space, type, useColors } from '@/lib/theme';
@@ -19,6 +19,7 @@ export default function EditProfile() {
   const [college, setCollege] = useState<string | null>(profile?.college ?? null);
   const [major, setMajor] = useState(profile?.major ?? '');
   const [year, setYear] = useState(profile?.year_of_study ? String(profile.year_of_study) : '');
+  const [interests, setInterests] = useState<Set<string>>(new Set(profile?.interests ?? []));
   const [avatar, setAvatar] = useState<string | null>(profile?.avatar_url ?? null);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -45,6 +46,7 @@ export default function EditProfile() {
         major: major.trim() || null,
         year_of_study: y >= 1 && y <= 8 ? y : null,
         avatar_url: avatar,
+        interests: SOCIETY_CATEGORIES.filter((cat) => interests.has(cat)),
       });
       await refreshProfile();
       invalidate();
@@ -90,6 +92,25 @@ export default function EditProfile() {
         <Text style={{ color: c.textSecondary, fontSize: 12, marginTop: -8 }}>
           {t('Your college’s dates show up in the Calendar tab.')}
         </Text>
+        <Text style={{ color: c.textSecondary, fontSize: 13, fontWeight: '600', textTransform: 'uppercase' }}>{t('Interests')}</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+          {SOCIETY_CATEGORIES.map((cat) => (
+            <Chip
+              key={cat}
+              label={t(cat)}
+              icon={interests.has(cat) ? 'checkmark' : undefined}
+              selected={interests.has(cat)}
+              onPress={() =>
+                setInterests((prev) => {
+                  const next = new Set(prev);
+                  if (!next.delete(cat)) next.add(cat);
+                  return next;
+                })
+              }
+            />
+          ))}
+        </View>
+        <Text style={{ color: c.textSecondary, fontSize: 12, marginTop: -8 }}>{t('We suggest societies to follow from these.')}</Text>
         <Field label={t('Major (optional)')} value={major} onChangeText={setMajor} maxLength={80} />
         <Field label={t('Year of study (optional)')} value={year} onChangeText={setYear} keyboardType="number-pad" maxLength={1} />
         <Button title={t('Save')} loading={busy} disabled={!name.trim() || uploading} onPress={save} />

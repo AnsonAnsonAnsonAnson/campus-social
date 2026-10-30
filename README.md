@@ -57,6 +57,49 @@ The in-app inbox and local event reminders work without this. To also send pushe
 
 Devices that uninstall the app are removed from `push_tokens` automatically.
 
+### Payments and receipts
+
+Campus Social never holds money. Buyers, members and ticket holders pay the society directly (FPS QR with the amount and reference filled in, PayMe link, or cash), then tap "I've paid" or add an optional payment screenshot; the treasurer confirms in the app. Treasurers can also paste their bank's transaction list into **Orders → Match bank statement**, which finds the references and ticks the matching payments for them, so most people never need a screenshot.
+
+Screenshots are kept small and short-lived:
+
+- The app shrinks each one to a JPEG about 1000 px on its longest side (typically 60–150 KB) before upload, which also strips location and camera data.
+- The private `receipts` bucket only accepts JPEGs up to 300 KB. Each order or membership has one file at a fixed path, so a second upload replaces the first instead of adding to it.
+- Only the payer and the society's owners and admins can open one, through a link that lasts five minutes.
+- The `purge-receipts` Edge Function deletes them 30 days after a payment is confirmed, 7 days after a cancellation, after 90 days at most, and removes uploads that were never attached after a day. It also frees event places held by tickets nobody paid for in time.
+
+To turn on the daily clean-up:
+
+1. `supabase functions deploy purge-receipts --no-verify-jwt`, then `supabase secrets set CRON_SECRET=<long random string>`.
+2. In the dashboard, **Integrations → Cron → Create job**: schedule `0 4 * * *` (04:00 UTC, noon in Hong Kong), type **Supabase Edge Function**, function `purge-receipts`, method POST, with an HTTP header `x-cron-secret` equal to the secret.
+
+Without it nothing breaks: expired places are also released whenever someone signs up for that event, and screenshots stay until the job runs.
+
+### Online payments (Stripe Connect)
+
+Shop orders can also be paid online: card, Apple Pay, Google Pay, Alipay and WeChat Pay, on Stripe's hosted checkout page. Each society connects its own payout account (Stripe checks the treasurer's ID and bank account on its own pages); Stripe pays the society every Friday, less the platform fee, which is 5% + HK$3 per order by default. FPS, PayMe and cash keep working as above and stay free. Only Stripe's webhook can mark an online order paid or refunded; refunds go through **Orders → Refund**. Research and fee maths: [Campus Social Shop Payments](https://claude.ai/artifact/6EZR79sWgziZsDN2QmNuPD).
+
+The demo backend pretends CU Coding Society is already verified and pays instantly, so the whole flow can be tried without Stripe.
+
+To turn it on for real:
+
+1. Open a Stripe account for Hong Kong (a sole proprietorship with a Business Registration certificate is enough). In the dashboard, set up **Connect** as a platform/marketplace, and under **Settings → Payment methods** turn on Alipay and WeChat Pay.
+2. Run the migration `supabase/migrations/20261030050000_v08_online_payments.sql`.
+3. Deploy the functions: `supabase functions deploy payments` and `supabase functions deploy stripe-webhook --no-verify-jwt`.
+4. In Stripe, **Developers → Webhooks**, add two endpoints with the URL `https://<project>.supabase.co/functions/v1/stripe-webhook`:
+   - listening to events on **your account**: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`;
+   - listening to events on **connected accounts**: `account.updated`.
+5. `supabase secrets set STRIPE_SECRET_KEY=sk_test_... STRIPE_WEBHOOK_SECRET=whsec_... STRIPE_CONNECT_WEBHOOK_SECRET=whsec_...`. Optional: `PAYMENTS_RETURN_URL` (default: `docs/return.html` on GitHub Pages, which must be enabled) and `STRIPE_METHODS` (default `card,alipay,wechat_pay`).
+6. Test with test-mode keys (card `4242 4242 4242 4242`), then switch to live keys and live webhook secrets.
+
+To change the fee, run `update platform_fee set percent = 5, fixed_hkd = 3;` in the SQL editor, or `update society_payout_accounts set fee_percent = 3, fee_fixed_hkd = 0 where society_id = '<society id>';` for one society (`set_platform_fee` does the same for platform admins signed in to the app).
+
+### Fairs (booths, presale and food vouchers)
+
+For the big fairs where many societies run booths in one place (O'Camp, the Christmas fair, spring markets). An organiser society creates the fair from its dashboard (**Shop → Organise a fair**); a platform admin approves it in the review queue (**Fairs** tab), and it then shows on Discover and under **Fairs**. Society admins ask for a booth from the fair page; the organiser confirms each one and gives it a booth number. A society with a confirmed booth adds products that sell at the fair: merch to collect at the booth, or food vouchers (with an optional "worth" value, e.g. HK$30 of food for HK$25).
+
+Fair items check out on their own (one booth, one order), paid ahead by card/Alipay, FPS or PayMe, and the presale closes for the whole fair at once. At the booth, the committee uses the same pickup scanner: merch is handed over, and for vouchers they tap how many are used now, so a buyer can use one voucher at lunch and the rest later. The organiser sees presale totals per booth (never buyers' details). Run `supabase/migrations/20261030060000_v09_fairs.sql` after v0.8.
+
 ## Launching on the App Store
 
 You need an Apple Developer account (US$99/year) and an Expo account. No Mac is required; EAS builds in the cloud.
@@ -70,10 +113,19 @@ You need an Apple Developer account (US$99/year) and an Expo account. No Mac is 
    npx eas-cli@latest submit -p ios --latest
    ```
    Use the `preview` profile to install test builds on your own phone, or TestFlight via `submit`.
-4. **App Store Connect listing.** You need a privacy policy URL and support URL (update `PRIVACY_URL`, `TERMS_URL`, `SUPPORT_EMAIL` in `src/lib/constants.ts`), screenshots (6.9" iPhone), description and keywords (both languages are ready in `store/app-store-listing.md`; set the primary language to Chinese (Traditional)), and age rating.
-5. **App Privacy answers.** Data collected and linked to the user: email address, name, user ID, photos (society uploads only), other user content (event sign-ups). Not used for tracking. No third-party analytics are included.
-6. **Review account.** Reviewers can't receive a CUHK email code. Create a user in Supabase **Auth → Users → Add user** with a password, add the address to `public.allowed_emails` first, make it a committee member of a test society, and give the credentials in App Review notes. They sign in via "Sign in with a password instead".
-7. **Things App Review checks that are already handled:** account deletion in-app, report button on user-generated content plus a moderation queue, purpose strings for camera/photos/calendar, encryption export answer (`usesNonExemptEncryption: false`), privacy manifest for UserDefaults.
+4. **Public pages.** The privacy policy, terms and support page live in `docs/` (Chinese and English). Turn on GitHub Pages (repo **Settings › Pages › Deploy from a branch › main / docs**) and they appear at `https://ansonansonansonanson.github.io/campus-social/` (`privacy.html`, `terms.html`). The app links to them from sign-in and Profile (`src/lib/constants.ts`).
+5. **App Store Connect listing.** Privacy policy URL and support URL from step 4, screenshots (6.9" iPhone), description and keywords (both languages are in `store/app-store-listing.md`; set the primary language to Chinese (Traditional)), age rating and review notes (also in that file).
+6. **App Privacy answers.** See `store/app-store-listing.md`. Nothing is used for tracking and there are no third-party analytics.
+7. **Review account.** Reviewers can't receive a CUHK email code. Follow `supabase/review-account.sql`: allow the address, create the user with a password in Supabase **Auth › Users › Add user**, then run part 2 to give it a test society. Put the credentials in the review notes. They sign in via "Sign in with a password instead".
+8. **Things App Review checks that are already handled:**
+   - account deletion in the app
+   - a report button on events and societies, hiding a society, a moderation queue, and terms with a zero-tolerance rule that are one tap from sign-in (guideline 1.2)
+   - browsing without an account (5.1.1)
+   - purpose strings for camera, photos and calendar in both languages, with the photo picker needing no permission
+   - the encryption export answer (`usesNonExemptEncryption: false`)
+   - a privacy manifest for UserDefaults, file timestamps, boot time and disk space
+   - payments go straight to societies for real-world events, merch and memberships, so in-app purchase doesn't apply (3.1.3(e))
+   - light, dark and tinted app icons
 
 ## Project layout
 
@@ -100,7 +152,7 @@ store/              App Store listing text in both languages
   __tests__/        Unit tests (jest)
 supabase/
   migrations/       Schema, RLS policies, RPCs (register, cancel, check-in, committee, moderation, ...)
-  functions/        send-push Edge Function
+  functions/        send-push and purge-receipts Edge Functions
   tests/            Database tests (run against plain Postgres)
   seed.sql          Generated sample data
   setup.sql         All migrations in one file, for a new project's SQL Editor

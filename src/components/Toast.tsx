@@ -4,14 +4,14 @@ import { AccessibilityInfo, Animated, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { IconName } from '@/components/ui';
-import { radius, space, useColors } from '@/lib/theme';
+import { elevation, space, useColors, useIsDark } from '@/lib/theme';
 
 type ToastMessage = { id: number; text: string; icon: IconName; tone: 'success' | 'error' | 'info' };
 
 const listeners = new Set<(t: ToastMessage) => void>();
 let counter = 0;
 
-/** Brief confirmation shown above the tab bar, e.g. toast(t('Event saved')). */
+/** Brief confirmation shown at the top, under the header, e.g. toast(t('Event saved')). */
 export function toast(text: string, opts: { icon?: IconName; tone?: ToastMessage['tone'] } = {}) {
   const tone = opts.tone ?? 'success';
   const icon = opts.icon ?? (tone === 'error' ? 'alert-circle' : tone === 'info' ? 'information-circle' : 'checkmark-circle');
@@ -20,11 +20,12 @@ export function toast(text: string, opts: { icon?: IconName; tone?: ToastMessage
   AccessibilityInfo.announceForAccessibility(text);
 }
 
-const VISIBLE_MS = 2400;
+const VISIBLE_MS = 3000;
 
 export function ToastHost() {
   const c = useColors();
   const insets = useSafeAreaInsets();
+  const dark = useIsDark();
   const [message, setMessage] = useState<ToastMessage | null>(null);
   const [anim] = useState(() => new Animated.Value(0));
 
@@ -48,7 +49,9 @@ export function ToastHost() {
   }, [anim]);
 
   if (!message) return null;
-  const color = message.tone === 'error' ? c.danger : message.tone === 'info' ? c.tint : c.success;
+  // The toast is near-black in light mode and near-white in dark mode, so the icon colours flip too.
+  const color =
+    message.tone === 'error' ? (dark ? '#E0201B' : '#FF453A') : message.tone === 'info' ? c.onToast : dark ? '#078040' : '#30D158';
   return (
     <Animated.View
       pointerEvents="none"
@@ -56,10 +59,10 @@ export function ToastHost() {
       style={[
         styles.toast,
         {
-          bottom: insets.bottom + 64,
+          top: insets.top + 52,
           backgroundColor: c.toast,
           opacity: anim,
-          transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+          transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }],
         },
       ]}>
       <Ionicons name={message.icon} size={20} color={color} />
@@ -79,14 +82,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
-    paddingHorizontal: space.lg,
+    paddingHorizontal: 14,
     paddingVertical: space.md,
-    borderRadius: radius.lg,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    borderRadius: 14,
+    ...elevation.e3,
   },
   text: { fontSize: 15, fontWeight: '600', flexShrink: 1 },
 });

@@ -10,7 +10,7 @@ import { api } from './api';
 import { confirmAsync } from './dialog';
 import { formatTime } from './format';
 import { getLang, t } from './i18n';
-import type { Ticket } from './types';
+import type { MyOrder, Product, Ticket } from './types';
 
 export const notificationsSupported = Platform.OS !== 'web';
 
@@ -18,6 +18,8 @@ const REMINDERS_KEY = 'settings.reminders';
 const PUSH_TOKEN_KEY = 'push.token';
 const ASKED_KEY = 'push.asked';
 const REMINDER_PREFIX = 'reminder:';
+const PICKUP_PREFIX = 'pickup:';
+const DROP_PREFIX = 'drop:';
 const REMINDER_LEAD_MS = 60 * 60_000;
 const ANDROID_CHANNEL = 'reminders';
 
@@ -121,13 +123,86 @@ export async function syncReminders(tickets: Ticket[]) {
   }
 }
 
-/** Reloads tickets and reschedules reminders; errors are ignored (reminders are best effort). */
+/**
+ * One reminder an hour before each booked pickup time for paid orders, so
+ * fewer people forget to collect. Same id scheme as event reminders.
+ */
+export async function syncPickupReminders(orders: MyOrder[]) {
+  if (!notificationsSupported) return;
+  const on = (await remindersEnabled()) && (await permissionState()) === 'granted';
+  const wanted = new Map<string, MyOrder>();
+  if (on) {
+    for (const o of orders) {
+      const slot = o.pickup_slot;
+      if (!slot || (o.status !== 'paid' && o.status !== 'ready')) continue;
+      if (new Date(slot.starts_at).getTime() - REMINDER_LEAD_MS > Date.now() + 60_000) {
+        wanted.set(`${PICKUP_PREFIX}${o.id}:${slot.starts_at}:${getLang()}`, o);
+      }
+    }
+  }
+  const scheduled = (await Notifications.getAllScheduledNotificationsAsync()).filter((n) => n.identifier.startsWith(PICKUP_PREFIX));
+  for (const n of scheduled) {
+    if (!wanted.has(n.identifier)) await Notifications.cancelScheduledNotificationAsync(n.identifier);
+  }
+  const have = new Set(scheduled.map((n) => n.identifier));
+  for (const [identifier, o] of wanted) {
+    if (have.has(identifier)) continue;
+    const slot = o.pickup_slot!;
+    await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: {
+        title: t('Pickup at {time}: {title}', { time: formatTime(slot.starts_at), title: o.product_title }),
+        body: t('{location}. Your pickup QR is in Tickets › Orders.', { location: slot.location }),
+        data: { orderId: o.id },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(new Date(slot.starts_at).getTime() - REMINDER_LEAD_MS),
+        channelId: ANDROID_CHANNEL,
+      },
+    });
+  }
+}
+
+/** Reloads tickets and orders and reschedules reminders; errors are ignored (reminders are best effort). */
 export async function refreshReminders() {
   try {
-    await syncReminders((await api.getUser()) ? await api.myTickets() : []);
+    const signedIn = !!(await api.getUser());
+    await syncReminders(signedIn ? await api.myTickets() : []);
+    await syncPickupReminders(signedIn ? await api.myOrders() : []);
   } catch {
     // Offline or signed out: try again next time.
   }
+}
+
+/** Is a "remind me when orders open" set for this product on this phone? */
+export async function hasDropReminder(productId: string) {
+  if (!notificationsSupported) return false;
+  return (await Notifications.getAllScheduledNotificationsAsync()).some((n) => n.identifier.startsWith(`${DROP_PREFIX}${productId}:`));
+}
+
+/**
+ * A local notification when orders open for a product, set from the product
+ * page. Returns false when notifications are off or not available (web).
+ */
+export async function setDropReminder(product: Pick<Product, 'id' | 'society_id' | 'title' | 'opens_at'>, on: boolean) {
+  if (!notificationsSupported) return false;
+  for (const n of await Notifications.getAllScheduledNotificationsAsync()) {
+    if (n.identifier.startsWith(`${DROP_PREFIX}${product.id}:`)) await Notifications.cancelScheduledNotificationAsync(n.identifier);
+  }
+  if (!on) return true;
+  if (!product.opens_at || new Date(product.opens_at).getTime() < Date.now() + 60_000) return false;
+  if ((await permissionState()) !== 'granted' && !(await requestPermission())) return false;
+  await Notifications.scheduleNotificationAsync({
+    identifier: `${DROP_PREFIX}${product.id}:${product.opens_at}`,
+    content: {
+      title: t('Orders are open: {title}', { title: product.title }),
+      body: t('Get yours before it sells out.'),
+      data: { productId: product.id, societyId: product.society_id },
+    },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(product.opens_at), channelId: ANDROID_CHANNEL },
+  });
+  return true;
 }
 
 /**
@@ -157,7 +232,9 @@ export async function unregisterForPush() {
   if (notificationsSupported) {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     for (const n of scheduled) {
-      if (n.identifier.startsWith(REMINDER_PREFIX)) await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      if ([REMINDER_PREFIX, PICKUP_PREFIX, DROP_PREFIX].some((p) => n.identifier.startsWith(p))) {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      }
     }
   }
 }

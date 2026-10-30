@@ -1,7 +1,21 @@
 // Sample content used by demo mode and by scripts/make-seed.ts (supabase/seed.sql).
 // Event times are relative to "today" in Hong Kong so the app always looks alive.
 // Campus dates are illustrative: replace them with the official CUHK calendar.
-import type { Banner, CampusDate, CampusEvent, Society } from './types';
+import { DEMO_PHOTO_CONCERT, DEMO_PHOTO_HACK, DEMO_PHOTO_HIKE } from './demoPhotos';
+import type {
+  Banner,
+  CampusDate,
+  CampusEvent,
+  Fair,
+  FairBooth,
+  Membership,
+  MembershipPlan,
+  PaymentSettings,
+  PickupSlot,
+  Product,
+  Society,
+  SocietyPost,
+} from './types';
 
 const HK_OFFSET_HOURS = 8;
 
@@ -21,6 +35,9 @@ const sid = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, '0'
 const eid = (n: number) => `20000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const bid = (n: number) => `30000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const cid = (n: number) => `40000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const pid = (n: number) => `50000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const poid = (n: number) => `70000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const prid = (n: number) => `60000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 function society(n: number, s: Partial<Society> & Pick<Society, 'name' | 'category' | 'description'>): Society {
   return {
@@ -112,7 +129,13 @@ type EventSeed = Omit<
   | 'waitlist_enabled'
   | 'confirmed_count'
   | 'waitlist_count'
+  | 'save_count'
+  | 'featured_at'
   | 'signup_question'
+  | 'members_only'
+  | 'price_hkd'
+  | 'member_price_hkd'
+  | 'payment_window_hours'
   | 'removed_at'
 > &
   Partial<CampusEvent>;
@@ -127,11 +150,19 @@ function event(n: number, e: EventSeed): CampusEvent {
     waitlist_enabled: true,
     confirmed_count: 0,
     waitlist_count: 0,
+    save_count: 0,
+    featured_at: null,
     signup_question: null,
+    members_only: false,
+    price_hkd: null,
+    member_price_hkd: null,
+    payment_window_hours: 48,
     removed_at: null,
     ...e,
   };
 }
+
+export const DEMO_DINNER = eid(14);
 
 export function makeDemoEvents(now = new Date()): CampusEvent[] {
   const at = (d: number, h: number, m = 0) => hkAt(d, h, m, now);
@@ -149,6 +180,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       price_text: 'Free',
       confirmed_count: 30,
       waitlist_count: 4,
+      save_count: 41,
     }),
     event(2, {
       society_id: sid(2),
@@ -163,6 +195,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       price_text: 'Free',
       signup_question: 'What would you like to build? (Helps us form teams)',
       confirmed_count: 61,
+      save_count: 35,
     }),
     event(3, {
       society_id: sid(3),
@@ -175,6 +208,8 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       registration_required: false,
       capacity: null,
       price_text: 'Free',
+      save_count: 120,
+      featured_at: at(-2, 10),
     }),
     event(4, {
       society_id: sid(4),
@@ -188,6 +223,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 25,
       price_text: 'Free',
       confirmed_count: 12,
+      save_count: 6,
     }),
     event(5, {
       society_id: sid(5),
@@ -201,6 +237,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 40,
       price_text: 'Free',
       confirmed_count: 18,
+      save_count: 9,
     }),
     event(6, {
       society_id: sid(6),
@@ -214,6 +251,8 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 300,
       price_text: 'Free (ticket required)',
       confirmed_count: 212,
+      save_count: 96,
+      featured_at: at(-5, 10),
     }),
     event(7, {
       society_id: sid(7),
@@ -228,6 +267,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       waitlist_enabled: false,
       price_text: 'Free',
       confirmed_count: 15,
+      save_count: 4,
     }),
     event(8, {
       society_id: sid(8),
@@ -241,6 +281,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 120,
       price_text: 'HK$20 at the door',
       confirmed_count: 87,
+      save_count: 52,
     }),
     event(9, {
       society_id: sid(2),
@@ -255,9 +296,11 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       price_text: 'Free',
       confirmed_count: 22,
       registration_opens_at: at(1, 12),
+      save_count: 14,
     }),
     event(10, {
       society_id: sid(1),
+      members_only: true,
       title: 'MacLehose Section 2 day hike',
       description: 'A full day on one of the most beautiful sections of the MacLehose Trail. Moderate to hard.',
       category: 'Sports',
@@ -266,8 +309,10 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       ends_at: at(13, 17),
       registration_required: true,
       capacity: 25,
-      price_text: 'Free',
+      price_text: 'Coach to Pak Tam Chung and back',
+      price_hkd: 60,
       confirmed_count: 9,
+      save_count: 11,
     }),
     event(11, {
       society_id: sid(8),
@@ -281,6 +326,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 30,
       price_text: 'Bring your own Octopus',
       confirmed_count: 3,
+      save_count: 18,
     }),
     event(12, {
       society_id: sid(3),
@@ -294,6 +340,7 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 150,
       price_text: 'Free',
       confirmed_count: 44,
+      save_count: 23,
     }),
     event(13, {
       society_id: sid(4),
@@ -307,6 +354,25 @@ export function makeDemoEvents(now = new Date()): CampusEvent[] {
       capacity: 8,
       price_text: 'HK$50 materials',
       confirmed_count: 8,
+      save_count: 5,
+    }),
+    event(14, {
+      society_id: sid(2),
+      title: 'CUCS year-end dinner',
+      description: 'Eight courses, lucky draw and the Hack Night awards. Vegetarian option: tell us when you sign up.',
+      category: 'Social',
+      location: 'Tai Po Mega Mall, Jade Garden',
+      starts_at: at(20, 19),
+      ends_at: at(20, 22),
+      registration_required: true,
+      capacity: 80,
+      price_text: null,
+      price_hkd: 180,
+      member_price_hkd: 150,
+      payment_window_hours: 72,
+      signup_question: 'Any dietary needs?',
+      confirmed_count: 41,
+      save_count: 17,
     }),
   ];
 }
@@ -376,5 +442,422 @@ export function makeDemoCampusDates(now = new Date()): CampusDate[] {
     date(6, 'New Asia High Table Dinner', '新亞高桌晚宴', 'college', 12, 12, 'New Asia'),
     date(7, 'Last day of classes', '最後上課日', 'term', 35),
     date(8, 'Examination period', '考試期', 'exam', 38, 50),
+  ];
+}
+
+/** This academic year's membership plans: the demo user can join Hiking, and runs CUCS's. */
+export function makeDemoPlans(now = new Date()): MembershipPlan[] {
+  const year = Number(hkDay(0, now).slice(0, 4)) - (Number(hkDay(0, now).slice(5, 7)) < 9 ? 1 : 0);
+  const plan = (n: number, society: number, name: string, price: number, extra: Partial<MembershipPlan> = {}): MembershipPlan => ({
+    id: pid(n),
+    society_id: sid(society),
+    name,
+    price_hkd: price,
+    valid_from: `${year}-09-01`,
+    valid_until: `${year + 1}-08-31`,
+    questions: [],
+    auto_approve: false,
+    is_open: true,
+    created_at: `${year}-08-20T02:00:00Z`,
+    ...extra,
+  });
+  return [
+    plan(1, 1, `${year}-${String(year + 1).slice(2)} member`, 50, { questions: ['Hiking experience (beginner, some, lots)'] }),
+    plan(2, 2, `${year}-${String(year + 1).slice(2)} member`, 30, { questions: ['GitHub username'] }),
+    plan(3, 6, 'Friends of the Orchestra', 0, { auto_approve: true }),
+  ];
+}
+
+const DEMO_MEMBERS = [
+  ['Chan Tai Man', '1155180001', 'Shaw', 'Computer Science'],
+  ['Wong Ka Yan', '1155180002', 'New Asia', 'Information Engineering'],
+  ['Lee Hoi Ching', '1155190003', 'United', 'Mathematics'],
+  ['Cheung Chi Ho', '1155190004', 'Chung Chi', 'Computer Science'],
+  ['Lam Wing Sze', '1155200005', 'Morningside', 'Physics'],
+  ['Ng Pak Hei', '1155200006', 'S.H. Ho', 'Computer Engineering'],
+  ['Ho Sum Yee', '1155210007', 'Wu Yee Sun', 'Statistics'],
+  ['Yeung Tsz Kit', '1155210008', 'Lee Woo Sing', 'Computer Science'],
+] as const;
+
+/** CUCS's roster: mostly active, a couple waiting for the treasurer. */
+export function makeDemoMemberships(now = new Date()): Membership[] {
+  return DEMO_MEMBERS.map(([full_name, student_id, college, major], i) => {
+    const pending = i >= 6;
+    return {
+      id: `70000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+      plan_id: pid(2),
+      society_id: sid(2),
+      user_id: null,
+      status: pending ? 'pending' : 'active',
+      member_no: pending ? null : i + 1,
+      card_code: `democard${i + 1}`.padEnd(32, '0'),
+      full_name,
+      email: `${student_id}@link.cuhk.edu.hk`,
+      student_id,
+      college,
+      major,
+      phone: null,
+      answers: [i % 2 ? '' : full_name.split(' ')[0].toLowerCase() + '-dev'],
+      payment_method: 'fps',
+      consent_at: hkAt(-30 + i, 12, 0, now),
+      claimed_paid_at: i === 6 ? hkAt(-1, 21, 0, now) : pending ? null : hkAt(-30 + i, 12, 5, now),
+      paid_at: pending ? null : hkAt(-29 + i, 10, 0, now),
+      imported: i < 3,
+      receipt_path: i === 6 ? `${sid(2)}/membership/demo-receipt.jpg` : null,
+      receipt_at: i === 6 ? hkAt(-1, 21, 0, now) : null,
+      created_at: hkAt(-30 + i, 12, 0, now),
+    };
+  });
+}
+
+export const demoPaymentSettings: PaymentSettings[] = [
+  {
+    society_id: sid(1),
+    fps_id: '91234567',
+    payee_name: 'CUHK Hiking Club',
+    payme_link: 'https://payme.hsbc/example',
+    instructions: 'Use your order reference as the payment note.',
+    updated_at: '2026-09-01T02:00:00Z',
+  },
+  {
+    society_id: sid(2),
+    fps_id: '1234567',
+    payee_name: 'CU Coding Society',
+    payme_link: null,
+    instructions: null,
+    updated_at: '2026-09-01T02:00:00Z',
+  },
+];
+
+export function makeDemoProducts(now = new Date()): Product[] {
+  const product = (n: number, society: number, p: Partial<Product> & Pick<Product, 'title' | 'price_hkd'>): Product => ({
+    id: prid(n),
+    society_id: sid(society),
+    description: '',
+    image_url: null,
+    images: [],
+    member_price_hkd: null,
+    variants: [{ name: '', stock: null }],
+    size_chart: null,
+    goal_qty: null,
+    ready_on: null,
+    max_per_buyer: null,
+    opens_at: null,
+    closes_at: hkAt(10, 23, 59, now),
+    pickup_note: null,
+    max_per_order: 5,
+    payment_window_hours: 48,
+    status: 'published',
+    created_at: hkAt(-5, 12, 0, now),
+    ...p,
+  });
+  return [
+    product(1, 1, {
+      title: 'Club hoodie 2026',
+      price_hkd: 220,
+      member_price_hkd: 180,
+      description:
+        'Heavyweight hoodie with the club logo on the back. Pre-order closes in 10 days; pickup at the Sunday hike meeting point.',
+      variants: [
+        { name: 'S', stock: 10 },
+        { name: 'M', stock: 3 },
+        { name: 'L', stock: 12 },
+        { name: 'XL', stock: 0 },
+        { name: 'XXL', stock: 6, extra_hkd: 20 },
+      ],
+      size_chart: 'Size, Chest (cm), Length (cm)\nS, 52, 68\nM, 55, 71\nL, 58, 74\nXL, 61, 76\nXXL, 64, 78',
+      goal_qty: 30,
+      ready_on: hkDay(24, now),
+      max_per_buyer: 2,
+      pickup_note: 'University Station exit B, before the Sunday hikes',
+    }),
+    product(4, 1, {
+      title: 'Trail tote bag',
+      price_hkd: 80,
+      member_price_hkd: 65,
+      description: 'Canvas tote with the Ma On Shan ridge printed on the front. Fits a water bottle and a rain jacket.',
+      variants: [{ name: '', stock: 30 }],
+      pickup_note: 'University Station exit B, before the Sunday hikes',
+      created_at: hkAt(-4, 12, 0, now),
+    }),
+    product(5, 1, {
+      title: 'Lion Rock enamel pin',
+      price_hkd: 45,
+      description: 'Limited run of 100, numbered on the back. One per person.',
+      variants: [{ name: '', stock: 100 }],
+      max_per_buyer: 1,
+      opens_at: hkAt(2, 12, 0, now),
+      created_at: hkAt(-3, 12, 0, now),
+    }),
+    product(6, 1, {
+      title: 'Club cap',
+      price_hkd: 110,
+      description: 'Six-panel cap, adjustable strap.',
+      variants: [
+        { name: 'Black', stock: 0 },
+        { name: 'Sand', stock: 0 },
+      ],
+      created_at: hkAt(-6, 12, 0, now),
+    }),
+    product(2, 2, {
+      title: 'Sticker pack',
+      price_hkd: 25,
+      member_price_hkd: 15,
+      description: 'Six vinyl stickers, laptop-sized.',
+      variants: [{ name: '', stock: 80 }],
+      pickup_note: 'Room 1009, Ho Sin-Hang Engineering Building',
+    }),
+    product(3, 2, {
+      title: 'CUCS T-shirt',
+      price_hkd: 90,
+      member_price_hkd: 70,
+      variants: [
+        { name: 'S', stock: null },
+        { name: 'M', stock: null },
+        { name: 'L', stock: null },
+      ],
+      status: 'draft',
+    }),
+  ];
+}
+
+/** Pickup times: two this week for the Hiking Club, three for CUCS (one nearly full). */
+export function makeDemoPickupSlots(now = new Date()): PickupSlot[] {
+  const slot = (n: number, society: number, day: number, hour: number, location: string, capacity: number | null): PickupSlot => ({
+    id: `70000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+    society_id: sid(society),
+    starts_at: hkAt(day, hour, 0, now),
+    ends_at: hkAt(day, hour + 1, 0, now),
+    location,
+    capacity,
+  });
+  return [
+    slot(1, 1, 3, 9, 'University Station exit B', null),
+    slot(2, 1, 6, 13, 'Pavilion of Harmony', 30),
+    slot(3, 2, 1, 13, 'Room 1009, Ho Sin-Hang Engineering Building', 20),
+    slot(4, 2, 3, 13, 'Room 1009, Ho Sin-Hang Engineering Building', 20),
+    slot(5, 2, 5, 18, 'University Mall, outside Starbucks', 6),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Fairs (demo only, not in seed.sql). Chung Chi's Christmas fair, where CUCS has
+// booth B12, and an engineering fair CUCS organises, so both sides show.
+// ---------------------------------------------------------------------------
+const fid = (n: number) => `80000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const boid = (n: number) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+export const DEMO_FAIR = fid(1);
+export const DEMO_OWN_FAIR = fid(2);
+
+export function makeDemoFairs(now = new Date()): Fair[] {
+  return [
+    {
+      id: fid(1),
+      organiser_society_id: sid(3),
+      name: 'Chung Chi Christmas Fair',
+      description:
+        "Thirty society booths around the lake: hot food, handmade gifts and this year's merch. Pre-order here and skip the queue: pick up at the booth, or show your voucher QR for food.",
+      venue: 'Chung Chi lakeside, Lake Ad Excellentiam',
+      cover_url: null,
+      starts_at: hkAt(12, 11, 0, now),
+      ends_at: hkAt(13, 18, 0, now),
+      presale_closes_at: hkAt(11, 23, 59, now),
+      booths_open: true,
+      status: 'approved',
+      created_at: hkAt(-14, 12, 0, now),
+    },
+    {
+      id: fid(2),
+      organiser_society_id: sid(2),
+      name: 'Engineering Spring Market',
+      description: 'Engineering societies sell merch and snacks outside the Ho Sin-Hang building.',
+      venue: 'Ho Sin-Hang Engineering Building forecourt',
+      cover_url: null,
+      starts_at: hkAt(26, 12, 0, now),
+      ends_at: hkAt(26, 19, 0, now),
+      presale_closes_at: null,
+      booths_open: true,
+      status: 'approved',
+      created_at: hkAt(-3, 12, 0, now),
+    },
+  ];
+}
+
+export function makeDemoBooths(now = new Date()): Omit<FairBooth, 'society'>[] {
+  const booth = (
+    n: number,
+    fair: number,
+    society: number,
+    label: string | null,
+    status: FairBooth['status'],
+    note: string | null = null,
+  ) => ({
+    id: boid(n),
+    fair_id: fid(fair),
+    society_id: sid(society),
+    label,
+    status,
+    note,
+    created_at: hkAt(-10 + n, 12, 0, now),
+  });
+  return [
+    booth(1, 1, 3, 'A01', 'approved'),
+    booth(2, 1, 2, 'B12', 'approved', 'Bubble tea and stickers'),
+    booth(3, 1, 1, 'B07', 'approved', 'Hoodies and trail mix'),
+    booth(4, 1, 4, 'C03', 'approved', 'Photo calendars and instant portraits'),
+    booth(5, 2, 2, 'E1', 'approved'),
+    booth(6, 2, 4, 'E2', 'approved', 'Prints of the campus at night'),
+    booth(7, 2, 5, null, 'pending', 'Debate team cookies, about 200 boxes'),
+    booth(8, 2, 8, null, 'pending', 'Food from home countries: samosas, onigiri, empanadas'),
+  ];
+}
+
+/** Presale at the Christmas fair: merch to collect at the booth and food vouchers. */
+export function makeDemoFairProducts(now = new Date()): Product[] {
+  const base = makeDemoProducts(now)[0];
+  const item = (n: number, society: number, p: Partial<Product> & Pick<Product, 'title' | 'price_hkd'>): Product => ({
+    ...base,
+    id: prid(100 + n),
+    society_id: sid(society),
+    description: '',
+    member_price_hkd: null,
+    variants: [{ name: '', stock: null }],
+    size_chart: null,
+    goal_qty: null,
+    ready_on: null,
+    max_per_buyer: null,
+    opens_at: null,
+    closes_at: null,
+    pickup_note: null,
+    max_per_order: 10,
+    fair_id: fid(1),
+    kind: 'merch',
+    voucher_value_hkd: null,
+    created_at: hkAt(-2, 12, n, now),
+    ...p,
+  });
+  return [
+    item(1, 2, {
+      title: 'Bubble tea voucher',
+      price_hkd: 22,
+      kind: 'voucher',
+      voucher_value_hkd: 28,
+      description: 'Brown sugar or jasmine milk tea, made at the booth. Show the QR, one cup per voucher.',
+      variants: [{ name: '', stock: 300 }],
+    }),
+    item(2, 2, {
+      title: 'Christmas sticker set',
+      price_hkd: 30,
+      member_price_hkd: 20,
+      description: 'Eight stickers: snowy Pavilion of Harmony, reindeer on the 1A bus, and more.',
+      variants: [{ name: '', stock: 120 }],
+    }),
+    item(3, 3, {
+      title: 'Hot chocolate voucher',
+      price_hkd: 15,
+      kind: 'voucher',
+      voucher_value_hkd: 18,
+      description: 'A large hot chocolate at the Student Union booth.',
+      variants: [{ name: '', stock: 500 }],
+    }),
+    item(4, 1, {
+      title: 'Trail mix bag voucher',
+      price_hkd: 25,
+      kind: 'voucher',
+      description: 'Our hiking trail mix, 200 g, packed on the day.',
+      variants: [{ name: '', stock: 80 }],
+    }),
+    item(5, 4, {
+      title: '2027 campus photo calendar',
+      price_hkd: 85,
+      description: 'Twelve months of CUHK by our members. A4, wall hanging.',
+      variants: [{ name: '', stock: 60 }],
+      goal_qty: 50,
+    }),
+    item(6, 4, {
+      title: 'Instant portrait voucher',
+      price_hkd: 40,
+      kind: 'voucher',
+      description: 'Two instant film portraits at the photo booth, Christmas backdrop.',
+      variants: [{ name: '', stock: 40 }],
+    }),
+  ];
+}
+
+export type DemoPost = Omit<SocietyPost, 'society' | 'event'>;
+
+/** Society posts, newest first within each society. Only demo mode uses these. */
+export function makeDemoPosts(now = new Date()): DemoPost[] {
+  const ago = (hours: number) => new Date(now.getTime() - hours * 3600_000).toISOString();
+  const post = (n: number, p: Partial<DemoPost> & Pick<DemoPost, 'society_id' | 'body' | 'created_at'>): DemoPost => ({
+    id: poid(n),
+    image_urls: [],
+    event_id: null,
+    pinned: false,
+    like_count: 0,
+    edited_at: null,
+    removed_at: null,
+    ...p,
+  });
+  return [
+    post(1, {
+      society_id: sid(1),
+      body: 'Sunrise hike this week is full, but 4 people are on the waitlist and places usually free up the night before. Join the waitlist and keep notifications on 🌄',
+      event_id: eid(1),
+      pinned: true,
+      like_count: 48,
+      created_at: ago(5),
+    }),
+    post(2, {
+      society_id: sid(1),
+      body: 'Last Sunday on Sharp Peak. 23 of us made it to the top before the clouds rolled in. Thanks to everyone who carried extra water for the newbies!',
+      image_urls: [DEMO_PHOTO_HIKE],
+      like_count: 132,
+      created_at: ago(52),
+    }),
+    post(3, {
+      society_id: sid(1),
+      body: 'Reminder: proper hiking shoes are required for the MacLehose day hike. Trainers with no grip will be turned away at the start, sorry, it is for your safety.',
+      event_id: eid(10),
+      like_count: 19,
+      created_at: ago(120),
+    }),
+    post(4, {
+      society_id: sid(2),
+      body: 'Hack Night is 3 days away and 61 people have signed up. No team yet? Tell us what you want to build in the sign-up question and we will match you on the night. Pizza at 8 🍕',
+      event_id: eid(2),
+      pinned: true,
+      like_count: 86,
+      created_at: ago(3),
+    }),
+    post(5, {
+      society_id: sid(2),
+      body: 'Photos from our first workshop of the term. 70 people, 14 apps shipped, 1 laptop survived a coffee spill.',
+      image_urls: [DEMO_PHOTO_HACK],
+      like_count: 64,
+      created_at: ago(30),
+    }),
+    post(6, {
+      society_id: sid(2),
+      body: 'Club hoodies are back in the shop. Order by Friday so we can send the sizes to the printer; pickup is at the year-end dinner.',
+      like_count: 27,
+      created_at: ago(76),
+    }),
+    post(7, {
+      society_id: sid(6),
+      body: 'Dress rehearsal done. Dvořák 8 on Friday at Lee Hysan Hall, free tickets in the app. See you there 🎻',
+      image_urls: [DEMO_PHOTO_CONCERT],
+      event_id: eid(6),
+      like_count: 210,
+      created_at: ago(9),
+    }),
+    post(8, {
+      society_id: sid(4),
+      body: 'Theme for this month’s photo challenge: “reflections”. Post yours with #CUPhotoSoc and we will feature our favourites at the darkroom session.',
+      event_id: eid(13),
+      like_count: 41,
+      created_at: ago(26),
+    }),
   ];
 }

@@ -1442,4 +1442,4023 @@ begin
 end;
 $$;
 
+-- ===== 20261027000000_v04_members.sql =====
+
+-- v0.4 part 1: society membership (the yearly member roster), and no more
+-- student IDs as display names.
+--
+-- society_members is the COMMITTEE (is_society_member() grants management
+-- rights), so ordinary members get their own tables: membership_plans (one per
+-- year or tier) and memberships (one row per person per plan).
+
+-- ---------------------------------------------------------------------------
+-- Display names: new accounts start with an empty name instead of the email
+-- prefix, which for students is their student ID. The welcome screen asks for
+-- a real name. Existing accounts still named after their email are cleared.
+-- ---------------------------------------------------------------------------
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not (
+    lower(new.email) ~ '@([a-z0-9-]+\.)*cuhk\.edu\.hk$'
+    or exists (select 1 from public.allowed_emails a where a.email = lower(new.email))
+  ) then
+    raise exception 'Please sign in with your CUHK email address';
+  end if;
+
+  insert into public.profiles (id, email, display_name)
+  values (new.id, lower(new.email), '');
+  return new;
+end;
+$$;
+
+update public.profiles set display_name = '' where display_name = split_part(email, '@', 1);
+
+-- ---------------------------------------------------------------------------
+-- Notification kinds for memberships and (part 2) shop orders
+-- ---------------------------------------------------------------------------
+alter table public.notifications drop constraint notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check check (kind in (
+  'waitlist_promoted', 'event_cancelled', 'event_updated', 'new_event', 'society_approved', 'committee_added',
+  'membership_active', 'membership_renewal', 'order_update', 'payment_settings_changed'
+));
+
+-- ---------------------------------------------------------------------------
+-- Plans
+-- ---------------------------------------------------------------------------
+create table public.membership_plans (
+  id uuid primary key default gen_random_uuid(),
+  society_id uuid not null references public.societies on delete cascade,
+  name text not null check (char_length(name) between 2 and 80),
+  price_hkd numeric(8, 2) not null default 0 check (price_hkd >= 0 and price_hkd <= 10000),
+  valid_from date not null default current_date,
+  valid_until date not null,
+  -- Extra questions the society asks when someone joins, e.g. ["Phone", "Instrument"].
+  questions jsonb not null default '[]' check (jsonb_typeof(questions) = 'array' and jsonb_array_length(questions) <= 5),
+  -- Free plans only: new members are active straight away, no committee check.
+  auto_approve boolean not null default false,
+  -- Closed plans keep their members but take no new sign-ups.
+  is_open boolean not null default true,
+  created_at timestamptz not null default now(),
+  check (valid_until >= valid_from)
+);
+
+create index membership_plans_society_idx on public.membership_plans (society_id, valid_until desc);
+
+-- ---------------------------------------------------------------------------
+-- Memberships
+-- ---------------------------------------------------------------------------
+create table public.memberships (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references public.membership_plans on delete cascade,
+  society_id uuid not null references public.societies on delete cascade,
+  -- Empty for rows imported from a spreadsheet until that person signs in.
+  user_id uuid references auth.users on delete cascade,
+  -- pending: waiting for the committee (payment check or approval).
+  -- Expiry is not a status: a membership is current while its plan's valid_until has not passed.
+  status text not null default 'pending' check (status in ('pending', 'active', 'rejected', 'cancelled')),
+  member_no int,
+  card_code text not null unique default replace(gen_random_uuid()::text, '-', ''),
+  -- The member's details as given to this society (with consent), for its roster and OSA's list.
+  full_name text not null check (char_length(full_name) between 1 and 80),
+  email text not null,
+  student_id text check (student_id ~ '^[0-9]{10}$'),
+  college text,
+  major text check (char_length(major) <= 80),
+  phone text check (char_length(phone) <= 30),
+  answers jsonb not null default '[]' check (jsonb_typeof(answers) = 'array'),
+  payment_method text check (payment_method in ('fps', 'payme', 'cash')),
+  consent_at timestamptz,
+  claimed_paid_at timestamptz,
+  paid_at timestamptz,
+  imported boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (plan_id, user_id)
+);
+
+create index memberships_society_idx on public.memberships (society_id, status);
+create index memberships_user_idx on public.memberships (user_id);
+create index memberships_email_idx on public.memberships (lower(email)) where user_id is null;
+
+-- Committees log every roster export (PDPO DPP4: know who took a copy of what).
+create table public.membership_exports (
+  id uuid primary key default gen_random_uuid(),
+  society_id uuid not null references public.societies on delete cascade,
+  user_id uuid references auth.users on delete set null default auth.uid(),
+  row_count int not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.membership_plans enable row level security;
+alter table public.memberships enable row level security;
+alter table public.membership_exports enable row level security;
+
+create policy "read plans of visible societies" on public.membership_plans
+  for select using (
+    exists (select 1 from public.societies s where s.id = society_id and s.status = 'approved')
+    or public.is_society_member(society_id)
+  );
+create policy "society admins write plans" on public.membership_plans
+  for all to authenticated
+  using (public.is_society_admin(society_id))
+  with check (public.is_society_admin(society_id));
+
+create policy "own memberships and the committee's roster" on public.memberships
+  for select using (user_id = auth.uid() or public.is_society_member(society_id));
+
+create policy "committee reads export log" on public.membership_exports
+  for select using (public.is_society_member(society_id));
+
+revoke insert, update, delete on public.membership_plans, public.memberships, public.membership_exports from anon, authenticated;
+grant insert (society_id, name, price_hkd, valid_from, valid_until, questions, auto_approve, is_open),
+  update (name, price_hkd, valid_from, valid_until, questions, auto_approve, is_open), delete
+  on public.membership_plans to authenticated;
+-- Memberships are written only by the functions below.
+
+-- A membership counts while it is active and its plan has not ended (Hong Kong date).
+create or replace function public.is_current_member(p_society_id uuid, p_user uuid default auth.uid())
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.memberships m
+    join public.membership_plans p on p.id = m.plan_id
+    where m.society_id = p_society_id and m.user_id = p_user and m.status = 'active'
+      and (now() at time zone 'Asia/Hong_Kong')::date between p.valid_from and p.valid_until
+  );
+$$;
+
+-- Next member number for a society, under a lock on the society row.
+create or replace function public._activate_membership(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_m public.memberships;
+  v_no int;
+  v_society text;
+begin
+  select * into v_m from public.memberships where id = p_id;
+  perform 1 from public.societies where id = v_m.society_id for update;
+  if v_m.member_no is null then
+    select coalesce(max(member_no), 0) + 1 into v_no from public.memberships where society_id = v_m.society_id;
+  else
+    v_no := v_m.member_no;
+  end if;
+  update public.memberships set status = 'active', member_no = v_no, updated_at = now() where id = p_id;
+
+  if v_m.user_id is not null and v_m.status <> 'active' then
+    select coalesce(short_name, name) into v_society from public.societies where id = v_m.society_id;
+    insert into public.notifications (user_id, kind, title, body, society_id)
+    select v_m.user_id, 'membership_active',
+      public.localized(p.locale, 'Membership confirmed', '會籍已確認'),
+      public.localized(p.locale, 'You''re a member of ' || v_society || '. Your member card is in Tickets.',
+        '你已成為' || v_society || '會員，會員證已放入「門票」。'),
+      v_m.society_id
+    from public.profiles p where p.id = v_m.user_id;
+  end if;
+end;
+$$;
+
+revoke execute on function public._activate_membership(uuid) from public, anon, authenticated;
+
+-- Student joins a plan. Their details are copied onto the membership with consent.
+create or replace function public.join_society(
+  p_plan_id uuid,
+  p_full_name text,
+  p_student_id text,
+  p_college text,
+  p_major text,
+  p_phone text,
+  p_answers jsonb default '[]',
+  p_payment_method text default null
+)
+returns public.memberships
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_plan public.membership_plans;
+  v_m public.memberships;
+  v_email text;
+begin
+  if v_uid is null then
+    raise exception 'Sign in to join a society';
+  end if;
+  select * into v_plan from public.membership_plans where id = p_plan_id;
+  if v_plan.id is null
+    or not exists (select 1 from public.societies s where s.id = v_plan.society_id and s.status = 'approved') then
+    raise exception 'This membership is not available';
+  end if;
+  if not v_plan.is_open or (now() at time zone 'Asia/Hong_Kong')::date > v_plan.valid_until then
+    raise exception 'This society is not taking new members right now';
+  end if;
+  if nullif(trim(p_full_name), '') is null then
+    raise exception 'Enter your full name';
+  end if;
+  if nullif(trim(p_student_id), '') is not null and trim(p_student_id) !~ '^[0-9]{10}$' then
+    raise exception 'A student ID has 10 digits';
+  end if;
+  if v_plan.price_hkd > 0 and coalesce(p_payment_method, '') not in ('fps', 'payme', 'cash') then
+    raise exception 'Choose how you will pay';
+  end if;
+
+  select * into v_m from public.memberships where plan_id = p_plan_id and user_id = v_uid;
+  if v_m.id is not null and v_m.status in ('pending', 'active') then
+    return v_m;
+  end if;
+
+  select email into v_email from public.profiles where id = v_uid;
+
+  if v_m.id is not null then
+    update public.memberships set
+      status = 'pending', full_name = trim(p_full_name), student_id = nullif(trim(p_student_id), ''),
+      college = nullif(p_college, ''), major = nullif(trim(p_major), ''), phone = nullif(trim(p_phone), ''),
+      answers = coalesce(p_answers, '[]'), payment_method = case when v_plan.price_hkd > 0 then p_payment_method end,
+      consent_at = now(), claimed_paid_at = null, paid_at = null, created_at = now(), updated_at = now()
+    where id = v_m.id
+    returning * into v_m;
+  else
+    insert into public.memberships (plan_id, society_id, user_id, full_name, email, student_id, college, major, phone,
+      answers, payment_method, consent_at)
+    values (p_plan_id, v_plan.society_id, v_uid, trim(p_full_name), v_email, nullif(trim(p_student_id), ''),
+      nullif(p_college, ''), nullif(trim(p_major), ''), nullif(trim(p_phone), ''), coalesce(p_answers, '[]'),
+      case when v_plan.price_hkd > 0 then p_payment_method end, now())
+    returning * into v_m;
+  end if;
+
+  if v_plan.price_hkd = 0 and v_plan.auto_approve then
+    perform public._activate_membership(v_m.id);
+    select * into v_m from public.memberships where id = v_m.id;
+  end if;
+  return v_m;
+end;
+$$;
+
+-- "I've paid": tells the treasurer to look for the transfer.
+create or replace function public.claim_membership_paid(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.memberships set claimed_paid_at = now(), updated_at = now()
+    where id = p_id and user_id = auth.uid() and status = 'pending' and paid_at is null;
+  if not found then
+    raise exception 'Membership not found';
+  end if;
+end;
+$$;
+
+-- Leaving: a pending application is withdrawn; an active membership is ended.
+create or replace function public.cancel_membership(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.memberships set status = 'cancelled', updated_at = now()
+    where id = p_id and user_id = auth.uid() and status in ('pending', 'active');
+  if not found then
+    raise exception 'Membership not found';
+  end if;
+end;
+$$;
+
+-- Committee: approve (also records payment for paid plans), reject, or move back to pending.
+create or replace function public.set_membership_status(p_ids uuid[], p_status text)
+returns int
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_m public.memberships;
+  v_price numeric;
+  v_count int := 0;
+begin
+  if p_status not in ('active', 'rejected', 'pending') then
+    raise exception 'Unknown status';
+  end if;
+  for v_m in select * from public.memberships where id = any(p_ids) loop
+    if not public.is_society_admin(v_m.society_id) then
+      raise exception 'Only society admins can change memberships';
+    end if;
+    if p_status = 'active' then
+      select price_hkd into v_price from public.membership_plans where id = v_m.plan_id;
+      if v_price > 0 and v_m.paid_at is null then
+        update public.memberships set paid_at = now() where id = v_m.id;
+      end if;
+      perform public._activate_membership(v_m.id);
+    else
+      update public.memberships set status = p_status, updated_at = now(),
+        paid_at = case when p_status = 'pending' then null else paid_at end,
+        claimed_paid_at = case when p_status = 'pending' then null else claimed_paid_at end
+        where id = v_m.id;
+    end if;
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+-- Committee: add last year's spreadsheet. Rows are active members; rows whose
+-- email has an account are linked to it now, the rest when that person signs in.
+-- p_rows: [{"full_name", "email", "student_id", "college", "major", "phone"}]
+create or replace function public.import_memberships(p_plan_id uuid, p_rows jsonb)
+returns int
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_plan public.membership_plans;
+  v_row jsonb;
+  v_email text;
+  v_user uuid;
+  v_id uuid;
+  v_count int := 0;
+  v_sid text;
+begin
+  select * into v_plan from public.membership_plans where id = p_plan_id;
+  if v_plan.id is null or not public.is_society_admin(v_plan.society_id) then
+    raise exception 'Only society admins can import members';
+  end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 2000 then
+    raise exception 'Import up to 2000 rows at a time';
+  end if;
+
+  for v_row in select * from jsonb_array_elements(p_rows) loop
+    v_email := lower(trim(coalesce(v_row ->> 'email', '')));
+    v_sid := nullif(regexp_replace(coalesce(v_row ->> 'student_id', ''), '[^0-9]', '', 'g'), '');
+    if v_email = '' and v_sid is not null then
+      v_email := v_sid || '@link.cuhk.edu.hk';
+    end if;
+    continue when v_email = '' or nullif(trim(coalesce(v_row ->> 'full_name', '')), '') is null;
+    if v_sid is not null and v_sid !~ '^[0-9]{10}$' then
+      v_sid := null;
+    end if;
+    select id into v_user from public.profiles where email = v_email;
+    -- Skip people already on this plan.
+    continue when exists (
+      select 1 from public.memberships m
+      where m.plan_id = p_plan_id and (m.user_id = v_user or lower(m.email) = v_email)
+    );
+    insert into public.memberships (plan_id, society_id, user_id, status, full_name, email, student_id, college, major, phone, imported)
+    values (p_plan_id, v_plan.society_id, v_user, 'pending', left(trim(v_row ->> 'full_name'), 80), v_email, v_sid,
+      nullif(trim(coalesce(v_row ->> 'college', '')), ''), left(nullif(trim(coalesce(v_row ->> 'major', '')), ''), 80),
+      left(nullif(trim(coalesce(v_row ->> 'phone', '')), ''), 30), true)
+    returning id into v_id;
+    perform public._activate_membership(v_id);
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+-- Imported rows find their owner when that person first signs in.
+create or replace function public.link_imported_memberships()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.memberships m set user_id = new.id, updated_at = now()
+    where m.user_id is null and lower(m.email) = new.email
+      and not exists (select 1 from public.memberships x where x.plan_id = m.plan_id and x.user_id = new.id);
+  return null;
+end;
+$$;
+
+create trigger on_profile_created_link_memberships
+  after insert on public.profiles
+  for each row execute function public.link_imported_memberships();
+
+-- Committee: the roster for one society, newest plan first. Records an export when asked.
+create or replace function public.log_membership_export(p_society_id uuid, p_rows int)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_society_member(p_society_id) then
+    raise exception 'Only committee members can export the member list';
+  end if;
+  insert into public.membership_exports (society_id, row_count) values (p_society_id, p_rows);
+end;
+$$;
+
+-- Door check: is this member card valid for this society?
+create or replace function public.check_member_card(p_society_id uuid, p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_m public.memberships;
+  v_plan public.membership_plans;
+begin
+  if not public.is_society_member(p_society_id) then
+    raise exception 'Only society committee members can check member cards';
+  end if;
+  if trim(p_code) ~ '^#?[0-9]{1,6}$' then
+    -- Typed member number from the card: the newest plan's member with that number.
+    select m.* into v_m from public.memberships m
+      join public.membership_plans p on p.id = m.plan_id
+      where m.society_id = p_society_id and m.member_no = ltrim(trim(p_code), '#')::int
+      order by p.valid_until desc limit 1;
+  else
+    select * into v_m from public.memberships where card_code = lower(trim(p_code));
+  end if;
+  if v_m.id is null then
+    return jsonb_build_object('ok', false, 'message', 'Member card not found');
+  end if;
+  select * into v_plan from public.membership_plans where id = v_m.plan_id;
+  if v_m.society_id <> p_society_id then
+    return jsonb_build_object('ok', false, 'name', v_m.full_name, 'message', 'This card is for a different society');
+  end if;
+  if v_m.status <> 'active' then
+    return jsonb_build_object('ok', false, 'name', v_m.full_name, 'message', 'This membership is not active');
+  end if;
+  if (now() at time zone 'Asia/Hong_Kong')::date > v_plan.valid_until then
+    return jsonb_build_object('ok', false, 'name', v_m.full_name, 'message', 'This membership has expired',
+      'valid_until', v_plan.valid_until);
+  end if;
+  return jsonb_build_object('ok', true, 'name', v_m.full_name, 'message', 'Active member',
+    'member_no', v_m.member_no, 'valid_until', v_plan.valid_until, 'plan', v_plan.name);
+end;
+$$;
+
+-- A new plan is a renewal: tell last term's members (those whose membership has ended or is about to).
+create or replace function public.notify_membership_renewal()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_society text;
+begin
+  if not new.is_open then
+    return null;
+  end if;
+  select coalesce(short_name, name) into v_society from public.societies where id = new.society_id;
+  insert into public.notifications (user_id, kind, title, body, society_id)
+  select distinct m.user_id, 'membership_renewal',
+    public.localized(p.locale, 'Time to renew', '是時候續會'),
+    public.localized(p.locale, v_society || ' has opened ' || new.name || '. Renew to keep your member card.',
+      v_society || '已開放「' || new.name || '」，續會以保留會員證。'),
+    new.society_id
+  from public.memberships m
+  join public.membership_plans prev on prev.id = m.plan_id
+  join public.profiles p on p.id = m.user_id
+  where m.society_id = new.society_id and m.status = 'active' and m.plan_id <> new.id
+    and prev.valid_until < new.valid_until
+    and not exists (select 1 from public.memberships x where x.plan_id = new.id and x.user_id = m.user_id);
+  return null;
+end;
+$$;
+
+create trigger membership_plan_created
+  after insert on public.membership_plans
+  for each row execute function public.notify_membership_renewal();
+
+-- ===== 20261027010000_v04_shop.sql =====
+
+-- v0.4 part 2: society shop (merch pre-orders). The app never holds money:
+-- buyers pay the society directly by FPS or PayMe (the app shows an FPS QR with
+-- the amount and order reference filled in), tap "I've paid", and the treasurer
+-- ticks the order as paid after checking the bank's incoming list.
+
+-- ---------------------------------------------------------------------------
+-- Where buyers pay. Shown on every payment screen with the payee name, so a
+-- buyer can spot a swapped account; every change is announced to the admins.
+-- ---------------------------------------------------------------------------
+create table public.society_payment_settings (
+  society_id uuid primary key references public.societies on delete cascade,
+  -- FPS proxy: a Hong Kong mobile number, an email, or a 7-9 digit FPS ID.
+  fps_id text check (char_length(fps_id) <= 60),
+  payee_name text check (char_length(payee_name) <= 60),
+  payme_link text check (payme_link ~ '^https://'),
+  instructions text check (char_length(instructions) <= 300),
+  updated_by uuid references auth.users on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.society_payment_settings enable row level security;
+create policy "buyers and committee read payment details" on public.society_payment_settings
+  for select using (
+    exists (select 1 from public.societies s where s.id = society_id and s.status = 'approved')
+    or public.is_society_member(society_id)
+  );
+revoke insert, update, delete on public.society_payment_settings from anon, authenticated;
+
+create or replace function public.set_payment_settings(
+  p_society_id uuid, p_fps_id text, p_payee_name text, p_payme_link text, p_instructions text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_society text;
+begin
+  if not public.is_society_admin(p_society_id) then
+    raise exception 'Only society admins can change payment details';
+  end if;
+  insert into public.society_payment_settings (society_id, fps_id, payee_name, payme_link, instructions, updated_by, updated_at)
+  values (p_society_id, nullif(trim(p_fps_id), ''), nullif(trim(p_payee_name), ''), nullif(trim(p_payme_link), ''),
+    nullif(trim(p_instructions), ''), auth.uid(), now())
+  on conflict (society_id) do update set
+    fps_id = excluded.fps_id, payee_name = excluded.payee_name, payme_link = excluded.payme_link,
+    instructions = excluded.instructions, updated_by = excluded.updated_by, updated_at = now();
+
+  select coalesce(short_name, name) into v_society from public.societies where id = p_society_id;
+  insert into public.notifications (user_id, kind, title, body, society_id)
+  select m.user_id, 'payment_settings_changed',
+    public.localized(p.locale, 'Payment details changed', '收款資料已更改'),
+    public.localized(p.locale, 'Someone changed where ' || v_society || ' collects payments. Check it was meant to happen.',
+      '有人更改了' || v_society || '的收款資料，請確認這是預期的更改。'),
+    p_society_id
+  from public.society_members m
+  join public.profiles p on p.id = m.user_id
+  where m.society_id = p_society_id and m.role in ('owner', 'admin') and m.user_id <> auth.uid();
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Products
+-- ---------------------------------------------------------------------------
+create table public.products (
+  id uuid primary key default gen_random_uuid(),
+  society_id uuid not null references public.societies on delete cascade,
+  title text not null check (char_length(title) between 2 and 80),
+  description text not null default '' check (char_length(description) <= 2000),
+  image_url text,
+  price_hkd numeric(8, 2) not null check (price_hkd >= 0 and price_hkd <= 10000),
+  member_price_hkd numeric(8, 2) check (member_price_hkd >= 0 and member_price_hkd <= 10000),
+  -- [{"name": "M", "stock": 20}]; stock null = pre-order with no limit; one variant named "" = one size.
+  variants jsonb not null default '[{"name": "", "stock": null}]'
+    check (jsonb_typeof(variants) = 'array' and jsonb_array_length(variants) between 1 and 12),
+  opens_at timestamptz,
+  closes_at timestamptz,
+  pickup_note text check (char_length(pickup_note) <= 300),
+  max_per_order int not null default 5 check (max_per_order between 1 and 50),
+  -- Unpaid FPS / PayMe orders stop holding stock after this many hours.
+  payment_window_hours int not null default 48 check (payment_window_hours between 1 and 336),
+  status text not null default 'draft' check (status in ('draft', 'published', 'closed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index products_society_idx on public.products (society_id, status);
+
+alter table public.products enable row level security;
+create policy "read published products or your own" on public.products
+  for select using (
+    (status <> 'draft' and exists (select 1 from public.societies s where s.id = society_id and s.status = 'approved'))
+    or public.is_society_member(society_id)
+  );
+create policy "committee writes products" on public.products
+  for all to authenticated
+  using (public.is_society_member(society_id))
+  with check (public.is_society_member(society_id));
+
+revoke insert, update, delete on public.products from anon, authenticated;
+grant insert (society_id, title, description, image_url, price_hkd, member_price_hkd, variants, opens_at, closes_at,
+  pickup_note, max_per_order, payment_window_hours, status),
+  update (title, description, image_url, price_hkd, member_price_hkd, variants, opens_at, closes_at, pickup_note,
+  max_per_order, payment_window_hours, status, updated_at), delete
+  on public.products to authenticated;
+
+create trigger products_touch before update on public.products
+  for each row execute function public.touch_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Orders. One order is one product (any mix of its sizes). Prices are copied at
+-- order time so later edits don't change old orders.
+-- ---------------------------------------------------------------------------
+create table public.orders (
+  id uuid primary key default gen_random_uuid(),
+  society_id uuid not null references public.societies on delete cascade,
+  product_id uuid references public.products on delete set null,
+  -- Kept (without the buyer) after account deletion, for the treasurer's accounts.
+  user_id uuid references auth.users on delete set null,
+  ref text not null unique,
+  product_title text not null,
+  -- [{"variant": "M", "qty": 2, "unit_price": 120}]
+  items jsonb not null check (jsonb_typeof(items) = 'array'),
+  total_hkd numeric(10, 2) not null,
+  member_price boolean not null default false,
+  status text not null default 'awaiting_payment' check (status in (
+    'awaiting_payment', 'payment_claimed', 'paid', 'ready', 'collected', 'cancelled', 'refunded'
+  )),
+  payment_method text not null check (payment_method in ('fps', 'payme', 'cash')),
+  buyer_note text check (char_length(buyer_note) <= 200),
+  pickup_code text not null unique default replace(gen_random_uuid()::text, '-', ''),
+  -- Unpaid FPS / PayMe orders stop holding stock at this time; cash orders don't expire.
+  expires_at timestamptz,
+  claimed_at timestamptz,
+  paid_at timestamptz,
+  ready_at timestamptz,
+  collected_at timestamptz,
+  cancelled_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index orders_society_idx on public.orders (society_id, created_at desc);
+create index orders_product_idx on public.orders (product_id, status);
+create index orders_user_idx on public.orders (user_id, created_at desc);
+
+alter table public.orders enable row level security;
+create policy "see own orders" on public.orders for select using (user_id = auth.uid());
+revoke insert, update, delete on public.orders from anon, authenticated;
+
+-- Does this order still hold stock?
+create or replace function public._order_holds_stock(o public.orders)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select o.status not in ('cancelled', 'refunded')
+    and not (o.status = 'awaiting_payment' and o.expires_at is not null and o.expires_at < now());
+$$;
+
+-- Units taken per variant: {"M": 3, "L": 1}
+create or replace function public.product_sold(p_product_id uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_object_agg(variant, qty), '{}')
+  from (
+    select i ->> 'variant' as variant, sum((i ->> 'qty')::int) as qty
+    from public.orders o, jsonb_array_elements(o.items) i
+    where o.product_id = p_product_id and public._order_holds_stock(o)
+    group by 1
+  ) x;
+$$;
+
+-- Products for a society's shop (or every open shop when p_society_id is null), with units sold.
+create or replace function public.list_products(p_society_id uuid default null)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(
+    to_jsonb(p) || jsonb_build_object(
+      'sold', public.product_sold(p.id),
+      'society', jsonb_build_object('id', s.id, 'name', s.name, 'short_name', s.short_name, 'logo_url', s.logo_url,
+        'verified', s.verified, 'category', s.category)
+    ) order by p.created_at desc), '[]')
+  from public.products p
+  join public.societies s on s.id = p.society_id
+  where (p_society_id is null and p.status = 'published' and s.status = 'approved'
+         and (p.closes_at is null or p.closes_at > now()))
+     or p.society_id = p_society_id;
+$$;
+
+create or replace function public.place_order(
+  p_product_id uuid, p_items jsonb, p_payment_method text, p_note text default null
+)
+returns public.orders
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_p public.products;
+  v_item jsonb;
+  v_variant jsonb;
+  v_sold jsonb;
+  v_qty int;
+  v_total_qty int := 0;
+  v_member boolean;
+  v_unit numeric;
+  v_total numeric := 0;
+  v_lines jsonb := '[]';
+  v_prefix text;
+  v_ref text;
+  v_order public.orders;
+begin
+  if v_uid is null then
+    raise exception 'Sign in to order';
+  end if;
+  -- One buyer at a time per product, so stock can't be oversold.
+  select * into v_p from public.products where id = p_product_id for update;
+  if v_p.id is null or v_p.status <> 'published'
+    or not exists (select 1 from public.societies s where s.id = v_p.society_id and s.status = 'approved') then
+    raise exception 'This item is not on sale';
+  end if;
+  if v_p.opens_at is not null and now() < v_p.opens_at then
+    raise exception 'Orders have not opened yet';
+  end if;
+  if v_p.closes_at is not null and now() > v_p.closes_at then
+    raise exception 'Orders have closed';
+  end if;
+  if coalesce(p_payment_method, '') not in ('fps', 'payme', 'cash') then
+    raise exception 'Choose how you will pay';
+  end if;
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'Choose at least one item';
+  end if;
+
+  v_member := v_p.member_price_hkd is not null and public.is_current_member(v_p.society_id, v_uid);
+  v_unit := case when v_member then v_p.member_price_hkd else v_p.price_hkd end;
+  v_sold := public.product_sold(v_p.id);
+
+  for v_item in select * from jsonb_array_elements(p_items) loop
+    v_qty := coalesce((v_item ->> 'qty')::int, 0);
+    continue when v_qty <= 0;
+    select v into v_variant from jsonb_array_elements(v_p.variants) v where v ->> 'name' = coalesce(v_item ->> 'variant', '');
+    if v_variant is null then
+      raise exception 'Choose a size';
+    end if;
+    if v_variant ->> 'stock' is not null
+      and coalesce((v_sold ->> (v_variant ->> 'name'))::int, 0) + v_qty > (v_variant ->> 'stock')::int then
+      raise exception 'Not enough stock left';
+    end if;
+    v_total_qty := v_total_qty + v_qty;
+    v_total := v_total + v_qty * v_unit;
+    v_lines := v_lines || jsonb_build_object('variant', v_variant ->> 'name', 'qty', v_qty, 'unit_price', v_unit);
+  end loop;
+
+  if v_total_qty = 0 then
+    raise exception 'Choose at least one item';
+  end if;
+  if v_total_qty > v_p.max_per_order then
+    raise exception 'That is more than the limit per order';
+  end if;
+
+  -- Short reference for the bank transfer: society initials + 4 digits, e.g. CSM-4821.
+  select upper(left(coalesce(nullif(regexp_replace(coalesce(short_name, name), '[^A-Za-z]', '', 'g'), ''), 'CS'), 3))
+    into v_prefix from public.societies where id = v_p.society_id;
+  loop
+    v_ref := v_prefix || '-' || lpad((floor(random() * 10000))::int::text, 4, '0');
+    exit when not exists (select 1 from public.orders where ref = v_ref);
+  end loop;
+
+  insert into public.orders (society_id, product_id, user_id, ref, product_title, items, total_hkd, member_price,
+    status, payment_method, buyer_note, expires_at, paid_at)
+  values (v_p.society_id, v_p.id, v_uid, v_ref, v_p.title, v_lines, v_total, v_member,
+    case when v_total = 0 then 'paid' else 'awaiting_payment' end, p_payment_method, nullif(trim(p_note), ''),
+    case when v_total > 0 and p_payment_method <> 'cash' then now() + make_interval(hours => v_p.payment_window_hours) end,
+    case when v_total = 0 then now() end)
+  returning * into v_order;
+  return v_order;
+end;
+$$;
+
+-- Buyer: "I've paid".
+create or replace function public.claim_order_paid(p_order_id uuid, p_note text default null)
+returns public.orders
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+begin
+  select * into v_o from public.orders where id = p_order_id and user_id = auth.uid() for update;
+  if v_o.id is null then
+    raise exception 'Order not found';
+  end if;
+  if v_o.status <> 'awaiting_payment' then
+    raise exception 'This order is not waiting for payment';
+  end if;
+  if not public._order_holds_stock(v_o) then
+    raise exception 'This order expired. Please order again.';
+  end if;
+  update public.orders set status = 'payment_claimed', claimed_at = now(), updated_at = now(),
+      buyer_note = coalesce(nullif(trim(p_note), ''), buyer_note)
+    where id = p_order_id
+    returning * into v_o;
+  return v_o;
+end;
+$$;
+
+-- Buyer: cancel before the committee has confirmed payment.
+create or replace function public.cancel_my_order(p_order_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.orders set status = 'cancelled', cancelled_at = now(), updated_at = now()
+    where id = p_order_id and user_id = auth.uid() and status in ('awaiting_payment', 'payment_claimed');
+  if not found then
+    raise exception 'This order can no longer be cancelled here. Contact the society.';
+  end if;
+end;
+$$;
+
+-- Committee: every order for the society, with the buyer's name and email.
+create or replace function public.list_orders(p_society_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_society_member(p_society_id) then
+    raise exception 'Only committee members can see orders';
+  end if;
+  return (
+    select coalesce(jsonb_agg(to_jsonb(o) || jsonb_build_object(
+      'buyer_name', coalesce(nullif(p.display_name, ''), p.email, ''),
+      'buyer_email', coalesce(p.email, ''),
+      'expired', not public._order_holds_stock(o) and o.status = 'awaiting_payment'
+    ) order by o.created_at desc), '[]')
+    from public.orders o
+    left join public.profiles p on p.id = o.user_id
+    where o.society_id = p_society_id
+  );
+end;
+$$;
+
+create or replace function public._notify_order(o public.orders)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if o.user_id is null then
+    return;
+  end if;
+  insert into public.notifications (user_id, kind, title, body, society_id)
+  select o.user_id, 'order_update',
+    case o.status
+      when 'paid' then public.localized(p.locale, 'Payment received', '已收到付款')
+      when 'ready' then public.localized(p.locale, 'Ready for pickup', '可以取貨')
+      when 'awaiting_payment' then public.localized(p.locale, 'Payment not found yet', '暫未找到你的付款')
+      when 'cancelled' then public.localized(p.locale, 'Order cancelled', '訂單已取消')
+      else public.localized(p.locale, 'Order updated', '訂單已更新')
+    end,
+    case o.status
+      when 'paid' then public.localized(p.locale, o.product_title || ' (' || o.ref || ') is paid.',
+        '「' || o.product_title || '」（' || o.ref || '）已付款。')
+      when 'ready' then public.localized(p.locale, 'Show the pickup QR in Tickets to collect ' || o.product_title || '.',
+        '在「門票」出示取貨二維碼，領取「' || o.product_title || '」。')
+      when 'awaiting_payment' then public.localized(p.locale, 'The society could not find a payment for ' || o.ref || '. Check the reference and amount.',
+        '學會未找到訂單 ' || o.ref || ' 的付款，請檢查參考編號及金額。')
+      else public.localized(p.locale, o.product_title || ' (' || o.ref || ')', '「' || o.product_title || '」（' || o.ref || '）')
+    end,
+    o.society_id
+  from public.profiles p where p.id = o.user_id;
+end;
+$$;
+
+revoke execute on function public._notify_order(public.orders) from public, anon, authenticated;
+
+-- Committee: move orders along. Payments (paid, not received, cancel, refund) are for
+-- owners and admins; any committee member can mark orders ready or collected.
+create or replace function public.set_order_status(p_ids uuid[], p_status text)
+returns int
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+  v_count int := 0;
+  v_hours int;
+begin
+  if p_status not in ('awaiting_payment', 'paid', 'ready', 'collected', 'cancelled', 'refunded') then
+    raise exception 'Unknown status';
+  end if;
+  for v_o in select * from public.orders where id = any(p_ids) for update loop
+    if not public.is_society_member(v_o.society_id)
+      or (p_status in ('awaiting_payment', 'paid', 'cancelled', 'refunded') and not public.is_society_admin(v_o.society_id)) then
+      raise exception 'Only society admins can confirm payments';
+    end if;
+    continue when v_o.status = p_status;
+    if not (
+      (p_status = 'paid' and v_o.status in ('awaiting_payment', 'payment_claimed'))
+      or (p_status = 'awaiting_payment' and v_o.status = 'payment_claimed')
+      or (p_status = 'ready' and v_o.status = 'paid')
+      or (p_status = 'collected' and v_o.status in ('paid', 'ready'))
+      or (p_status = 'cancelled' and v_o.status in ('awaiting_payment', 'payment_claimed', 'paid', 'ready'))
+      or (p_status = 'refunded' and v_o.status in ('paid', 'ready', 'collected'))
+    ) then
+      raise exception 'That change is not possible for this order';
+    end if;
+    select payment_window_hours into v_hours from public.products where id = v_o.product_id;
+    update public.orders set
+      status = p_status,
+      paid_at = case when p_status = 'paid' then now() else paid_at end,
+      ready_at = case when p_status = 'ready' then now() else ready_at end,
+      collected_at = case when p_status = 'collected' then now() else collected_at end,
+      cancelled_at = case when p_status in ('cancelled', 'refunded') then now() else cancelled_at end,
+      claimed_at = case when p_status = 'awaiting_payment' then null else claimed_at end,
+      -- "Not received" gives the buyer a fresh window to pay.
+      expires_at = case when p_status = 'awaiting_payment' and v_o.payment_method <> 'cash'
+        then now() + make_interval(hours => coalesce(v_hours, 48)) else expires_at end,
+      updated_at = now()
+    where id = v_o.id
+    returning * into v_o;
+    if p_status in ('paid', 'ready', 'awaiting_payment', 'cancelled') then
+      perform public._notify_order(v_o);
+    end if;
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+-- Pickup desk: scan the buyer's order QR.
+create or replace function public.collect_order(p_society_id uuid, p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+  v_name text;
+  v_summary text;
+begin
+  if not public.is_society_member(p_society_id) then
+    raise exception 'Only society committee members can hand out orders';
+  end if;
+  -- The QR holds the pickup code; at the counter the committee can also type the order ref.
+  select * into v_o from public.orders
+    where pickup_code = lower(trim(p_code)) or (society_id = p_society_id and ref = upper(trim(p_code)))
+    limit 1 for update;
+  if v_o.id is null then
+    return jsonb_build_object('ok', false, 'message', 'Order not found');
+  end if;
+  select coalesce(nullif(display_name, ''), email) into v_name from public.profiles where id = v_o.user_id;
+  select string_agg(case when i ->> 'variant' = '' then '' else (i ->> 'variant') || ' ' end || '×' || (i ->> 'qty'), ', ')
+    into v_summary from jsonb_array_elements(v_o.items) i;
+  v_summary := v_o.product_title || ' · ' || v_summary;
+  if v_o.society_id <> p_society_id then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'This order is for a different society');
+  end if;
+  if v_o.status = 'collected' then
+    return jsonb_build_object('ok', false, 'name', v_name, 'ref', v_o.ref, 'items', v_summary,
+      'message', 'Already collected', 'collected_at', v_o.collected_at);
+  end if;
+  if v_o.status not in ('paid', 'ready') then
+    return jsonb_build_object('ok', false, 'name', v_name, 'ref', v_o.ref, 'items', v_summary, 'message', 'Not paid yet');
+  end if;
+  update public.orders set status = 'collected', collected_at = now(), updated_at = now() where id = v_o.id;
+  return jsonb_build_object('ok', true, 'name', v_name, 'ref', v_o.ref, 'items', v_summary, 'message', 'Collected');
+end;
+$$;
+
+-- ===== 20261027020000_v04_review_fixes.sql =====
+
+-- v0.4 fixes found in review.
+
+-- 1. Stock: a size repeated on two lines of one order was checked line by line, so
+--    "M x2, M x2" passed with 3 left. Each line now counts the lines before it.
+create or replace function public.place_order(
+  p_product_id uuid, p_items jsonb, p_payment_method text, p_note text default null
+)
+returns public.orders
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_p public.products;
+  v_item jsonb;
+  v_variant jsonb;
+  v_sold jsonb;
+  v_qty int;
+  v_total_qty int := 0;
+  v_member boolean;
+  v_unit numeric;
+  v_total numeric := 0;
+  v_lines jsonb := '[]';
+  v_prefix text;
+  v_ref text;
+  v_order public.orders;
+begin
+  if v_uid is null then
+    raise exception 'Sign in to order';
+  end if;
+  -- One buyer at a time per product, so stock can't be oversold.
+  select * into v_p from public.products where id = p_product_id for update;
+  if v_p.id is null or v_p.status <> 'published'
+    or not exists (select 1 from public.societies s where s.id = v_p.society_id and s.status = 'approved') then
+    raise exception 'This item is not on sale';
+  end if;
+  if v_p.opens_at is not null and now() < v_p.opens_at then
+    raise exception 'Orders have not opened yet';
+  end if;
+  if v_p.closes_at is not null and now() > v_p.closes_at then
+    raise exception 'Orders have closed';
+  end if;
+  if coalesce(p_payment_method, '') not in ('fps', 'payme', 'cash') then
+    raise exception 'Choose how you will pay';
+  end if;
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'Choose at least one item';
+  end if;
+
+  v_member := v_p.member_price_hkd is not null and public.is_current_member(v_p.society_id, v_uid);
+  v_unit := case when v_member then v_p.member_price_hkd else v_p.price_hkd end;
+  v_sold := public.product_sold(v_p.id);
+
+  for v_item in select * from jsonb_array_elements(p_items) loop
+    v_qty := coalesce((v_item ->> 'qty')::int, 0);
+    continue when v_qty <= 0;
+    select v into v_variant from jsonb_array_elements(v_p.variants) v where v ->> 'name' = coalesce(v_item ->> 'variant', '');
+    if v_variant is null then
+      raise exception 'Choose a size';
+    end if;
+    if v_variant ->> 'stock' is not null
+      and coalesce((v_sold ->> (v_variant ->> 'name'))::int, 0) + v_qty > (v_variant ->> 'stock')::int then
+      raise exception 'Not enough stock left';
+    end if;
+    -- Count this line too, so a size repeated on a later line is checked against what's left.
+    v_sold := jsonb_set(v_sold, array[v_variant ->> 'name'],
+      to_jsonb(coalesce((v_sold ->> (v_variant ->> 'name'))::int, 0) + v_qty));
+    v_total_qty := v_total_qty + v_qty;
+    v_total := v_total + v_qty * v_unit;
+    v_lines := v_lines || jsonb_build_object('variant', v_variant ->> 'name', 'qty', v_qty, 'unit_price', v_unit);
+  end loop;
+
+  if v_total_qty = 0 then
+    raise exception 'Choose at least one item';
+  end if;
+  if v_total_qty > v_p.max_per_order then
+    raise exception 'That is more than the limit per order';
+  end if;
+
+  -- Short reference for the bank transfer: society initials + 4 digits, e.g. CSM-4821.
+  select upper(left(coalesce(nullif(regexp_replace(coalesce(short_name, name), '[^A-Za-z]', '', 'g'), ''), 'CS'), 3))
+    into v_prefix from public.societies where id = v_p.society_id;
+  loop
+    v_ref := v_prefix || '-' || lpad((floor(random() * 10000))::int::text, 4, '0');
+    exit when not exists (select 1 from public.orders where ref = v_ref);
+  end loop;
+
+  insert into public.orders (society_id, product_id, user_id, ref, product_title, items, total_hkd, member_price,
+    status, payment_method, buyer_note, expires_at, paid_at)
+  values (v_p.society_id, v_p.id, v_uid, v_ref, v_p.title, v_lines, v_total, v_member,
+    case when v_total = 0 then 'paid' else 'awaiting_payment' end, p_payment_method, nullif(trim(p_note), ''),
+    case when v_total > 0 and p_payment_method <> 'cash' then now() + make_interval(hours => v_p.payment_window_hours) end,
+    case when v_total = 0 then now() end)
+  returning * into v_order;
+  return v_order;
+end;
+$$;
+
+-- 2. Uses now(), so it is stable, not immutable.
+alter function public._order_holds_stock(public.orders) stable;
+
+-- 3. Membership is only answered for yourself or for your society's committee.
+create or replace function public.is_current_member(p_society_id uuid, p_user uuid default auth.uid())
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select (p_user = auth.uid() or public.is_society_member(p_society_id)) and exists (
+    select 1 from public.memberships m
+    join public.membership_plans p on p.id = m.plan_id
+    where m.society_id = p_society_id and m.user_id = p_user and m.status = 'active'
+      and (now() at time zone 'Asia/Hong_Kong')::date between p.valid_from and p.valid_until
+  );
+$$;
+
+-- ===== 20261028000000_v05_blocks_members_only.sql =====
+
+-- v0.5: hide a society you don't want to see, and members-only events.
+
+-- ---------------------------------------------------------------------------
+-- Hidden societies. Students can't message each other, so the only content
+-- they can be shown against their wishes is a society's events, banners and
+-- merch. Hiding a society removes those from Discover and the calendar and
+-- unfollows it; the society page and search still find it, so it can be undone.
+-- ---------------------------------------------------------------------------
+
+create table public.society_blocks (
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  society_id uuid not null references public.societies on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, society_id)
+);
+
+alter table public.society_blocks enable row level security;
+
+create policy "see own hidden societies" on public.society_blocks
+  for select using (user_id = auth.uid());
+create policy "hide a society" on public.society_blocks
+  for insert to authenticated with check (user_id = auth.uid());
+create policy "unhide a society" on public.society_blocks
+  for delete using (user_id = auth.uid());
+
+create or replace function public.unfollow_hidden_society()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from public.follows where user_id = new.user_id and society_id = new.society_id;
+  return null;
+end;
+$$;
+
+create trigger society_blocks_unfollow
+  after insert on public.society_blocks
+  for each row execute function public.unfollow_hidden_society();
+
+-- ---------------------------------------------------------------------------
+-- Members-only events: everyone can see them (they advertise the society),
+-- only current members can sign up.
+-- ---------------------------------------------------------------------------
+
+alter table public.events add column members_only boolean not null default false;
+grant insert (members_only), update (members_only) on public.events to authenticated;
+
+create or replace function public.enforce_members_only()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_event public.events;
+begin
+  -- Only new sign-ups and re-sign-ups; moving up from the waitlist is not checked again.
+  if tg_op = 'UPDATE' and not (old.status = 'cancelled' and new.status <> 'cancelled') then
+    return new;
+  end if;
+  select * into v_event from public.events where id = new.event_id;
+  if v_event.members_only
+    and not public.is_society_member(v_event.society_id)
+    and not public.is_current_member(v_event.society_id, new.user_id) then
+    raise exception 'This event is for members only. Join the society first.';
+  end if;
+  return new;
+end;
+$$;
+
+-- A trigger rather than an edit to register_for_event, so every way in is covered.
+create trigger registrations_members_only
+  before insert or update of status on public.registrations
+  for each row execute function public.enforce_members_only();
+
+-- ===== 20261028010000_v05_tickets_receipts.sql =====
+
+-- v0.5 part 2: paid event tickets and payment screenshots.
+--
+-- Tickets reuse the shop: a confirmed sign-up to a paid event gets an order
+-- with a reference, the buyer pays the society directly (FPS / PayMe / cash),
+-- and the treasurer marks it paid. The QR ticket only works at the door once
+-- the order is paid. Unpaid tickets free their place when the payment window
+-- runs out, and the next person on the waitlist moves up.
+--
+-- Payment screenshots are optional and kept small: the app compresses them to a
+-- ~1000px JPEG before upload, the bucket refuses anything else or over 300 KB,
+-- each order or membership has exactly one file (re-uploading replaces it), and
+-- a scheduled job deletes them once they have done their job.
+
+-- ---------------------------------------------------------------------------
+-- Prices on events
+-- ---------------------------------------------------------------------------
+alter table public.events
+  add column price_hkd numeric(8, 2) check (price_hkd >= 0 and price_hkd <= 10000),
+  add column member_price_hkd numeric(8, 2) check (member_price_hkd >= 0 and member_price_hkd <= 10000),
+  add column payment_window_hours int not null default 48 check (payment_window_hours between 1 and 336);
+
+grant insert (price_hkd, member_price_hkd, payment_window_hours),
+  update (price_hkd, member_price_hkd, payment_window_hours) on public.events to authenticated;
+
+alter table public.registrations
+  add column payment_method text check (payment_method in ('fps', 'payme', 'cash'));
+
+alter table public.orders
+  add column event_id uuid references public.events on delete set null,
+  add column registration_id uuid references public.registrations on delete set null,
+  add column receipt_path text,
+  add column receipt_at timestamptz;
+
+create index orders_registration_idx on public.orders (registration_id);
+create index orders_event_idx on public.orders (event_id, status);
+
+alter table public.memberships
+  add column receipt_path text,
+  add column receipt_at timestamptz;
+
+-- Short reference for the bank transfer: society initials + 4 digits, e.g. CSM-4821 (as place_order).
+create or replace function public._new_order_ref(p_society_id uuid)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_prefix text;
+  v_ref text;
+begin
+  select upper(left(coalesce(nullif(regexp_replace(coalesce(short_name, name), '[^A-Za-z]', '', 'g'), ''), 'CS'), 3))
+    into v_prefix from public.societies where id = p_society_id;
+  loop
+    v_ref := v_prefix || '-' || lpad((floor(random() * 10000))::int::text, 4, '0');
+    exit when not exists (select 1 from public.orders where ref = v_ref);
+  end loop;
+  return v_ref;
+end;
+$$;
+
+-- Is this user a current member? Unlike is_current_member() this answers for anyone,
+-- because a ticket can be created for someone else (moved up from the waitlist when
+-- another person cancels). Internal only.
+create or replace function public._is_member_now(p_society_id uuid, p_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.memberships m
+    join public.membership_plans p on p.id = m.plan_id
+    where m.society_id = p_society_id and m.user_id = p_user and m.status = 'active'
+      and (now() at time zone 'Asia/Hong_Kong')::date between p.valid_from and p.valid_until
+  );
+$$;
+
+-- What this person pays for this event: null when it is free for them.
+create or replace function public._ticket_price(p_event public.events, p_user uuid)
+returns numeric
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select nullif(case
+    when p_event.member_price_hkd is not null and public._is_member_now(p_event.society_id, p_user)
+      then p_event.member_price_hkd
+    else coalesce(p_event.price_hkd, 0)
+  end, 0);
+$$;
+
+-- Cancels a sign-up, frees its place and moves the waitlist up. Locks the event.
+create or replace function public._drop_registration(p_registration_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_reg public.registrations;
+begin
+  select * into v_reg from public.registrations where id = p_registration_id;
+  if v_reg.id is null or v_reg.status = 'cancelled' then
+    return;
+  end if;
+  perform 1 from public.events where id = v_reg.event_id for update;
+  update public.registrations set status = 'cancelled', updated_at = now() where id = v_reg.id;
+  if v_reg.status = 'confirmed' then
+    update public.events set confirmed_count = greatest(confirmed_count - 1, 0) where id = v_reg.event_id;
+    perform public._fill_from_waitlist(v_reg.event_id);
+  else
+    update public.events set waitlist_count = greatest(waitlist_count - 1, 0) where id = v_reg.event_id;
+  end if;
+end;
+$$;
+
+-- A confirmed place on a paid event gets an order to pay; a cancelled one loses its unpaid order.
+create or replace function public.sync_ticket_order()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_event public.events;
+  v_price numeric;
+  v_member boolean;
+  v_method text;
+begin
+  if new.status = 'confirmed' and (tg_op = 'INSERT' or old.status <> 'confirmed') then
+    select * into v_event from public.events where id = new.event_id;
+    v_price := public._ticket_price(v_event, new.user_id);
+    if v_price is null then
+      return null;
+    end if;
+    -- Paid before (cancelled, then signed up again without a refund): that payment still counts.
+    if exists (select 1 from public.orders o where o.registration_id = new.id
+        and (o.status in ('paid', 'payment_claimed') or (o.status = 'awaiting_payment' and public._order_holds_stock(o)))) then
+      return null;
+    end if;
+    v_member := v_event.member_price_hkd is not null and public._is_member_now(v_event.society_id, new.user_id);
+    v_method := coalesce(new.payment_method, 'fps');
+    insert into public.orders (society_id, event_id, registration_id, user_id, ref, product_title, items, total_hkd,
+      member_price, status, payment_method, expires_at)
+    values (v_event.society_id, v_event.id, new.id, new.user_id, public._new_order_ref(v_event.society_id), v_event.title,
+      jsonb_build_array(jsonb_build_object('variant', '', 'qty', 1, 'unit_price', v_price)), v_price,
+      v_member,
+      'awaiting_payment', v_method,
+      case when v_method <> 'cash' then least(now() + make_interval(hours => v_event.payment_window_hours), v_event.starts_at) end);
+  elsif tg_op = 'UPDATE' and new.status = 'cancelled' and old.status <> 'cancelled' then
+    update public.orders set status = 'cancelled', cancelled_at = now(), updated_at = now()
+      where registration_id = new.id and status in ('awaiting_payment', 'payment_claimed');
+  end if;
+  return null;
+end;
+$$;
+
+create trigger registrations_ticket_order
+  after insert or update of status on public.registrations
+  for each row execute function public.sync_ticket_order();
+
+-- Cancelling or refunding a ticket order gives the place up.
+create or replace function public.sync_ticket_registration()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.registration_id is not null and new.status in ('cancelled', 'refunded')
+    and old.status not in ('cancelled', 'refunded') then
+    perform public._drop_registration(new.registration_id);
+  end if;
+  return null;
+end;
+$$;
+
+create trigger orders_ticket_registration
+  after update of status on public.orders
+  for each row execute function public.sync_ticket_registration();
+
+-- Tickets are checked in at the event, not handed out at the merch desk.
+create or replace function public.guard_ticket_order()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.event_id is not null and new.status in ('ready', 'collected') and old.status <> new.status then
+    raise exception 'This is an event ticket. Check it in from the event instead.';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger orders_guard_ticket
+  before update of status on public.orders
+  for each row execute function public.guard_ticket_order();
+
+-- Unpaid FPS / PayMe tickets whose window has passed: cancel them, which frees the place.
+create or replace function public._release_unpaid_tickets(p_event_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+begin
+  for v_o in
+    select o.* from public.orders o
+    where o.event_id = p_event_id and o.status = 'awaiting_payment' and o.expires_at < now()
+    for update
+  loop
+    update public.orders set status = 'cancelled', cancelled_at = now(), updated_at = now()
+      where id = v_o.id returning * into v_o;
+    perform public._notify_order(v_o);
+  end loop;
+end;
+$$;
+
+-- Run by the scheduled job, so places free up even when nobody new signs up.
+create or replace function public.release_expired_tickets()
+returns int
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_event uuid;
+  v_count int := 0;
+begin
+  for v_event in
+    select distinct event_id from public.orders
+    where event_id is not null and status = 'awaiting_payment' and expires_at < now()
+  loop
+    perform public._release_unpaid_tickets(v_event);
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+-- Same as before, plus: frees expired unpaid places first, and paid events need a payment method.
+drop function public.register_for_event(uuid, text);
+create or replace function public.register_for_event(p_event_id uuid, p_answer text default null, p_payment_method text default null)
+returns public.registrations
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_event public.events;
+  v_reg public.registrations;
+  v_status public.registration_status;
+  v_answer text := nullif(trim(p_answer), '');
+  v_method text := nullif(trim(p_payment_method), '');
+begin
+  if v_uid is null then
+    raise exception 'Sign in to register for events';
+  end if;
+
+  select * into v_event from public.events where id = p_event_id for update;
+  if v_event.id is null or v_event.status <> 'published' or v_event.removed_at is not null then
+    raise exception 'This event is not open for registration';
+  end if;
+  if not v_event.registration_required then
+    raise exception 'No sign-up needed for this event, just turn up!';
+  end if;
+  if v_event.registration_opens_at is not null and now() < v_event.registration_opens_at then
+    raise exception 'Registration has not opened yet';
+  end if;
+  if now() > coalesce(v_event.registration_closes_at, v_event.starts_at) then
+    raise exception 'Registration has closed';
+  end if;
+
+  select * into v_reg from public.registrations where event_id = p_event_id and user_id = v_uid;
+  if v_reg.id is not null and v_reg.status <> 'cancelled' then
+    return v_reg;
+  end if;
+
+  if public._ticket_price(v_event, v_uid) is not null then
+    if coalesce(v_method, '') not in ('fps', 'payme', 'cash') then
+      raise exception 'Choose how you will pay';
+    end if;
+  else
+    v_method := null;
+  end if;
+
+  perform public._release_unpaid_tickets(p_event_id);
+  select * into v_event from public.events where id = p_event_id;
+
+  if v_event.capacity is null or v_event.confirmed_count < v_event.capacity then
+    v_status := 'confirmed';
+  elsif v_event.waitlist_enabled then
+    v_status := 'waitlisted';
+  else
+    raise exception 'Sorry, this event is full';
+  end if;
+
+  if v_reg.id is not null then
+    -- Re-registering after cancelling: goes to the back of the queue.
+    update public.registrations
+      set status = v_status, answer = v_answer, payment_method = v_method, checked_in_at = null,
+        created_at = now(), updated_at = now()
+      where id = v_reg.id
+      returning * into v_reg;
+  else
+    insert into public.registrations (event_id, user_id, status, answer, payment_method)
+      values (p_event_id, v_uid, v_status, v_answer, v_method)
+      returning * into v_reg;
+  end if;
+
+  update public.events
+    set confirmed_count = confirmed_count + (v_status = 'confirmed')::int,
+        waitlist_count = waitlist_count + (v_status = 'waitlisted')::int
+    where id = p_event_id;
+
+  return v_reg;
+end;
+$$;
+
+-- Check-in: as before, but an unpaid ticket doesn't get in.
+create or replace function public.check_in(p_event_id uuid, p_ticket_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_society uuid;
+  v_reg public.registrations;
+  v_name text;
+  v_matches int;
+  v_ref text;
+begin
+  select society_id into v_society from public.events where id = p_event_id;
+  if v_society is null or not public.is_society_member(v_society) then
+    raise exception 'Only society committee members can check people in';
+  end if;
+
+  select * into v_reg from public.registrations where ticket_code = lower(trim(p_ticket_code));
+
+  -- Door staff can also type the 8-character code printed under the QR.
+  if v_reg.id is null and char_length(trim(p_ticket_code)) = 8 then
+    select count(*) into v_matches from public.registrations
+      where event_id = p_event_id and ticket_code like lower(trim(p_ticket_code)) || '%';
+    if v_matches > 1 then
+      return jsonb_build_object('ok', false, 'message', 'Several tickets match that code, please scan the QR instead');
+    end if;
+    select * into v_reg from public.registrations
+      where event_id = p_event_id and ticket_code like lower(trim(p_ticket_code)) || '%';
+  end if;
+
+  if v_reg.id is null then
+    return jsonb_build_object('ok', false, 'message', 'Ticket not found');
+  end if;
+
+  select coalesce(nullif(p.display_name, ''), p.email) into v_name
+    from public.profiles p where p.id = v_reg.user_id;
+
+  if v_reg.event_id <> p_event_id then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'This ticket is for a different event');
+  end if;
+  if v_reg.status <> 'confirmed' then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'Ticket is ' || v_reg.status::text || ', not confirmed');
+  end if;
+  select ref into v_ref from public.orders
+    where registration_id = v_reg.id and status in ('awaiting_payment', 'payment_claimed') limit 1;
+  if v_ref is not null then
+    return jsonb_build_object('ok', false, 'name', v_name, 'ref', v_ref, 'message', 'Not paid yet');
+  end if;
+  if v_reg.checked_in_at is not null then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'Already checked in at ' || to_char(v_reg.checked_in_at at time zone 'Asia/Hong_Kong', 'HH24:MI'));
+  end if;
+
+  update public.registrations set checked_in_at = now(), updated_at = now() where id = v_reg.id;
+  return jsonb_build_object('ok', true, 'name', v_name, 'message', 'Checked in');
+end;
+$$;
+
+-- The attendee list's manual check-in goes through this too.
+create or replace function public.guard_unpaid_check_in()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.checked_in_at is not null and old.checked_in_at is null and exists (
+    select 1 from public.orders where registration_id = new.id and status in ('awaiting_payment', 'payment_claimed')
+  ) then
+    raise exception 'Not paid yet';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger registrations_guard_unpaid
+  before update of checked_in_at on public.registrations
+  for each row execute function public.guard_unpaid_check_in();
+
+-- ---------------------------------------------------------------------------
+-- Payment screenshots. Path: {society_id}/{order|membership}/{record_id}.jpg
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('receipts', 'receipts', false, 307200, array['image/jpeg'])
+on conflict (id) do update set public = false, file_size_limit = 307200, allowed_mime_types = array['image/jpeg'];
+
+-- Who the record behind a receipt path belongs to. Null when the path is malformed or unknown.
+create or replace function public._receipt_record(p_name text)
+returns table (society_id uuid, user_id uuid, open_for_upload boolean)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_parts text[] := string_to_array(p_name, '/');
+  v_id uuid;
+begin
+  if coalesce(array_length(v_parts, 1), 0) <> 3
+    or v_parts[3] !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$' then
+    return;
+  end if;
+  v_id := left(v_parts[3], 36)::uuid;
+  if v_parts[2] = 'order' then
+    return query select o.society_id, o.user_id, o.status in ('awaiting_payment', 'payment_claimed')
+      from public.orders o where o.id = v_id and o.society_id::text = v_parts[1];
+  elsif v_parts[2] = 'membership' then
+    return query select m.society_id, m.user_id, m.status = 'pending'
+      from public.memberships m where m.id = v_id and m.society_id::text = v_parts[1];
+  end if;
+end;
+$$;
+
+create or replace function public.can_write_receipt(p_name text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (select 1 from public._receipt_record(p_name) r where r.user_id = auth.uid() and r.open_for_upload);
+$$;
+
+-- The payer, and the society's owners and admins (who confirm payments).
+create or replace function public.can_read_receipt(p_name text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public._receipt_record(p_name) r
+    where r.user_id = auth.uid() or public.is_society_admin(r.society_id)
+  );
+$$;
+
+create policy "upload own receipt" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'receipts' and public.can_write_receipt(name));
+create policy "replace own receipt" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'receipts' and public.can_write_receipt(name))
+  with check (bucket_id = 'receipts' and public.can_write_receipt(name));
+create policy "payer and treasurer read receipts" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'receipts' and public.can_read_receipt(name));
+
+-- After uploading: link the screenshot and tell the treasurer to check (same as "I've paid").
+create or replace function public.attach_receipt(p_kind text, p_id uuid)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+  v_m public.memberships;
+  v_path text;
+begin
+  if p_kind = 'order' then
+    select * into v_o from public.orders where id = p_id and user_id = auth.uid() for update;
+    if v_o.id is null then
+      raise exception 'Order not found';
+    end if;
+    if v_o.status not in ('awaiting_payment', 'payment_claimed') then
+      raise exception 'This order is not waiting for payment';
+    end if;
+    if not public._order_holds_stock(v_o) then
+      raise exception 'This order expired. Please order again.';
+    end if;
+    v_path := v_o.society_id || '/order/' || v_o.id || '.jpg';
+  elsif p_kind = 'membership' then
+    select * into v_m from public.memberships where id = p_id and user_id = auth.uid() and status = 'pending' for update;
+    if v_m.id is null then
+      raise exception 'Membership not found';
+    end if;
+    v_path := v_m.society_id || '/membership/' || v_m.id || '.jpg';
+  else
+    raise exception 'Unknown status';
+  end if;
+
+  if not exists (select 1 from storage.objects where bucket_id = 'receipts' and name = v_path) then
+    raise exception 'Upload the screenshot first';
+  end if;
+
+  if p_kind = 'order' then
+    update public.orders set receipt_path = v_path, receipt_at = now(), status = 'payment_claimed',
+        claimed_at = coalesce(claimed_at, now()), updated_at = now()
+      where id = p_id;
+  else
+    update public.memberships set receipt_path = v_path, receipt_at = now(),
+        claimed_paid_at = coalesce(claimed_paid_at, now()), updated_at = now()
+      where id = p_id;
+  end if;
+  return v_path;
+end;
+$$;
+
+-- Retention, for the scheduled purge-receipts job: a screenshot is only needed
+-- until the payment is settled. Kept 30 days after confirming (for disputes),
+-- 7 days after a cancellation or rejection, and never more than 90 days.
+-- Uploads never linked to a record (the app closed mid-upload) go after a day.
+create or replace function public.receipts_to_purge(p_limit int default 500)
+returns text[]
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(array_agg(path), '{}') from (
+    select receipt_path as path from public.orders
+    where receipt_path is not null and (
+      receipt_at < now() - interval '90 days'
+      or (status in ('paid', 'ready', 'collected') and paid_at < now() - interval '30 days')
+      or (status in ('cancelled', 'refunded') and cancelled_at < now() - interval '7 days'))
+    union all
+    select receipt_path from public.memberships
+    where receipt_path is not null and (
+      receipt_at < now() - interval '90 days'
+      or (status = 'active' and paid_at < now() - interval '30 days')
+      or (status in ('rejected', 'cancelled') and updated_at < now() - interval '7 days'))
+    union all
+    select so.name from storage.objects so
+    where so.bucket_id = 'receipts' and so.created_at < now() - interval '1 day'
+      and not exists (select 1 from public.orders o where o.receipt_path = so.name)
+      and not exists (select 1 from public.memberships m where m.receipt_path = so.name)
+    limit p_limit
+  ) x;
+$$;
+
+-- After the files are deleted. receipt_at stays, so people can see one was sent.
+create or replace function public.forget_receipts(p_paths text[])
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.orders set receipt_path = null where receipt_path = any(p_paths);
+  update public.memberships set receipt_path = null where receipt_path = any(p_paths);
+$$;
+
+revoke execute on function public._drop_registration(uuid) from public, anon, authenticated;
+revoke execute on function public._release_unpaid_tickets(uuid) from public, anon, authenticated;
+revoke execute on function public._new_order_ref(uuid) from public, anon, authenticated;
+revoke execute on function public._receipt_record(text) from public, anon, authenticated;
+revoke execute on function public._is_member_now(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public._ticket_price(public.events, uuid) from public, anon, authenticated;
+revoke execute on function public.release_expired_tickets() from public, anon, authenticated;
+revoke execute on function public.receipts_to_purge(int) from public, anon, authenticated;
+revoke execute on function public.forget_receipts(text[]) from public, anon, authenticated;
+grant execute on function public.release_expired_tickets() to service_role;
+grant execute on function public.receipts_to_purge(int) to service_role;
+grant execute on function public.forget_receipts(text[]) to service_role;
+
+-- ===== 20261029000000_v06_saved_events.sql =====
+
+-- v0.6: save an event for later (the heart on Discover and the event page).
+-- Private to the student: societies never see who saved their events, only
+-- sign-ups. Saving needs the event to be visible to you, so drafts and
+-- removed events can't be saved.
+
+create table public.saved_events (
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  event_id uuid not null references public.events on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, event_id)
+);
+
+alter table public.saved_events enable row level security;
+
+create policy "see own saved events" on public.saved_events
+  for select using (user_id = auth.uid());
+-- The events subquery runs under the saver's own RLS, so only visible events qualify.
+create policy "save a visible event" on public.saved_events
+  for insert to authenticated
+  with check (user_id = auth.uid() and exists (select 1 from public.events e where e.id = event_id));
+create policy "unsave an event" on public.saved_events
+  for delete using (user_id = auth.uid());
+
+grant select, insert, delete on public.saved_events to authenticated;
+
+-- ===== 20261030000000_v07_interests.sql =====
+
+-- v0.7: interests picked during onboarding (the society categories a student is
+-- into). They decide which societies we suggest to follow, during onboarding
+-- and on the Societies tab. Only categories that societies can have are allowed.
+
+alter table public.profiles add column interests text[] not null default '{}'
+  check (
+    interests <@ array['Academic', 'Arts', 'Culture', 'Faith', 'Music', 'Service', 'Sports', 'Tech', 'College', 'Other']
+    and cardinality(interests) <= 10
+  );
+grant update (interests) on public.profiles to authenticated;
+
+-- ===== 20261030010000_v07_top_events.sql =====
+
+-- v0.7: "Most anticipated" (this week / month) on Discover.
+--
+-- Events are ranked in the app from what every student can already see:
+-- sign-ups (confirmed + waitlist), saves, and a "major event" flag that only
+-- platform admins can set (O'Camp, Inter-U finals, the big college nights).
+-- Saves stay private: societies and students only see the total.
+
+alter table public.events
+  add column featured_at timestamptz,
+  add column save_count int not null default 0;
+
+-- Neither column is in the column-level insert/update grants, so committees
+-- can't feature their own events or inflate the count.
+
+update public.events e set save_count = s.n
+from (select event_id, count(*)::int as n from public.saved_events group by event_id) s
+where s.event_id = e.id;
+
+create or replace function public.count_event_saves()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.events set save_count = save_count + 1 where id = new.event_id;
+  else
+    update public.events set save_count = greatest(save_count - 1, 0) where id = old.event_id;
+  end if;
+  return null;
+end;
+$$;
+
+create trigger saved_events_count after insert or delete on public.saved_events
+  for each row execute function public.count_event_saves();
+
+revoke execute on function public.count_event_saves() from public, anon, authenticated;
+
+create or replace function public.set_event_featured(p_event_id uuid, p_featured boolean)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Admins only';
+  end if;
+  update public.events
+    set featured_at = case when p_featured then coalesce(featured_at, now()) end
+    where id = p_event_id;
+  if not found then
+    raise exception 'Event not found';
+  end if;
+end;
+$$;
+
+revoke execute on function public.set_event_featured(uuid, boolean) from public, anon;
+grant execute on function public.set_event_featured(uuid, boolean) to authenticated;
+
+-- ===== 20261030020000_v07_society_posts.sql =====
+
+-- v0.7: society posts. A society page gets a feed where its committee posts
+-- updates, photos and event promotions. Only the committee can post (no
+-- student feed, no comments), every post is reportable, and moderators can
+-- take a post down. Likes are private to the student, like saved events:
+-- societies only see the count.
+
+create table public.society_posts (
+  id uuid primary key default gen_random_uuid(),
+  society_id uuid not null references public.societies on delete cascade,
+  -- Who on the committee wrote it, for moderators; students only see the society.
+  author_id uuid default auth.uid() references auth.users on delete set null,
+  body text not null check (char_length(btrim(body)) between 1 and 2000),
+  image_urls text[] not null default '{}' check (cardinality(image_urls) <= 4),
+  -- An event this post promotes; shown as a card under the post.
+  event_id uuid references public.events on delete set null,
+  pinned boolean not null default false,
+  like_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  edited_at timestamptz,
+  -- Set when moderators take the post down; only its committee still sees it.
+  removed_at timestamptz
+);
+
+create index society_posts_feed_idx on public.society_posts (society_id, pinned desc, created_at desc);
+
+create table public.post_likes (
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  post_id uuid not null references public.society_posts on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, post_id)
+);
+
+alter table public.society_posts enable row level security;
+alter table public.post_likes enable row level security;
+
+create policy "read live posts" on public.society_posts
+  for select using (
+    (removed_at is null
+      and exists (select 1 from public.societies s where s.id = society_id and s.status = 'approved'))
+    or public.is_society_member(society_id)
+    or public.is_platform_admin()
+  );
+-- A promoted event must belong to the same society.
+create policy "committee posts" on public.society_posts
+  for insert to authenticated with check (
+    public.is_society_member(society_id)
+    and author_id = auth.uid()
+    and (event_id is null or exists (select 1 from public.events e where e.id = event_id and e.society_id = society_posts.society_id))
+  );
+create policy "committee edits posts" on public.society_posts
+  for update using (public.is_society_member(society_id))
+  with check (
+    public.is_society_member(society_id)
+    and (event_id is null or exists (select 1 from public.events e where e.id = event_id and e.society_id = society_posts.society_id))
+  );
+create policy "committee deletes posts" on public.society_posts
+  for delete using (public.is_society_member(society_id));
+
+-- Supabase grants everything on new tables by default; take writes back to the columns below.
+revoke insert, update, delete on public.society_posts, public.post_likes from anon, authenticated;
+grant select on public.society_posts to anon, authenticated;
+grant insert (society_id, body, image_urls, event_id, pinned) on public.society_posts to authenticated;
+grant update (body, image_urls, event_id, pinned) on public.society_posts to authenticated;
+grant delete on public.society_posts to authenticated;
+
+create policy "see own likes" on public.post_likes
+  for select using (user_id = auth.uid());
+-- The posts subquery runs under the liker's own RLS, so only visible posts qualify.
+create policy "like a visible post" on public.post_likes
+  for insert to authenticated
+  with check (user_id = auth.uid() and exists (select 1 from public.society_posts p where p.id = post_id));
+create policy "unlike a post" on public.post_likes
+  for delete using (user_id = auth.uid());
+
+grant select, insert, delete on public.post_likes to authenticated;
+
+-- One pinned post per society: pinning a post unpins the others. Editing the
+-- text or photos marks the post as edited.
+create or replace function public._society_post_write()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.body := btrim(new.body);
+  if tg_op = 'UPDATE' and (new.body is distinct from old.body or new.image_urls is distinct from old.image_urls) then
+    new.edited_at := now();
+  end if;
+  if new.pinned and (tg_op = 'INSERT' or not old.pinned) then
+    update public.society_posts set pinned = false
+      where society_id = new.society_id and pinned and id <> new.id;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger society_posts_write
+  before insert or update on public.society_posts
+  for each row execute function public._society_post_write();
+
+create or replace function public._post_like_count()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.society_posts set like_count = like_count + 1 where id = new.post_id;
+  else
+    update public.society_posts set like_count = greatest(like_count - 1, 0) where id = old.post_id;
+  end if;
+  return null;
+end;
+$$;
+
+create trigger post_likes_count
+  after insert or delete on public.post_likes
+  for each row execute function public._post_like_count();
+
+revoke execute on function public._society_post_write() from public, anon, authenticated;
+revoke execute on function public._post_like_count() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Reports: posts can be reported, and taking one down hides it.
+-- ---------------------------------------------------------------------------
+alter table public.reports drop constraint reports_target_type_check;
+alter table public.reports add constraint reports_target_type_check
+  check (target_type in ('event', 'society', 'banner', 'post'));
+
+create or replace function public.list_open_reports()
+returns table (
+  id uuid,
+  target_type text,
+  target_id uuid,
+  target_name text,
+  reason text,
+  report_count bigint,
+  created_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Admins only';
+  end if;
+  return query
+    select r.id, r.target_type, r.target_id,
+      coalesce(e.title, s.name, b.title, ps.name || ': ' || left(p.body, 80), 'Unknown') as target_name,
+      r.reason,
+      count(*) over (partition by r.target_type, r.target_id) as report_count,
+      r.created_at
+    from public.reports r
+    left join public.events e on r.target_type = 'event' and e.id = r.target_id
+    left join public.societies s on r.target_type = 'society' and s.id = r.target_id
+    left join public.banners b on r.target_type = 'banner' and b.id = r.target_id
+    left join public.society_posts p on r.target_type = 'post' and p.id = r.target_id
+    left join public.societies ps on ps.id = p.society_id
+    where r.resolved_at is null
+    order by r.created_at;
+end;
+$$;
+
+create or replace function public.resolve_report(p_report_id uuid, p_action text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_report public.reports;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Admins only';
+  end if;
+  if p_action not in ('dismissed', 'removed') then
+    raise exception 'Unknown action';
+  end if;
+  select * into v_report from public.reports where id = p_report_id;
+  if p_action = 'removed' then
+    if v_report.target_type = 'event' then
+      update public.events set removed_at = now() where id = v_report.target_id;
+    elsif v_report.target_type = 'society' then
+      update public.societies set status = 'rejected' where id = v_report.target_id;
+    elsif v_report.target_type = 'banner' then
+      update public.banners set status = 'rejected' where id = v_report.target_id;
+    elsif v_report.target_type = 'post' then
+      update public.society_posts set removed_at = now(), pinned = false where id = v_report.target_id;
+    end if;
+  end if;
+  update public.reports set resolved_at = now(), resolution = p_action
+    where target_type = v_report.target_type and target_id = v_report.target_id and resolved_at is null;
+end;
+$$;
+
+-- ===== 20261030030000_v07_rotating_tickets.sql =====
+
+-- v0.7: rotating QR tickets.
+--
+-- The ticket QR is now a short-lived token "<registration id>.<step>.<sig>"
+-- made on the attendee's phone every 30 seconds (src/lib/ticketToken.ts):
+-- sig is the first 24 hex characters of HMAC-SHA256("<id>.<step>") keyed with
+-- the ticket code, so it needs no signal at the door but a screenshot stops
+-- working after a minute or two. The full ticket code on its own no longer
+-- checks anyone in; door staff can still type the 8-character backup code.
+
+-- HMAC-SHA256 (RFC 2104) with the built-in sha256(), so no extension is needed.
+create or replace function public._hmac_sha256_hex(p_key text, p_msg text)
+returns text
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  v_key bytea := convert_to(p_key, 'UTF8');
+  v_ipad bytea;
+  v_opad bytea;
+begin
+  if length(v_key) > 64 then
+    v_key := sha256(v_key);
+  end if;
+  v_key := v_key || decode(repeat('00', 64 - length(v_key)), 'hex');
+  v_ipad := v_key;
+  v_opad := v_key;
+  for i in 0..63 loop
+    v_ipad := set_byte(v_ipad, i, get_byte(v_key, i) # 54);
+    v_opad := set_byte(v_opad, i, get_byte(v_key, i) # 92);
+  end loop;
+  return encode(sha256(v_opad || sha256(v_ipad || convert_to(p_msg, 'UTF8'))), 'hex');
+end;
+$$;
+
+revoke execute on function public._hmac_sha256_hex(text, text) from public, anon, authenticated;
+
+create or replace function public.check_in(p_event_id uuid, p_ticket_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_society uuid;
+  v_reg public.registrations;
+  v_name text;
+  v_matches int;
+  v_ref text;
+  v_input text := lower(regexp_replace(coalesce(p_ticket_code, ''), '\s', '', 'g'));
+  v_parts text[];
+  v_step bigint := floor(extract(epoch from now()) / 30);
+  v_expired boolean := false;
+begin
+  select society_id into v_society from public.events where id = p_event_id;
+  if v_society is null or not public.is_society_member(v_society) then
+    raise exception 'Only society committee members can check people in';
+  end if;
+
+  if v_input ~ '^[0-9a-f]{32}\.[0-9]{1,12}\.[0-9a-f]{24}$' then
+    -- Rotating QR token from the app.
+    v_parts := string_to_array(v_input, '.');
+    select * into v_reg from public.registrations where id = v_parts[1]::uuid;
+    if v_reg.id is null
+      or left(public._hmac_sha256_hex(v_reg.ticket_code, v_parts[1] || '.' || v_parts[2]), 24) <> v_parts[3] then
+      return jsonb_build_object('ok', false, 'message', 'Ticket not found');
+    end if;
+    -- Two steps back (about a minute) and one ahead, for phone clocks that are a little off.
+    v_expired := v_parts[2]::bigint not between v_step - 2 and v_step + 1;
+  elsif char_length(v_input) = 8 then
+    -- Door staff can also type the 8-character backup code shown under the QR.
+    select count(*) into v_matches from public.registrations
+      where event_id = p_event_id and ticket_code like v_input || '%';
+    if v_matches > 1 then
+      return jsonb_build_object('ok', false, 'message', 'Several tickets match that code, please scan the QR instead');
+    end if;
+    select * into v_reg from public.registrations
+      where event_id = p_event_id and ticket_code like v_input || '%';
+  elsif v_input ~ '^[0-9a-f]{32}$' and exists (select 1 from public.registrations where ticket_code = v_input) then
+    -- A fixed QR from an old version of the app.
+    return jsonb_build_object('ok', false, 'message', 'Old QR code. Ask them to update the app, or type the backup code');
+  end if;
+
+  if v_reg.id is null then
+    return jsonb_build_object('ok', false, 'message', 'Ticket not found');
+  end if;
+
+  select coalesce(nullif(p.display_name, ''), p.email) into v_name
+    from public.profiles p where p.id = v_reg.user_id;
+
+  if v_reg.event_id <> p_event_id then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'This ticket is for a different event');
+  end if;
+  if v_expired then
+    return jsonb_build_object('ok', false, 'name', v_name,
+      'message', 'QR code expired. Ask them to open the ticket in the app, or type the backup code');
+  end if;
+  if v_reg.status <> 'confirmed' then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'Ticket is ' || v_reg.status::text || ', not confirmed');
+  end if;
+  select ref into v_ref from public.orders
+    where registration_id = v_reg.id and status in ('awaiting_payment', 'payment_claimed') limit 1;
+  if v_ref is not null then
+    return jsonb_build_object('ok', false, 'name', v_name, 'ref', v_ref, 'message', 'Not paid yet');
+  end if;
+  if v_reg.checked_in_at is not null then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'Already checked in at ' || to_char(v_reg.checked_in_at at time zone 'Asia/Hong_Kong', 'HH24:MI'));
+  end if;
+
+  update public.registrations set checked_in_at = now(), updated_at = now() where id = v_reg.id;
+  return jsonb_build_object('ok', true, 'name', v_name, 'message', 'Checked in');
+end;
+$$;
+
+-- ===== 20261030040000_v07_shop_rethink.sql =====
+
+-- v0.7: the shop, rethought around how society merch actually sells.
+--
+-- What went wrong in v0.4 and what this changes:
+--   * One order per product, so a hoodie and a tote were two transfers, two
+--     references and two QR codes. Buyers now fill a bag per society and pay
+--     once: one order, one reference, one pickup QR, any number of products.
+--   * "Pickup: Tue and Thu 1-2pm" was free text, so the whole year turned up
+--     at once and the desk could not pre-pack. Committees now publish pickup
+--     times (with an optional cap), buyers book one, and the desk gets a pick
+--     list for each time. Moving or cancelling a time tells everyone booked.
+--   * Buyers guessed sizes. Products carry a size guide and several photos.
+--   * XXL costs more to make. Each size can add an extra charge.
+--   * Pre-orders had no story. A product can show a goal ("40 of 60 ordered")
+--     and an expected ready date.
+--   * Limited drops were bought out by one person ordering twice. A per-buyer
+--     limit now counts across all their live orders.
+--   * Sold out was a dead end. Buyers can ask to be told when more stock is
+--     added or the item goes on sale.
+--   * "Cash at pickup" orders could not be collected until an admin marked them
+--     paid. The pickup desk can now take the cash and hand over in one step.
+
+-- ---------------------------------------------------------------------------
+-- Products
+-- ---------------------------------------------------------------------------
+
+-- Each size: {"name": "XXL", "stock": 10, "extra_hkd": 20}. stock null = no limit.
+create or replace function public._valid_variants(p jsonb)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select jsonb_typeof(p) = 'array' and jsonb_array_length(p) between 1 and 12 and not exists (
+    select 1 from jsonb_array_elements(p) v
+    where jsonb_typeof(v -> 'name') is distinct from 'string'
+      or char_length(v ->> 'name') > 20
+      or (v ->> 'stock' is not null and (jsonb_typeof(v -> 'stock') <> 'number' or (v ->> 'stock')::numeric < 0))
+      or (v ->> 'extra_hkd' is not null and (jsonb_typeof(v -> 'extra_hkd') <> 'number'
+          or (v ->> 'extra_hkd')::numeric not between 0 and 1000))
+  );
+$$;
+
+alter table public.products
+  add constraint products_variants_valid check (public._valid_variants(variants)),
+  -- Extra photos after image_url (the cover).
+  add column images text[] not null default '{}' check (cardinality(images) <= 6),
+  -- A small table, one row per line, cells separated by commas: "Size, Chest, Length".
+  add column size_chart text check (char_length(size_chart) <= 1500),
+  -- Pre-orders: how many the society needs to go ahead, and when it should arrive.
+  add column goal_qty int check (goal_qty between 1 and 10000),
+  add column ready_on date,
+  -- Across all of one buyer's live orders, not just one.
+  add column max_per_buyer int check (max_per_buyer between 1 and 50);
+
+grant insert (images, size_chart, goal_qty, ready_on, max_per_buyer),
+  update (images, size_chart, goal_qty, ready_on, max_per_buyer) on public.products to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Pickup times
+-- ---------------------------------------------------------------------------
+create table public.pickup_slots (
+  id uuid primary key default gen_random_uuid(),
+  society_id uuid not null references public.societies on delete cascade,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  location text not null check (char_length(location) between 2 and 120),
+  -- Orders that can book this time; null = no cap.
+  capacity int check (capacity between 1 and 2000),
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at)
+);
+
+create index pickup_slots_society_idx on public.pickup_slots (society_id, starts_at);
+
+alter table public.pickup_slots enable row level security;
+create policy "read pickup times of open shops" on public.pickup_slots
+  for select using (
+    exists (select 1 from public.societies s where s.id = society_id and s.status = 'approved')
+    or public.is_society_member(society_id)
+  );
+create policy "committee writes pickup times" on public.pickup_slots
+  for all to authenticated
+  using (public.is_society_member(society_id))
+  with check (public.is_society_member(society_id));
+
+revoke insert, update, delete on public.pickup_slots from anon, authenticated;
+grant insert (society_id, starts_at, ends_at, location, capacity), update (starts_at, ends_at, location, capacity), delete
+  on public.pickup_slots to authenticated;
+
+alter table public.orders add column pickup_slot_id uuid references public.pickup_slots on delete set null;
+create index orders_slot_idx on public.orders (pickup_slot_id);
+
+-- Orders still coming to collect at a time.
+create or replace function public._slot_booked(p_slot_id uuid, p_except uuid default null)
+returns int
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select count(*)::int from public.orders o
+  where o.pickup_slot_id = p_slot_id and public._order_holds_stock(o) and o.id is distinct from p_except;
+$$;
+
+revoke execute on function public._slot_booked(uuid, uuid) from public, anon, authenticated;
+
+-- A society's pickup times with how many orders booked each (past ones only for the committee).
+create or replace function public.list_pickup_slots(p_society_id uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(to_jsonb(s) || jsonb_build_object('booked', public._slot_booked(s.id)) order by s.starts_at), '[]')
+  from public.pickup_slots s
+  where s.society_id = p_society_id
+    and (exists (select 1 from public.societies x where x.id = p_society_id and x.status = 'approved')
+         or public.is_society_member(p_society_id))
+    and (s.ends_at > now() - interval '1 day' or public.is_society_member(p_society_id));
+$$;
+
+-- "Thu 13 Nov 13:00, Room 1009" in Hong Kong time.
+create or replace function public._slot_label(s public.pickup_slots)
+returns text
+language sql
+stable
+set search_path = ''
+as $$
+  select to_char(s.starts_at at time zone 'Asia/Hong_Kong', 'Dy DD Mon HH24:MI') || ', ' || s.location;
+$$;
+
+-- Moving or cancelling a pickup time tells everyone booked on it.
+create or replace function public.notify_slot_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'UPDATE' and new.starts_at = old.starts_at and new.ends_at = old.ends_at and new.location = old.location then
+    return new;
+  end if;
+  insert into public.notifications (user_id, kind, title, body, society_id)
+  select distinct o.user_id, 'order_update',
+    case when tg_op = 'DELETE'
+      then public.localized(p.locale, 'Pickup time cancelled', '取貨時段已取消')
+      else public.localized(p.locale, 'Pickup time changed', '取貨時段已更改') end,
+    case when tg_op = 'DELETE'
+      then public.localized(p.locale, 'Choose a new time to collect ' || o.ref || '.', '請為訂單 ' || o.ref || ' 選擇新的取貨時段。')
+      else public.localized(p.locale, 'Now ' || public._slot_label(new) || ' for ' || o.ref || '.',
+        '訂單 ' || o.ref || ' 改為 ' || public._slot_label(new) || '。') end,
+    o.society_id
+  from public.orders o
+  join public.profiles p on p.id = o.user_id
+  where o.pickup_slot_id = old.id and o.status in ('awaiting_payment', 'payment_claimed', 'paid', 'ready')
+    and public._order_holds_stock(o);
+  return coalesce(new, old);
+end;
+$$;
+
+-- Before, so the orders still point at the time (the foreign key clears them after).
+create trigger pickup_slots_notify before update or delete on public.pickup_slots
+  for each row execute function public.notify_slot_change();
+
+-- ---------------------------------------------------------------------------
+-- Stock counts read the product on each line (orders can hold several products).
+-- Older orders have no product_id on their lines and fall back to the order's.
+-- ---------------------------------------------------------------------------
+create or replace function public.product_sold(p_product_id uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_object_agg(variant, qty), '{}')
+  from (
+    select i ->> 'variant' as variant, sum((i ->> 'qty')::int) as qty
+    from public.orders o, jsonb_array_elements(o.items) i
+    where coalesce((i ->> 'product_id')::uuid, o.product_id) = p_product_id and public._order_holds_stock(o)
+    group by 1
+  ) x;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- "Tell me when it's back"
+-- ---------------------------------------------------------------------------
+alter table public.notifications drop constraint notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check check (kind in (
+  'waitlist_promoted', 'event_cancelled', 'event_updated', 'new_event', 'society_approved', 'committee_added',
+  'membership_active', 'membership_renewal', 'order_update', 'payment_settings_changed', 'product_available'
+));
+
+create table public.product_alerts (
+  product_id uuid not null references public.products on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (product_id, user_id)
+);
+
+alter table public.product_alerts enable row level security;
+create policy "own alerts" on public.product_alerts for select using (user_id = auth.uid());
+create policy "ask for an alert" on public.product_alerts for insert to authenticated
+  with check (user_id = auth.uid() and exists (select 1 from public.products p where p.id = product_id and p.status <> 'draft'));
+create policy "drop an alert" on public.product_alerts for delete using (user_id = auth.uid());
+revoke update on public.product_alerts from anon, authenticated;
+
+-- On sale again (published, or more stock added): tell everyone waiting, once.
+create or replace function public.notify_product_alerts()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_more boolean;
+begin
+  if new.status <> 'published' then
+    return new;
+  end if;
+  select exists (
+    select 1 from jsonb_array_elements(new.variants) nv
+    left join jsonb_array_elements(old.variants) ov on ov ->> 'name' = nv ->> 'name'
+    where ov is null
+      or (nv ->> 'stock' is null and ov ->> 'stock' is not null)
+      or (nv ->> 'stock')::int > (ov ->> 'stock')::int
+  ) into v_more;
+  if old.status = 'published' and not v_more then
+    return new;
+  end if;
+  insert into public.notifications (user_id, kind, title, body, society_id)
+  select a.user_id, 'product_available',
+    public.localized(p.locale, 'Back on sale', '已重新開售'),
+    public.localized(p.locale, new.title || ' is available again. Get it before it goes.', '「' || new.title || '」已重新開售，售完即止。'),
+    new.society_id
+  from public.product_alerts a
+  join public.profiles p on p.id = a.user_id
+  where a.product_id = new.id;
+  delete from public.product_alerts where product_id = new.id;
+  return new;
+end;
+$$;
+
+create trigger products_notify_alerts after update of status, variants on public.products
+  for each row execute function public.notify_product_alerts();
+
+-- Products, now with whether you asked to be told about each.
+create or replace function public.list_products(p_society_id uuid default null)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(
+    to_jsonb(p) || jsonb_build_object(
+      'sold', public.product_sold(p.id),
+      'alert', exists (select 1 from public.product_alerts a where a.product_id = p.id and a.user_id = auth.uid()),
+      'society', jsonb_build_object('id', s.id, 'name', s.name, 'short_name', s.short_name, 'logo_url', s.logo_url,
+        'verified', s.verified, 'category', s.category)
+    ) order by p.created_at desc), '[]')
+  from public.products p
+  join public.societies s on s.id = p.society_id
+  where (p_society_id is null and p.status = 'published' and s.status = 'approved'
+         and (p.closes_at is null or p.closes_at > now()))
+     or p.society_id = p_society_id;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Checkout: a whole bag from one society in one order.
+-- p_lines: [{"product_id": "...", "variant": "M", "qty": 2}]
+-- ---------------------------------------------------------------------------
+create or replace function public.place_cart_order(
+  p_society_id uuid, p_lines jsonb, p_payment_method text, p_slot_id uuid default null, p_note text default null
+)
+returns public.orders
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_line jsonb;
+  v_p public.products;
+  v_variant jsonb;
+  v_name text;
+  v_qty int;
+  v_taken int;
+  v_per int;
+  v_mine int;
+  v_sold jsonb := '{}';
+  v_per_product jsonb := '{}';
+  v_is_member boolean;
+  v_member boolean;
+  v_member_any boolean := false;
+  v_unit numeric;
+  v_total numeric := 0;
+  v_lines jsonb := '[]';
+  v_titles text[] := '{}';
+  v_window int;
+  v_slot public.pickup_slots;
+  v_order public.orders;
+begin
+  if v_uid is null then
+    raise exception 'Sign in to order';
+  end if;
+  if coalesce(p_payment_method, '') not in ('fps', 'payme', 'cash') then
+    raise exception 'Choose how you will pay';
+  end if;
+  if jsonb_typeof(p_lines) is distinct from 'array' or jsonb_array_length(p_lines) = 0 then
+    raise exception 'Choose at least one item';
+  end if;
+  if jsonb_array_length(p_lines) > 30 then
+    raise exception 'That is more than the limit per order';
+  end if;
+  if not exists (select 1 from public.societies s where s.id = p_society_id and s.status = 'approved') then
+    raise exception 'This item is not on sale';
+  end if;
+
+  -- Lock every product in the bag, always in the same order, so two buyers can
+  -- neither oversell the last units nor deadlock each other.
+  perform 1 from public.products
+    where id in (select (l ->> 'product_id')::uuid from jsonb_array_elements(p_lines) l)
+    order by id for update;
+
+  v_is_member := public._is_member_now(p_society_id, v_uid);
+
+  for v_line in select * from jsonb_array_elements(p_lines) loop
+    v_qty := coalesce((v_line ->> 'qty')::int, 0);
+    continue when v_qty <= 0;
+    select * into v_p from public.products where id = (v_line ->> 'product_id')::uuid;
+    if v_p.id is null or v_p.society_id <> p_society_id or v_p.status <> 'published' then
+      raise exception 'This item is not on sale';
+    end if;
+    if v_p.opens_at is not null and now() < v_p.opens_at then
+      raise exception 'Orders have not opened yet';
+    end if;
+    if v_p.closes_at is not null and now() > v_p.closes_at then
+      raise exception 'Orders have closed';
+    end if;
+    select v into v_variant from jsonb_array_elements(v_p.variants) v where v ->> 'name' = coalesce(v_line ->> 'variant', '');
+    if v_variant is null then
+      raise exception 'Choose a size';
+    end if;
+    v_name := v_variant ->> 'name';
+
+    -- Stock: what live orders hold, plus earlier lines of this bag.
+    if not v_sold ? v_p.id::text then
+      v_sold := v_sold || jsonb_build_object(v_p.id::text, public.product_sold(v_p.id));
+    end if;
+    v_taken := coalesce((v_sold -> v_p.id::text ->> v_name)::int, 0);
+    if v_variant ->> 'stock' is not null and v_taken + v_qty > (v_variant ->> 'stock')::int then
+      raise exception 'Not enough stock left';
+    end if;
+    v_sold := jsonb_set(v_sold, array[v_p.id::text, v_name], to_jsonb(v_taken + v_qty));
+
+    v_per := coalesce((v_per_product ->> v_p.id::text)::int, 0) + v_qty;
+    v_per_product := v_per_product || jsonb_build_object(v_p.id::text, v_per);
+    if v_per > v_p.max_per_order then
+      raise exception 'That is more than the limit per order';
+    end if;
+    if v_p.max_per_buyer is not null then
+      select coalesce(sum((i ->> 'qty')::int), 0) into v_mine
+      from public.orders o, jsonb_array_elements(o.items) i
+      where o.user_id = v_uid and public._order_holds_stock(o)
+        and coalesce((i ->> 'product_id')::uuid, o.product_id) = v_p.id;
+      if v_mine + v_per > v_p.max_per_buyer then
+        raise exception 'You have reached the limit for this item';
+      end if;
+    end if;
+
+    v_member := v_p.member_price_hkd is not null and v_is_member;
+    v_member_any := v_member_any or v_member;
+    v_unit := case when v_member then v_p.member_price_hkd else v_p.price_hkd end + coalesce((v_variant ->> 'extra_hkd')::numeric, 0);
+    v_total := v_total + v_qty * v_unit;
+    v_lines := v_lines || jsonb_build_object('product_id', v_p.id, 'title', v_p.title, 'variant', v_name, 'qty', v_qty, 'unit_price', v_unit);
+    if not v_p.title = any(v_titles) then
+      v_titles := v_titles || v_p.title;
+    end if;
+    -- The bag gives the buyer the shortest window of anything in it.
+    v_window := least(coalesce(v_window, v_p.payment_window_hours), v_p.payment_window_hours);
+  end loop;
+
+  if jsonb_array_length(v_lines) = 0 then
+    raise exception 'Choose at least one item';
+  end if;
+
+  if p_slot_id is not null then
+    select * into v_slot from public.pickup_slots where id = p_slot_id and society_id = p_society_id for update;
+    if v_slot.id is null then
+      raise exception 'Choose another pickup time';
+    end if;
+    if v_slot.ends_at < now() then
+      raise exception 'That pickup time has passed';
+    end if;
+    if v_slot.capacity is not null and public._slot_booked(v_slot.id) >= v_slot.capacity then
+      raise exception 'That pickup time is full';
+    end if;
+  end if;
+
+  insert into public.orders (society_id, product_id, user_id, ref, product_title, items, total_hkd, member_price,
+    status, payment_method, buyer_note, expires_at, paid_at, pickup_slot_id)
+  values (p_society_id,
+    case when (select count(*) from jsonb_object_keys(v_per_product)) = 1 then v_p.id end,
+    v_uid, public._new_order_ref(p_society_id), array_to_string(v_titles, ', '), v_lines, v_total, v_member_any,
+    case when v_total = 0 then 'paid' else 'awaiting_payment' end, p_payment_method, nullif(trim(p_note), ''),
+    case when v_total > 0 and p_payment_method <> 'cash' then now() + make_interval(hours => v_window) end,
+    case when v_total = 0 then now() end,
+    p_slot_id)
+  returning * into v_order;
+  return v_order;
+end;
+$$;
+
+-- The one-product order older app versions still call.
+create or replace function public.place_order(
+  p_product_id uuid, p_items jsonb, p_payment_method text, p_note text default null
+)
+returns public.orders
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_society uuid;
+begin
+  select society_id into v_society from public.products where id = p_product_id;
+  if v_society is null then
+    raise exception 'This item is not on sale';
+  end if;
+  if jsonb_typeof(p_items) is distinct from 'array' then
+    raise exception 'Choose at least one item';
+  end if;
+  return public.place_cart_order(v_society,
+    (select coalesce(jsonb_agg(i || jsonb_build_object('product_id', p_product_id)), '[]') from jsonb_array_elements(p_items) i),
+    p_payment_method, null, p_note);
+end;
+$$;
+
+-- Buyer: book or change the time they'll collect.
+create or replace function public.choose_pickup_slot(p_order_id uuid, p_slot_id uuid)
+returns public.orders
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+  v_slot public.pickup_slots;
+begin
+  select * into v_o from public.orders where id = p_order_id and user_id = auth.uid() for update;
+  if v_o.id is null then
+    raise exception 'Order not found';
+  end if;
+  if v_o.event_id is not null or v_o.status not in ('awaiting_payment', 'payment_claimed', 'paid', 'ready')
+    or not public._order_holds_stock(v_o) then
+    raise exception 'This order can no longer change its pickup time';
+  end if;
+  select * into v_slot from public.pickup_slots where id = p_slot_id and society_id = v_o.society_id for update;
+  if v_slot.id is null then
+    raise exception 'Choose another pickup time';
+  end if;
+  if v_slot.ends_at < now() then
+    raise exception 'That pickup time has passed';
+  end if;
+  if v_slot.capacity is not null and public._slot_booked(v_slot.id, v_o.id) >= v_slot.capacity then
+    raise exception 'That pickup time is full';
+  end if;
+  update public.orders set pickup_slot_id = v_slot.id, updated_at = now() where id = v_o.id returning * into v_o;
+  return v_o;
+end;
+$$;
+
+-- "Ready for pickup" now says when and where, if the buyer booked a time.
+create or replace function public._notify_order(o public.orders)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_slot text;
+begin
+  if o.user_id is null then
+    return;
+  end if;
+  select public._slot_label(s) into v_slot from public.pickup_slots s where s.id = o.pickup_slot_id;
+  insert into public.notifications (user_id, kind, title, body, society_id)
+  select o.user_id, 'order_update',
+    case o.status
+      when 'paid' then public.localized(p.locale, 'Payment received', '已收到付款')
+      when 'ready' then public.localized(p.locale, 'Ready for pickup', '可以取貨')
+      when 'awaiting_payment' then public.localized(p.locale, 'Payment not found yet', '暫未找到你的付款')
+      when 'cancelled' then public.localized(p.locale, 'Order cancelled', '訂單已取消')
+      else public.localized(p.locale, 'Order updated', '訂單已更新')
+    end,
+    case o.status
+      when 'paid' then public.localized(p.locale, o.product_title || ' (' || o.ref || ') is paid.',
+        '「' || o.product_title || '」（' || o.ref || '）已付款。')
+      when 'ready' then case when v_slot is not null
+        then public.localized(p.locale, 'Collect ' || o.product_title || ' at ' || v_slot || '. Show the pickup QR in Tickets.',
+          '請於 ' || v_slot || ' 領取「' || o.product_title || '」，並在「門票」出示取貨二維碼。')
+        else public.localized(p.locale, 'Show the pickup QR in Tickets to collect ' || o.product_title || '.',
+          '在「門票」出示取貨二維碼，領取「' || o.product_title || '」。') end
+      when 'awaiting_payment' then public.localized(p.locale, 'The society could not find a payment for ' || o.ref || '. Check the reference and amount.',
+        '學會未找到訂單 ' || o.ref || ' 的付款，請檢查參考編號及金額。')
+      else public.localized(p.locale, o.product_title || ' (' || o.ref || ')', '「' || o.product_title || '」（' || o.ref || '）')
+    end,
+    o.society_id
+  from public.profiles p where p.id = o.user_id;
+end;
+$$;
+
+revoke execute on function public._notify_order(public.orders) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Pickup desk. Lists every line with its product, says which time the buyer
+-- booked, and takes cash: an unpaid cash order can be paid and handed over in
+-- one step by whoever is at the desk (they are holding the money).
+-- ---------------------------------------------------------------------------
+drop function if exists public.collect_order(uuid, text);
+create or replace function public.collect_order(p_society_id uuid, p_code text, p_cash_received boolean default false)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+  v_name text;
+  v_summary text;
+  v_slot text;
+  v_products int;
+  v_base jsonb;
+begin
+  if not public.is_society_member(p_society_id) then
+    raise exception 'Only society committee members can hand out orders';
+  end if;
+  -- The QR holds the pickup code; at the counter the committee can also type the order ref.
+  select * into v_o from public.orders
+    where pickup_code = lower(trim(p_code)) or (society_id = p_society_id and ref = upper(trim(p_code)))
+    limit 1 for update;
+  if v_o.id is null then
+    return jsonb_build_object('ok', false, 'message', 'Order not found');
+  end if;
+  select coalesce(nullif(display_name, ''), email) into v_name from public.profiles where id = v_o.user_id;
+  if v_o.society_id <> p_society_id then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'This order is for a different society');
+  end if;
+  select count(distinct coalesce(i ->> 'title', v_o.product_title)) into v_products from jsonb_array_elements(v_o.items) i;
+  select string_agg(case when v_products > 1 then (i ->> 'title') || ' ' else '' end
+      || case when i ->> 'variant' = '' then '' else (i ->> 'variant') || ' ' end || '×' || (i ->> 'qty'), ', ')
+    into v_summary from jsonb_array_elements(v_o.items) i;
+  if v_products = 1 then
+    v_summary := v_o.product_title || ' · ' || v_summary;
+  end if;
+  select public._slot_label(s) into v_slot from public.pickup_slots s where s.id = v_o.pickup_slot_id;
+  v_base := jsonb_build_object('name', v_name, 'ref', v_o.ref, 'items', v_summary, 'slot', v_slot,
+    'total_hkd', v_o.total_hkd, 'payment_method', v_o.payment_method);
+  if v_o.event_id is not null then
+    return v_base || jsonb_build_object('ok', false, 'message', 'This is an event ticket. Check it in from the event instead.');
+  end if;
+  if v_o.status = 'collected' then
+    return v_base || jsonb_build_object('ok', false, 'message', 'Already collected', 'collected_at', v_o.collected_at);
+  end if;
+  if v_o.status = 'awaiting_payment' and v_o.payment_method = 'cash' and p_cash_received then
+    update public.orders set status = 'collected', paid_at = now(), collected_at = now(), updated_at = now() where id = v_o.id;
+    return v_base || jsonb_build_object('ok', true, 'message', 'Cash taken and collected');
+  end if;
+  if v_o.status not in ('paid', 'ready') then
+    return v_base || jsonb_build_object('ok', false, 'message', case
+      when v_o.status = 'awaiting_payment' and v_o.payment_method = 'cash' then 'Take cash'
+      when v_o.status in ('cancelled', 'refunded') then 'This order was cancelled'
+      else 'Not paid yet' end);
+  end if;
+  update public.orders set status = 'collected', collected_at = now(), updated_at = now() where id = v_o.id;
+  return v_base || jsonb_build_object('ok', true, 'message', 'Collected');
+end;
+$$;
+
+-- ===== 20261030050000_v08_online_payments.sql =====
+
+-- v0.8: online payments for the shop (cards, Apple Pay, Google Pay, Alipay,
+-- WeChat Pay) through Stripe Connect, with a platform fee.
+--
+-- Each society connects its own payout account (Stripe checks the treasurer's
+-- ID). A buyer pays on Stripe's checkout page; Stripe sends the money to the
+-- society minus the platform fee, so the app still never holds money. Only the
+-- payment webhook can mark an online order paid or refunded: the edge
+-- functions in supabase/functions/payments and stripe-webhook call the
+-- service-role functions below. FPS, PayMe and cash keep working as before.
+
+-- ---------------------------------------------------------------------------
+-- The platform fee: a percentage plus a fixed amount per online order, taken
+-- from the society's share. One row for the whole app; a society can have its
+-- own rate (set by a platform admin) on its payout account.
+-- ---------------------------------------------------------------------------
+create table public.platform_fee (
+  id boolean primary key default true check (id),
+  percent numeric(5, 2) not null default 5 check (percent between 0 and 30),
+  fixed_hkd numeric(10, 2) not null default 3 check (fixed_hkd between 0 and 100),
+  updated_at timestamptz not null default now()
+);
+insert into public.platform_fee default values;
+
+alter table public.platform_fee enable row level security;
+create policy "anyone signed in reads the fee" on public.platform_fee for select to authenticated using (true);
+revoke insert, update, delete on public.platform_fee from anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- A society's payout account at the payment provider. Written only by the edge
+-- functions (service role) from what the provider reports.
+-- ---------------------------------------------------------------------------
+create table public.society_payout_accounts (
+  society_id uuid primary key references public.societies on delete cascade,
+  provider text not null default 'stripe' check (provider in ('stripe')),
+  account_id text not null unique,
+  -- Buyers can pay once the provider has verified the account.
+  charges_enabled boolean not null default false,
+  payouts_enabled boolean not null default false,
+  details_submitted boolean not null default false,
+  -- How many things the provider still needs (ID photo, bank account...).
+  requirements_due int not null default 0,
+  disabled_reason text,
+  -- A platform admin can give a society its own rate; null means the app's rate.
+  fee_percent numeric(5, 2) check (fee_percent between 0 and 30),
+  fee_fixed_hkd numeric(10, 2) check (fee_fixed_hkd between 0 and 100),
+  created_by uuid references auth.users on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.society_payout_accounts enable row level security;
+create policy "committee and platform admins read payout accounts" on public.society_payout_accounts
+  for select using (public.is_society_member(society_id) or public.is_platform_admin());
+revoke insert, update, delete on public.society_payout_accounts from anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Orders can be paid online. The fee is copied onto the order when it is paid,
+-- so the treasurer's export shows what the society actually received.
+-- ---------------------------------------------------------------------------
+alter table public.orders drop constraint orders_payment_method_check;
+alter table public.orders add constraint orders_payment_method_check
+  check (payment_method in ('fps', 'payme', 'cash', 'online'));
+alter table public.orders add column platform_fee_hkd numeric(10, 2);
+
+-- One row per checkout attempt. A buyer who closes the page and tries again gets
+-- a new attempt; the old one is expired at the provider first.
+create table public.payments (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders on delete cascade,
+  society_id uuid not null references public.societies on delete cascade,
+  provider text not null default 'stripe' check (provider in ('stripe')),
+  session_id text not null unique,
+  payment_intent text unique,
+  amount_hkd numeric(10, 2) not null,
+  fee_hkd numeric(10, 2) not null,
+  -- card, alipay, wechat_pay... as the provider reports it.
+  method text,
+  status text not null default 'open' check (status in ('open', 'succeeded', 'expired', 'failed', 'refunded')),
+  refunded_hkd numeric(10, 2) not null default 0,
+  checkout_url text,
+  expires_at timestamptz,
+  paid_at timestamptz,
+  refunded_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index payments_order_idx on public.payments (order_id, created_at desc);
+
+alter table public.payments enable row level security;
+create policy "buyer and society admins read payments" on public.payments
+  for select using (
+    public.is_society_admin(society_id)
+    or exists (select 1 from public.orders o where o.id = order_id and o.user_id = auth.uid())
+  );
+revoke insert, update, delete on public.payments from anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Fee and readiness
+-- ---------------------------------------------------------------------------
+
+-- What the society pays the platform on an online order of this total.
+create or replace function public._platform_fee_hkd(p_society_id uuid, p_total numeric)
+returns numeric
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select case when p_total <= 0 then 0 else least(p_total, round(
+    p_total * coalesce(a.fee_percent, f.percent) / 100 + coalesce(a.fee_fixed_hkd, f.fixed_hkd), 2)) end
+  from public.platform_fee f
+  left join public.society_payout_accounts a on a.society_id = p_society_id;
+$$;
+
+-- The rate a society pays, for its committee's settings screen.
+create or replace function public.platform_fee_for(p_society_id uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'percent', coalesce(a.fee_percent, f.percent),
+    'fixed_hkd', coalesce(a.fee_fixed_hkd, f.fixed_hkd))
+  from public.platform_fee f
+  left join public.society_payout_accounts a on a.society_id = p_society_id;
+$$;
+
+-- Can buyers pay this society online right now?
+create or replace function public.shop_online_ready(p_society_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.society_payout_accounts a
+    join public.societies s on s.id = a.society_id
+    where a.society_id = p_society_id and a.charges_enabled and s.status = 'approved'
+  );
+$$;
+
+-- Platform admins set the app's rate, or one society's (null percent and fixed
+-- with a society clears its own rate).
+create or replace function public.set_platform_fee(p_percent numeric, p_fixed_hkd numeric, p_society_id uuid default null)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Only platform admins can change the fee';
+  end if;
+  if p_society_id is null then
+    update public.platform_fee set percent = p_percent, fixed_hkd = p_fixed_hkd, updated_at = now();
+  else
+    update public.society_payout_accounts set fee_percent = p_percent, fee_fixed_hkd = p_fixed_hkd, updated_at = now()
+      where society_id = p_society_id;
+    if not found then
+      raise exception 'This society has not set up online payments';
+    end if;
+  end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Guard: an online order only changes payment state through the webhook
+-- functions below, which set app.payment_webhook for their transaction. The
+-- committee can still cancel an unpaid online order and mark paid ones ready
+-- or collected; refunds go through the refund function, which talks to the
+-- provider first.
+-- ---------------------------------------------------------------------------
+create or replace function public.guard_online_order()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.payment_method <> 'online' or new.status = old.status
+    or coalesce(current_setting('app.payment_webhook', true), '') = 'on' then
+    return new;
+  end if;
+  if new.status in ('paid', 'awaiting_payment', 'payment_claimed') then
+    raise exception 'Online payments are confirmed automatically';
+  end if;
+  if new.status = 'refunded' or (new.status = 'cancelled' and old.status not in ('awaiting_payment', 'payment_claimed')) then
+    raise exception 'Refund online payments with the Refund button';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger orders_guard_online
+  before update of status on public.orders
+  for each row execute function public.guard_online_order();
+
+-- An online order holds stock for 30 minutes while the buyer is on the payment
+-- page (each new attempt extends it), and only for societies that can take it.
+create or replace function public.prepare_online_order()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.payment_method = 'online' then
+    if new.event_id is not null then
+      raise exception 'Choose how you will pay';
+    end if;
+    if not public.shop_online_ready(new.society_id) then
+      raise exception 'This society does not take online payments yet';
+    end if;
+    if new.status = 'awaiting_payment' then
+      new.expires_at := now() + interval '30 minutes';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger orders_prepare_online
+  before insert on public.orders
+  for each row execute function public.prepare_online_order();
+
+-- Checkout now accepts 'online'; the rest is unchanged from v0.7.
+create or replace function public.place_cart_order(
+  p_society_id uuid, p_lines jsonb, p_payment_method text, p_slot_id uuid default null, p_note text default null
+)
+returns public.orders
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_line jsonb;
+  v_p public.products;
+  v_variant jsonb;
+  v_name text;
+  v_qty int;
+  v_taken int;
+  v_per int;
+  v_mine int;
+  v_sold jsonb := '{}';
+  v_per_product jsonb := '{}';
+  v_is_member boolean;
+  v_member boolean;
+  v_member_any boolean := false;
+  v_unit numeric;
+  v_total numeric := 0;
+  v_lines jsonb := '[]';
+  v_titles text[] := '{}';
+  v_window int;
+  v_slot public.pickup_slots;
+  v_order public.orders;
+begin
+  if v_uid is null then
+    raise exception 'Sign in to order';
+  end if;
+  if coalesce(p_payment_method, '') not in ('fps', 'payme', 'cash', 'online') then
+    raise exception 'Choose how you will pay';
+  end if;
+  if jsonb_typeof(p_lines) is distinct from 'array' or jsonb_array_length(p_lines) = 0 then
+    raise exception 'Choose at least one item';
+  end if;
+  if jsonb_array_length(p_lines) > 30 then
+    raise exception 'That is more than the limit per order';
+  end if;
+  if not exists (select 1 from public.societies s where s.id = p_society_id and s.status = 'approved') then
+    raise exception 'This item is not on sale';
+  end if;
+
+  -- Lock every product in the bag, always in the same order, so two buyers can
+  -- neither oversell the last units nor deadlock each other.
+  perform 1 from public.products
+    where id in (select (l ->> 'product_id')::uuid from jsonb_array_elements(p_lines) l)
+    order by id for update;
+
+  v_is_member := public._is_member_now(p_society_id, v_uid);
+
+  for v_line in select * from jsonb_array_elements(p_lines) loop
+    v_qty := coalesce((v_line ->> 'qty')::int, 0);
+    continue when v_qty <= 0;
+    select * into v_p from public.products where id = (v_line ->> 'product_id')::uuid;
+    if v_p.id is null or v_p.society_id <> p_society_id or v_p.status <> 'published' then
+      raise exception 'This item is not on sale';
+    end if;
+    if v_p.opens_at is not null and now() < v_p.opens_at then
+      raise exception 'Orders have not opened yet';
+    end if;
+    if v_p.closes_at is not null and now() > v_p.closes_at then
+      raise exception 'Orders have closed';
+    end if;
+    select v into v_variant from jsonb_array_elements(v_p.variants) v where v ->> 'name' = coalesce(v_line ->> 'variant', '');
+    if v_variant is null then
+      raise exception 'Choose a size';
+    end if;
+    v_name := v_variant ->> 'name';
+
+    -- Stock: what live orders hold, plus earlier lines of this bag.
+    if not v_sold ? v_p.id::text then
+      v_sold := v_sold || jsonb_build_object(v_p.id::text, public.product_sold(v_p.id));
+    end if;
+    v_taken := coalesce((v_sold -> v_p.id::text ->> v_name)::int, 0);
+    if v_variant ->> 'stock' is not null and v_taken + v_qty > (v_variant ->> 'stock')::int then
+      raise exception 'Not enough stock left';
+    end if;
+    v_sold := jsonb_set(v_sold, array[v_p.id::text, v_name], to_jsonb(v_taken + v_qty));
+
+    v_per := coalesce((v_per_product ->> v_p.id::text)::int, 0) + v_qty;
+    v_per_product := v_per_product || jsonb_build_object(v_p.id::text, v_per);
+    if v_per > v_p.max_per_order then
+      raise exception 'That is more than the limit per order';
+    end if;
+    if v_p.max_per_buyer is not null then
+      select coalesce(sum((i ->> 'qty')::int), 0) into v_mine
+      from public.orders o, jsonb_array_elements(o.items) i
+      where o.user_id = v_uid and public._order_holds_stock(o)
+        and coalesce((i ->> 'product_id')::uuid, o.product_id) = v_p.id;
+      if v_mine + v_per > v_p.max_per_buyer then
+        raise exception 'You have reached the limit for this item';
+      end if;
+    end if;
+
+    v_member := v_p.member_price_hkd is not null and v_is_member;
+    v_member_any := v_member_any or v_member;
+    v_unit := case when v_member then v_p.member_price_hkd else v_p.price_hkd end + coalesce((v_variant ->> 'extra_hkd')::numeric, 0);
+    v_total := v_total + v_qty * v_unit;
+    v_lines := v_lines || jsonb_build_object('product_id', v_p.id, 'title', v_p.title, 'variant', v_name, 'qty', v_qty, 'unit_price', v_unit);
+    if not v_p.title = any(v_titles) then
+      v_titles := v_titles || v_p.title;
+    end if;
+    -- The bag gives the buyer the shortest window of anything in it.
+    v_window := least(coalesce(v_window, v_p.payment_window_hours), v_p.payment_window_hours);
+  end loop;
+
+  if jsonb_array_length(v_lines) = 0 then
+    raise exception 'Choose at least one item';
+  end if;
+
+  if p_slot_id is not null then
+    select * into v_slot from public.pickup_slots where id = p_slot_id and society_id = p_society_id for update;
+    if v_slot.id is null then
+      raise exception 'Choose another pickup time';
+    end if;
+    if v_slot.ends_at < now() then
+      raise exception 'That pickup time has passed';
+    end if;
+    if v_slot.capacity is not null and public._slot_booked(v_slot.id) >= v_slot.capacity then
+      raise exception 'That pickup time is full';
+    end if;
+  end if;
+
+  insert into public.orders (society_id, product_id, user_id, ref, product_title, items, total_hkd, member_price,
+    status, payment_method, buyer_note, expires_at, paid_at, pickup_slot_id)
+  values (p_society_id,
+    case when (select count(*) from jsonb_object_keys(v_per_product)) = 1 then v_p.id end,
+    v_uid, public._new_order_ref(p_society_id), array_to_string(v_titles, ', '), v_lines, v_total, v_member_any,
+    case when v_total = 0 then 'paid' else 'awaiting_payment' end, p_payment_method, nullif(trim(p_note), ''),
+    case when v_total > 0 and p_payment_method <> 'cash' then now() + make_interval(hours => v_window) end,
+    case when v_total = 0 then now() end,
+    p_slot_id)
+  returning * into v_order;
+  return v_order;
+end;
+$$;
+
+
+-- ---------------------------------------------------------------------------
+-- Service-role functions for the edge functions. Each takes the signed-in user
+-- the edge function verified, and checks what they may do.
+-- ---------------------------------------------------------------------------
+
+-- Before onboarding: may this person connect the society, and is there already an account?
+create or replace function public.payout_onboarding_info(p_society_id uuid, p_user uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_s public.societies;
+begin
+  if not exists (select 1 from public.society_members m
+      where m.society_id = p_society_id and m.user_id = p_user and m.role in ('owner', 'admin')) then
+    raise exception 'Only society admins can set up online payments';
+  end if;
+  select * into v_s from public.societies where id = p_society_id;
+  if v_s.status <> 'approved' then
+    raise exception 'Your society needs to be approved first';
+  end if;
+  return jsonb_build_object(
+    'account_id', (select account_id from public.society_payout_accounts where society_id = p_society_id),
+    'name', v_s.name,
+    'email', (select email from public.profiles where id = p_user));
+end;
+$$;
+
+-- Records what the provider says about a payout account (after onboarding and on account.updated).
+create or replace function public.sync_payout_account(
+  p_society_id uuid, p_account_id text, p_charges boolean, p_payouts boolean, p_details boolean,
+  p_due int, p_disabled_reason text, p_user uuid default null
+)
+returns public.society_payout_accounts
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_a public.society_payout_accounts;
+begin
+  if p_society_id is null then
+    select society_id into p_society_id from public.society_payout_accounts where account_id = p_account_id;
+    if p_society_id is null then
+      return null;
+    end if;
+  end if;
+  insert into public.society_payout_accounts (society_id, account_id, charges_enabled, payouts_enabled,
+    details_submitted, requirements_due, disabled_reason, created_by)
+  values (p_society_id, p_account_id, p_charges, p_payouts, p_details, coalesce(p_due, 0), p_disabled_reason, p_user)
+  on conflict (society_id) do update set
+    account_id = excluded.account_id, charges_enabled = excluded.charges_enabled,
+    payouts_enabled = excluded.payouts_enabled, details_submitted = excluded.details_submitted,
+    requirements_due = excluded.requirements_due, disabled_reason = excluded.disabled_reason, updated_at = now()
+  returning * into v_a;
+  return v_a;
+end;
+$$;
+
+-- Before checkout: the order, the amount and fee, and earlier attempts to close.
+create or replace function public.online_checkout_info(p_order_id uuid, p_user uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+  v_a public.society_payout_accounts;
+begin
+  select * into v_o from public.orders where id = p_order_id and user_id = p_user for update;
+  if v_o.id is null then
+    raise exception 'Order not found';
+  end if;
+  if v_o.payment_method <> 'online' then
+    raise exception 'This order is paid another way';
+  end if;
+  if v_o.status <> 'awaiting_payment' then
+    raise exception 'This order is not waiting for payment';
+  end if;
+  if not public._order_holds_stock(v_o) then
+    raise exception 'This order expired. Please order again.';
+  end if;
+  select * into v_a from public.society_payout_accounts where society_id = v_o.society_id;
+  if v_a.account_id is null or not public.shop_online_ready(v_o.society_id) then
+    raise exception 'This society does not take online payments yet';
+  end if;
+  return jsonb_build_object(
+    'order_id', v_o.id,
+    'ref', v_o.ref,
+    'society_id', v_o.society_id,
+    'society_name', (select coalesce(short_name, name) from public.societies where id = v_o.society_id),
+    'items', v_o.items,
+    'product_title', v_o.product_title,
+    'total_hkd', v_o.total_hkd,
+    'fee_hkd', public._platform_fee_hkd(v_o.society_id, v_o.total_hkd),
+    'account_id', v_a.account_id,
+    'email', (select email from public.profiles where id = p_user),
+    'locale', (select locale from public.profiles where id = p_user),
+    'open_sessions', (select coalesce(jsonb_agg(session_id), '[]') from public.payments
+      where order_id = v_o.id and status = 'open'));
+end;
+$$;
+
+-- After the provider created a checkout page. The order keeps its stock while the page is open.
+create or replace function public.record_checkout_session(
+  p_order_id uuid, p_session_id text, p_url text, p_expires_at timestamptz, p_amount numeric, p_fee numeric
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+begin
+  select * into v_o from public.orders where id = p_order_id for update;
+  update public.payments set status = 'expired', updated_at = now() where order_id = p_order_id and status = 'open';
+  insert into public.payments (order_id, society_id, session_id, amount_hkd, fee_hkd, checkout_url, expires_at)
+  values (p_order_id, v_o.society_id, p_session_id, p_amount, p_fee, p_url, p_expires_at);
+  perform set_config('app.payment_webhook', 'on', true);
+  update public.orders set expires_at = greatest(expires_at, p_expires_at + interval '5 minutes'), updated_at = now()
+    where id = p_order_id and status = 'awaiting_payment';
+end;
+$$;
+
+-- Webhook: a checkout page was paid. Stripe retries webhooks, so this is safe to
+-- call again for the same page. Returns what the edge function should do:
+--   'paid'     the order is now paid
+--   'already'  this payment was handled before
+--   'refund'   the money has nowhere to go (order cancelled, or paid twice); refund
+--              it (again on a retry, until the refund is recorded)
+--   'unknown'  not one of ours
+create or replace function public.online_payment_succeeded(
+  p_session_id text, p_payment_intent text, p_method text, p_amount numeric
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_p public.payments;
+  v_o public.orders;
+begin
+  select * into v_p from public.payments where session_id = p_session_id for update;
+  if v_p.id is null then
+    return 'unknown';
+  end if;
+  if v_p.status = 'refunded' then
+    return 'already';
+  end if;
+  if v_p.status = 'succeeded' then
+    select * into v_o from public.orders where id = v_p.order_id;
+    return case when v_o.status in ('cancelled', 'refunded') or exists (select 1 from public.payments p
+        where p.order_id = v_p.order_id and p.status = 'succeeded' and p.id <> v_p.id and p.paid_at < v_p.paid_at)
+      then 'refund' else 'already' end;
+  end if;
+  update public.payments set status = 'succeeded', payment_intent = p_payment_intent, method = p_method,
+      amount_hkd = coalesce(p_amount, amount_hkd), paid_at = now(), updated_at = now()
+    where id = v_p.id;
+
+  perform set_config('app.payment_webhook', 'on', true);
+  select * into v_o from public.orders where id = v_p.order_id for update;
+  -- A late payment for an order whose window just passed still counts: the
+  -- buyer was on the payment page, so the order is theirs.
+  if v_o.status in ('awaiting_payment', 'payment_claimed') then
+    update public.orders set status = 'paid', paid_at = now(), platform_fee_hkd = v_p.fee_hkd,
+        claimed_at = null, updated_at = now()
+      where id = v_o.id
+      returning * into v_o;
+    perform public._notify_order(v_o);
+    return 'paid';
+  end if;
+  return 'refund';
+end;
+$$;
+
+-- Webhook: a checkout page expired or failed without payment.
+create or replace function public.online_payment_closed(p_session_id text, p_status text)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.payments set status = p_status, updated_at = now()
+    where session_id = p_session_id and status = 'open' and p_status in ('expired', 'failed');
+$$;
+
+-- Before a committee refund: may this person refund it, and which payment?
+create or replace function public.online_refund_info(p_order_id uuid, p_user uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+  v_p public.payments;
+begin
+  select * into v_o from public.orders where id = p_order_id;
+  if v_o.id is null or not exists (select 1 from public.society_members m
+      where m.society_id = v_o.society_id and m.user_id = p_user and m.role in ('owner', 'admin')) then
+    raise exception 'Only society admins can confirm payments';
+  end if;
+  if v_o.payment_method <> 'online' or v_o.status not in ('paid', 'ready', 'collected') then
+    raise exception 'That change is not possible for this order';
+  end if;
+  select * into v_p from public.payments where order_id = v_o.id and status = 'succeeded'
+    order by paid_at desc limit 1;
+  if v_p.payment_intent is null then
+    raise exception 'That change is not possible for this order';
+  end if;
+  return jsonb_build_object('payment_intent', v_p.payment_intent, 'amount_hkd', v_p.amount_hkd);
+end;
+$$;
+
+-- After the provider refunded a payment (from the app, a duplicate, or the
+-- provider's dashboard). Refunding the order's only payment refunds the order.
+create or replace function public.record_online_refund(p_payment_intent text, p_refunded numeric)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_p public.payments;
+  v_o public.orders;
+begin
+  select * into v_p from public.payments where payment_intent = p_payment_intent for update;
+  if v_p.id is null then
+    return;
+  end if;
+  update public.payments set refunded_hkd = least(amount_hkd, coalesce(p_refunded, amount_hkd)),
+      status = case when coalesce(p_refunded, amount_hkd) >= amount_hkd then 'refunded' else status end,
+      refunded_at = now(), updated_at = now()
+    where id = v_p.id
+    returning * into v_p;
+  if v_p.status <> 'refunded' then
+    return;
+  end if;
+  perform set_config('app.payment_webhook', 'on', true);
+  select * into v_o from public.orders where id = v_p.order_id for update;
+  if v_o.status in ('paid', 'ready', 'collected')
+    and not exists (select 1 from public.payments where order_id = v_o.id and status = 'succeeded') then
+    update public.orders set status = 'refunded', cancelled_at = now(), updated_at = now()
+      where id = v_o.id
+      returning * into v_o;
+    perform public._notify_order(v_o);
+  end if;
+end;
+$$;
+
+revoke execute on function public.payout_onboarding_info(uuid, uuid),
+  public.sync_payout_account(uuid, text, boolean, boolean, boolean, int, text, uuid),
+  public.online_checkout_info(uuid, uuid),
+  public.record_checkout_session(uuid, text, text, timestamptz, numeric, numeric),
+  public.online_payment_succeeded(text, text, text, numeric),
+  public.online_payment_closed(text, text),
+  public.online_refund_info(uuid, uuid),
+  public.record_online_refund(text, numeric),
+  public._platform_fee_hkd(uuid, numeric)
+  from public, anon, authenticated;
+grant execute on function public.payout_onboarding_info(uuid, uuid),
+  public.sync_payout_account(uuid, text, boolean, boolean, boolean, int, text, uuid),
+  public.online_checkout_info(uuid, uuid),
+  public.record_checkout_session(uuid, text, text, timestamptz, numeric, numeric),
+  public.online_payment_succeeded(text, text, text, numeric),
+  public.online_payment_closed(text, text),
+  public.online_refund_info(uuid, uuid),
+  public.record_online_refund(text, numeric),
+  public._platform_fee_hkd(uuid, numeric)
+  to service_role;
+
+-- "Refunded" also tells the buyer, now that online refunds happen in the app.
+create or replace function public._notify_order(o public.orders)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_slot text;
+begin
+  if o.user_id is null then
+    return;
+  end if;
+  select public._slot_label(s) into v_slot from public.pickup_slots s where s.id = o.pickup_slot_id;
+  insert into public.notifications (user_id, kind, title, body, society_id)
+  select o.user_id, 'order_update',
+    case o.status
+      when 'paid' then public.localized(p.locale, 'Payment received', '已收到付款')
+      when 'ready' then public.localized(p.locale, 'Ready for pickup', '可以取貨')
+      when 'awaiting_payment' then public.localized(p.locale, 'Payment not found yet', '暫未找到你的付款')
+      when 'cancelled' then public.localized(p.locale, 'Order cancelled', '訂單已取消')
+      when 'refunded' then public.localized(p.locale, 'Refunded', '已退款')
+      else public.localized(p.locale, 'Order updated', '訂單已更新')
+    end,
+    case o.status
+      when 'paid' then public.localized(p.locale, o.product_title || ' (' || o.ref || ') is paid.',
+        '「' || o.product_title || '」（' || o.ref || '）已付款。')
+      when 'ready' then case when v_slot is not null
+        then public.localized(p.locale, 'Collect ' || o.product_title || ' at ' || v_slot || '. Show the pickup QR in Tickets.',
+          '請於 ' || v_slot || ' 領取「' || o.product_title || '」，並在「門票」出示取貨二維碼。')
+        else public.localized(p.locale, 'Show the pickup QR in Tickets to collect ' || o.product_title || '.',
+          '在「門票」出示取貨二維碼，領取「' || o.product_title || '」。') end
+      when 'awaiting_payment' then public.localized(p.locale, 'The society could not find a payment for ' || o.ref || '. Check the reference and amount.',
+        '學會未找到訂單 ' || o.ref || ' 的付款，請檢查參考編號及金額。')
+      when 'refunded' then public.localized(p.locale,
+        'HK$' || o.total_hkd || ' for ' || o.ref || ' is on its way back to your card or wallet. It can take 5 to 10 days to appear.',
+        '訂單 ' || o.ref || ' 的 HK$' || o.total_hkd || ' 已退回你的信用卡或電子錢包，可能需要 5 至 10 日才會顯示。')
+      else public.localized(p.locale, o.product_title || ' (' || o.ref || ')', '「' || o.product_title || '」（' || o.ref || '）')
+    end,
+    o.society_id
+  from public.profiles p where p.id = o.user_id;
+end;
+$$;
+
+revoke execute on function public._notify_order(public.orders) from public, anon, authenticated;
+
+-- ===== 20261030060000_v09_fairs.sql =====
+
+-- v0.9: fairs. A few times a year (O'Camp, the Christmas fair, the spring
+-- market) dozens of societies run booths in one place over a day or two, and
+-- each booth sells merch and food. Today that means a Google Form per booth,
+-- PayMe screenshots, cash boxes and long queues, and nobody knows how many to
+-- make until the day.
+--
+--   * An organiser society (e.g. the Student Union) creates a fair; a platform
+--     admin approves it before it is listed.
+--   * Societies ask for a booth; the organiser approves them and gives each a
+--     booth number.
+--   * A booth society puts products on presale for the fair: merch to collect
+--     at the booth, and food vouchers ("bubble tea, HK$25") to use there.
+--   * Fair items check out on their own (one booth, one fair per order), so the
+--     order knows where it is collected, and the presale closes for the whole
+--     fair at once.
+--   * At the booth the committee scans the order QR. Merch is handed over; for
+--     vouchers they choose how many are used now, so a buyer can use one of
+--     three vouchers today and the rest later.
+--   * The organiser sees presale sales per booth.
+
+-- ---------------------------------------------------------------------------
+-- Fairs
+-- ---------------------------------------------------------------------------
+create table public.fairs (
+  id uuid primary key default gen_random_uuid(),
+  organiser_society_id uuid not null references public.societies on delete cascade,
+  name text not null check (char_length(name) between 2 and 80),
+  description text not null default '' check (char_length(description) <= 2000),
+  venue text not null check (char_length(venue) between 2 and 120),
+  cover_url text,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  -- Null: presale runs until the fair ends (buyers can still pre-pay in the queue).
+  presale_closes_at timestamptz,
+  -- Societies can ask for a booth while this is on.
+  booths_open boolean not null default true,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (ends_at > starts_at),
+  check (presale_closes_at is null or presale_closes_at <= ends_at)
+);
+
+create index fairs_dates_idx on public.fairs (status, ends_at);
+
+alter table public.fairs enable row level security;
+create policy "read approved fairs, or your own" on public.fairs
+  for select using (status = 'approved' or public.is_society_member(organiser_society_id) or public.is_platform_admin());
+revoke insert, update, delete on public.fairs from anon, authenticated;
+
+create table public.fair_booths (
+  id uuid primary key default gen_random_uuid(),
+  fair_id uuid not null references public.fairs on delete cascade,
+  society_id uuid not null references public.societies on delete cascade,
+  -- Given by the organiser: "B12".
+  label text check (char_length(label) <= 20),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  -- From the society: what they plan to sell.
+  note text check (char_length(note) <= 300),
+  created_at timestamptz not null default now(),
+  unique (fair_id, society_id)
+);
+
+alter table public.fair_booths enable row level security;
+create policy "read approved booths, or your own" on public.fair_booths
+  for select using (
+    (status = 'approved' and exists (select 1 from public.fairs f where f.id = fair_id and f.status = 'approved'))
+    or public.is_society_member(society_id)
+    or exists (select 1 from public.fairs f where f.id = fair_id and public.is_society_member(f.organiser_society_id))
+    or public.is_platform_admin()
+  );
+revoke insert, update, delete on public.fair_booths from anon, authenticated;
+
+create or replace function public._has_booth(p_fair_id uuid, p_society_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.fair_booths b join public.fairs f on f.id = b.fair_id
+    where b.fair_id = p_fair_id and b.society_id = p_society_id and b.status = 'approved' and f.status = 'approved'
+  );
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Fair news goes to a society's owners and admins.
+-- ---------------------------------------------------------------------------
+alter table public.notifications drop constraint notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check check (kind in (
+  'waitlist_promoted', 'event_cancelled', 'event_updated', 'new_event', 'society_approved', 'committee_added',
+  'membership_active', 'membership_renewal', 'order_update', 'payment_settings_changed', 'product_available',
+  'fair_update'
+));
+
+create or replace function public._notify_society_admins(p_society_id uuid, p_en_title text, p_zh_title text, p_en text, p_zh text)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  insert into public.notifications (user_id, kind, title, body, society_id)
+  select m.user_id, 'fair_update', public.localized(p.locale, p_en_title, p_zh_title), public.localized(p.locale, p_en, p_zh),
+    p_society_id
+  from public.society_members m
+  join public.profiles p on p.id = m.user_id
+  where m.society_id = p_society_id and m.role in ('owner', 'admin');
+$$;
+revoke execute on function public._notify_society_admins(uuid, text, text, text, text) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Organisers
+-- ---------------------------------------------------------------------------
+create or replace function public.save_fair(
+  p_id uuid, p_society_id uuid, p_name text, p_description text, p_venue text, p_cover_url text,
+  p_starts_at timestamptz, p_ends_at timestamptz, p_presale_closes_at timestamptz, p_booths_open boolean
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_f public.fairs;
+  v_id uuid;
+begin
+  if p_id is not null then
+    select * into v_f from public.fairs where id = p_id for update;
+    if v_f.id is null or not public.is_society_admin(v_f.organiser_society_id) then
+      raise exception 'Only the organiser can change this fair';
+    end if;
+    -- A rejected fair goes back for review once it's fixed.
+    update public.fairs set name = trim(p_name), description = coalesce(trim(p_description), ''), venue = trim(p_venue),
+      cover_url = p_cover_url, starts_at = p_starts_at, ends_at = p_ends_at, presale_closes_at = p_presale_closes_at,
+      booths_open = coalesce(p_booths_open, true),
+      status = case when status = 'rejected' then 'pending' else status end, updated_at = now()
+    where id = p_id;
+    return p_id;
+  end if;
+  if not public.is_society_admin(p_society_id) then
+    raise exception 'Only society admins can organise a fair';
+  end if;
+  if not exists (select 1 from public.societies where id = p_society_id and status = 'approved') then
+    raise exception 'Your society must be approved first';
+  end if;
+  insert into public.fairs (organiser_society_id, name, description, venue, cover_url, starts_at, ends_at, presale_closes_at,
+    booths_open, status)
+  values (p_society_id, trim(p_name), coalesce(trim(p_description), ''), trim(p_venue), p_cover_url, p_starts_at, p_ends_at,
+    p_presale_closes_at, coalesce(p_booths_open, true), case when public.is_platform_admin() then 'approved' else 'pending' end)
+  returning id into v_id;
+  -- The organiser runs a booth at its own fair.
+  insert into public.fair_booths (fair_id, society_id, status) values (v_id, p_society_id, 'approved');
+  return v_id;
+end;
+$$;
+
+create or replace function public.review_fair(p_id uuid, p_status text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_f public.fairs;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Only platform admins can review fairs';
+  end if;
+  if p_status not in ('approved', 'rejected') then
+    raise exception 'Choose approve or reject';
+  end if;
+  update public.fairs set status = p_status, updated_at = now() where id = p_id returning * into v_f;
+  if v_f.id is null then
+    raise exception 'Fair not found';
+  end if;
+  perform public._notify_society_admins(v_f.organiser_society_id,
+    case when p_status = 'approved' then 'Fair approved' else 'Fair not approved' end,
+    case when p_status = 'approved' then '市集已獲批' else '市集未獲批' end,
+    case when p_status = 'approved' then v_f.name || ' is listed. Societies can now ask for a booth.'
+      else v_f.name || ' was not approved. Edit it and it will be checked again.' end,
+    case when p_status = 'approved' then '「' || v_f.name || '」已上架，各學會現可申請攤位。'
+      else '「' || v_f.name || '」未獲批。修改後會再次審批。' end);
+end;
+$$;
+
+-- A society admin asks for a booth. Asking again after a rejection asks again.
+create or replace function public.apply_for_booth(p_fair_id uuid, p_society_id uuid, p_note text default null)
+returns public.fair_booths
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_f public.fairs;
+  v_b public.fair_booths;
+begin
+  if not public.is_society_admin(p_society_id) then
+    raise exception 'Only society admins can ask for a booth';
+  end if;
+  if not exists (select 1 from public.societies where id = p_society_id and status = 'approved') then
+    raise exception 'Your society must be approved first';
+  end if;
+  select * into v_f from public.fairs where id = p_fair_id;
+  if v_f.id is null or v_f.status <> 'approved' then
+    raise exception 'Fair not found';
+  end if;
+  if not v_f.booths_open or v_f.ends_at < now() then
+    raise exception 'This fair is not taking booth requests';
+  end if;
+  insert into public.fair_booths (fair_id, society_id, note, status)
+  values (p_fair_id, p_society_id, nullif(trim(p_note), ''),
+    case when public.is_society_admin(v_f.organiser_society_id) then 'approved' else 'pending' end)
+  on conflict (fair_id, society_id) do update
+    set note = excluded.note,
+        status = case when public.fair_booths.status = 'rejected' then 'pending' else public.fair_booths.status end
+  returning * into v_b;
+  return v_b;
+end;
+$$;
+
+create or replace function public.review_booth(p_booth_id uuid, p_status text, p_label text default null)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_b public.fair_booths;
+  v_f public.fairs;
+  v_was text;
+begin
+  select * into v_b from public.fair_booths where id = p_booth_id for update;
+  select * into v_f from public.fairs where id = v_b.fair_id;
+  if v_b.id is null or not public.is_society_admin(v_f.organiser_society_id) then
+    raise exception 'Only the organiser can review booths';
+  end if;
+  if p_status not in ('pending', 'approved', 'rejected') then
+    raise exception 'Choose approve or reject';
+  end if;
+  v_was := v_b.status;
+  update public.fair_booths set status = p_status, label = nullif(trim(p_label), '') where id = p_booth_id;
+  if p_status <> v_was and p_status <> 'pending' then
+    perform public._notify_society_admins(v_b.society_id,
+      case when p_status = 'approved' then 'Booth confirmed' else 'Booth request declined' end,
+      case when p_status = 'approved' then '攤位已確認' else '攤位申請未獲接納' end,
+      case when p_status = 'approved'
+        then 'You have a booth at ' || v_f.name || coalesce(' (' || nullif(trim(p_label), '') || ')', '')
+          || '. Add presale items and food vouchers from your shop.'
+        else v_f.name || ' could not give you a booth this time.' end,
+      case when p_status = 'approved'
+        then '你已獲得「' || v_f.name || '」的攤位' || coalesce('（' || nullif(trim(p_label), '') || '）', '')
+          || '。可在商店加入預售貨品及食物券。'
+        else '「' || v_f.name || '」今次未能安排攤位。' end);
+  end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Products: sold at a fair, and food vouchers
+-- ---------------------------------------------------------------------------
+alter table public.products
+  add column fair_id uuid references public.fairs on delete set null,
+  add column kind text not null default 'merch' check (kind in ('merch', 'voucher')),
+  -- What a voucher is worth at the booth, when that is more than its price ("HK$30 of food for HK$25").
+  add column voucher_value_hkd numeric(8, 2) check (voucher_value_hkd between 0 and 10000);
+
+create index products_fair_idx on public.products (fair_id) where fair_id is not null;
+
+grant insert (fair_id, kind, voucher_value_hkd), update (fair_id, kind, voucher_value_hkd) on public.products to authenticated;
+
+create or replace function public.check_product_fair()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.fair_id is not null and (tg_op = 'INSERT' or new.fair_id is distinct from old.fair_id)
+     and not public._has_booth(new.fair_id, new.society_id) then
+    raise exception 'Your society needs a confirmed booth at this fair first';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger products_check_fair before insert or update of fair_id on public.products
+  for each row execute function public.check_product_fair();
+
+-- Products at a fair, with each booth, in the same shape as list_products.
+create or replace function public.list_fair_products(p_fair_id uuid)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(
+    to_jsonb(p) || jsonb_build_object(
+      'sold', public.product_sold(p.id),
+      'alert', exists (select 1 from public.product_alerts a where a.product_id = p.id and a.user_id = auth.uid()),
+      'booth', b.label,
+      'society', jsonb_build_object('id', s.id, 'name', s.name, 'short_name', s.short_name, 'logo_url', s.logo_url,
+        'verified', s.verified, 'category', s.category)
+    ) order by b.label nulls last, s.name, p.created_at), '[]')
+  from public.products p
+  join public.societies s on s.id = p.society_id and s.status = 'approved'
+  join public.fair_booths b on b.fair_id = p.fair_id and b.society_id = p.society_id and b.status = 'approved'
+  where p.fair_id = p_fair_id and p.status = 'published';
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Orders: one fair per order, and vouchers used at the booth
+-- ---------------------------------------------------------------------------
+alter table public.orders
+  add column fair_id uuid references public.fairs on delete set null,
+  add column vouchers_total int not null default 0,
+  add column vouchers_used int not null default 0,
+  add constraint orders_vouchers_check check (vouchers_used between 0 and vouchers_total);
+
+create index orders_fair_idx on public.orders (fair_id) where fair_id is not null;
+
+create or replace function public.prepare_fair_order()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_fairs uuid[];
+  v_plain boolean;
+  v_f public.fairs;
+begin
+  if new.event_id is not null then
+    return new;
+  end if;
+  select coalesce(array_agg(distinct p.fair_id) filter (where p.fair_id is not null), '{}'),
+    coalesce(bool_or(p.fair_id is null), false),
+    coalesce(sum((i ->> 'qty')::int) filter (where p.kind = 'voucher'), 0),
+    coalesce(jsonb_agg(case when p.kind = 'voucher' then i || '{"kind": "voucher"}' else i end order by n), '[]')
+  into v_fairs, v_plain, new.vouchers_total, new.items
+  from jsonb_array_elements(new.items) with ordinality as x(i, n)
+  left join public.products p on p.id = coalesce((i ->> 'product_id')::uuid, new.product_id);
+
+  if cardinality(v_fairs) > 1 or (cardinality(v_fairs) = 1 and v_plain) then
+    raise exception 'Check out fair presale items on their own';
+  end if;
+  if cardinality(v_fairs) = 1 then
+    select * into v_f from public.fairs where id = v_fairs[1];
+    if not public._has_booth(v_f.id, new.society_id) then
+      raise exception 'This item is not on sale';
+    end if;
+    if coalesce(v_f.presale_closes_at, v_f.ends_at) < now() then
+      raise exception 'Presale for this fair has closed';
+    end if;
+    new.fair_id := v_f.id;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger orders_prepare_fair before insert on public.orders
+  for each row execute function public.prepare_fair_order();
+
+-- The pickup desk, now also at a booth: hand over merch, and use vouchers.
+-- p_vouchers: how many of the buyer's vouchers to use now. Without it, an order
+-- with vouchers left answers "How many vouchers?" so the desk can ask.
+drop function if exists public.collect_order(uuid, text, boolean);
+create or replace function public.collect_order(
+  p_society_id uuid, p_code text, p_cash_received boolean default false, p_vouchers int default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_o public.orders;
+  v_name text;
+  v_summary text;
+  v_slot text;
+  v_products int;
+  v_base jsonb;
+  v_left int;
+  v_cash boolean := false;
+begin
+  if not public.is_society_member(p_society_id) then
+    raise exception 'Only society committee members can hand out orders';
+  end if;
+  -- The QR holds the pickup code; at the counter the committee can also type the order ref.
+  select * into v_o from public.orders
+    where pickup_code = lower(trim(p_code)) or (society_id = p_society_id and ref = upper(trim(p_code)))
+    limit 1 for update;
+  if v_o.id is null then
+    return jsonb_build_object('ok', false, 'message', 'Order not found');
+  end if;
+  select coalesce(nullif(display_name, ''), email) into v_name from public.profiles where id = v_o.user_id;
+  if v_o.society_id <> p_society_id then
+    return jsonb_build_object('ok', false, 'name', v_name, 'message', 'This order is for a different society');
+  end if;
+  select count(distinct coalesce(i ->> 'title', v_o.product_title)) into v_products from jsonb_array_elements(v_o.items) i;
+  select string_agg(case when v_products > 1 then (i ->> 'title') || ' ' else '' end
+      || case when i ->> 'variant' = '' then '' else (i ->> 'variant') || ' ' end || '×' || (i ->> 'qty'), ', ')
+    into v_summary from jsonb_array_elements(v_o.items) i;
+  if v_products = 1 then
+    v_summary := v_o.product_title || ' · ' || v_summary;
+  end if;
+  select public._slot_label(s) into v_slot from public.pickup_slots s where s.id = v_o.pickup_slot_id;
+  v_base := jsonb_build_object('name', v_name, 'ref', v_o.ref, 'items', v_summary, 'slot', v_slot,
+    'total_hkd', v_o.total_hkd, 'payment_method', v_o.payment_method,
+    'vouchers_total', v_o.vouchers_total, 'vouchers_left', v_o.vouchers_total - v_o.vouchers_used);
+  if v_o.event_id is not null then
+    return v_base || jsonb_build_object('ok', false, 'message', 'This is an event ticket. Check it in from the event instead.');
+  end if;
+  if v_o.status = 'collected' then
+    return v_base || jsonb_build_object('ok', false,
+      'message', case when v_o.vouchers_total > 0 then 'All vouchers used' else 'Already collected' end,
+      'collected_at', v_o.collected_at);
+  end if;
+  if v_o.status = 'awaiting_payment' and v_o.payment_method = 'cash' and p_cash_received then
+    if v_o.vouchers_total = 0 then
+      update public.orders set status = 'collected', paid_at = now(), collected_at = now(), updated_at = now() where id = v_o.id;
+      return v_base || jsonb_build_object('ok', true, 'message', 'Cash taken and collected');
+    end if;
+    update public.orders set status = 'paid', paid_at = now(), updated_at = now() where id = v_o.id;
+    v_o.status := 'paid';
+    v_cash := true;
+  end if;
+  if v_o.status not in ('paid', 'ready') then
+    return v_base || jsonb_build_object('ok', false, 'message', case
+      when v_o.status = 'awaiting_payment' and v_o.payment_method = 'cash' then 'Take cash'
+      when v_o.status in ('cancelled', 'refunded') then 'This order was cancelled'
+      else 'Not paid yet' end);
+  end if;
+
+  if v_o.vouchers_total > 0 then
+    v_left := v_o.vouchers_total - v_o.vouchers_used;
+    if p_vouchers is null then
+      return v_base || jsonb_build_object('ok', false, 'cash_taken', v_cash, 'message', 'How many vouchers?');
+    end if;
+    if p_vouchers < 1 or p_vouchers > v_left then
+      return v_base || jsonb_build_object('ok', false, 'message', 'Not that many vouchers left');
+    end if;
+    update public.orders set vouchers_used = vouchers_used + p_vouchers,
+      status = case when p_vouchers = v_left then 'collected' else status end,
+      collected_at = case when p_vouchers = v_left then now() end,
+      updated_at = now()
+    where id = v_o.id;
+    return v_base || jsonb_build_object('ok', true, 'message', 'Vouchers used', 'used_now', p_vouchers,
+      'vouchers_left', v_left - p_vouchers);
+  end if;
+
+  update public.orders set status = 'collected', collected_at = now(), updated_at = now() where id = v_o.id;
+  return v_base || jsonb_build_object('ok', true, 'message', 'Collected');
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Reading fairs
+-- ---------------------------------------------------------------------------
+create or replace function public._fair_json(f public.fairs)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select to_jsonb(f) || jsonb_build_object(
+    'organiser', (select jsonb_build_object('id', s.id, 'name', s.name, 'short_name', s.short_name, 'logo_url', s.logo_url,
+        'verified', s.verified, 'category', s.category) from public.societies s where s.id = f.organiser_society_id),
+    'booth_count', (select count(*) from public.fair_booths b where b.fair_id = f.id and b.status = 'approved'),
+    'product_count', (select count(*) from public.products p
+        join public.fair_booths b on b.fair_id = p.fair_id and b.society_id = p.society_id and b.status = 'approved'
+        where p.fair_id = f.id and p.status = 'published'),
+    'can_manage', public.is_society_admin(f.organiser_society_id));
+$$;
+
+-- Fairs that are coming up or on now (and, for organisers, theirs from the last month).
+create or replace function public.list_fairs()
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(public._fair_json(f) order by f.starts_at), '[]')
+  from public.fairs f
+  where f.ends_at > now() - case when public.is_society_member(f.organiser_society_id) then interval '30 days' else interval '0' end;
+$$;
+
+create or replace function public.get_fair(p_id uuid)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select public._fair_json(f) || jsonb_build_object('booths', coalesce((
+    select jsonb_agg(to_jsonb(b) || jsonb_build_object('society', jsonb_build_object('id', s.id, 'name', s.name,
+        'short_name', s.short_name, 'logo_url', s.logo_url, 'verified', s.verified, 'category', s.category))
+      order by b.status <> 'pending', b.label nulls last, s.name)
+    from public.fair_booths b join public.societies s on s.id = b.society_id
+    where b.fair_id = f.id), '[]'))
+  from public.fairs f where f.id = p_id;
+$$;
+
+-- The organiser's view: presale per booth (totals only, never buyers).
+create or replace function public.fair_sales(p_fair_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_f public.fairs;
+begin
+  select * into v_f from public.fairs where id = p_fair_id;
+  if v_f.id is null or not (public.is_society_member(v_f.organiser_society_id) or public.is_platform_admin()) then
+    raise exception 'Only the organiser can see fair sales';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'society_id', b.society_id, 'society_name', s.name, 'booth', b.label,
+      'orders', coalesce(x.orders, 0), 'sales_hkd', coalesce(x.sales, 0),
+      'vouchers_sold', coalesce(x.vouchers, 0), 'vouchers_used', coalesce(x.used, 0),
+      'collected', coalesce(x.collected, 0)
+    ) order by coalesce(x.sales, 0) desc, s.name)
+    from public.fair_booths b
+    join public.societies s on s.id = b.society_id
+    left join lateral (
+      select count(*) as orders, sum(o.total_hkd) as sales, sum(o.vouchers_total) as vouchers, sum(o.vouchers_used) as used,
+        count(*) filter (where o.status = 'collected') as collected
+      from public.orders o
+      where o.fair_id = b.fair_id and o.society_id = b.society_id and o.status in ('paid', 'ready', 'collected')
+    ) x on true
+    where b.fair_id = p_fair_id and b.status = 'approved'
+  ), '[]');
+end;
+$$;
+
 commit;

@@ -11,6 +11,12 @@ type AuthState = {
   user: AuthUser | null;
   profile: Profile | null;
   followIds: Set<string>;
+  /** Societies hidden from Discover and the calendar. */
+  hiddenIds: Set<string>;
+  setHidden: (societyId: string, hidden: boolean) => Promise<void>;
+  /** Events saved for later, newest first. */
+  savedIds: string[];
+  toggleSave: (eventId: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
   toggleFollow: (societyId: string) => Promise<void>;
   /** Returns true when signed in; otherwise opens the sign-in sheet. */
@@ -24,6 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [followIds, setFollowIds] = useState<Set<string>>(new Set());
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<string[]>([]);
 
   const loadUserData = useCallback(async (u: AuthUser | null) => {
     setUser(u);
@@ -31,11 +39,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearSavedTickets();
       setProfile(null);
       setFollowIds(new Set());
+      setHiddenIds(new Set());
+      setSavedIds([]);
       return;
     }
-    const [p, f] = await Promise.all([api.getProfile(), api.myFollowIds()]);
+    const [p, f, h, sv] = await Promise.all([api.getProfile(), api.myFollowIds(), api.myHiddenSocietyIds(), api.mySavedEventIds()]);
     setProfile(p);
     setFollowIds(new Set(f));
+    setHiddenIds(new Set(h));
+    setSavedIds(sv);
   }, []);
 
   useEffect(() => {
@@ -91,9 +103,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [followIds, requireSignIn],
   );
 
+  const setHidden = useCallback(
+    async (societyId: string, hidden: boolean) => {
+      if (!requireSignIn()) return;
+      await api.setSocietyHidden(societyId, hidden);
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        if (hidden) next.add(societyId);
+        else next.delete(societyId);
+        return next;
+      });
+      // Hiding also unfollows (on the server too).
+      if (hidden) {
+        setFollowIds((prev) => {
+          const next = new Set(prev);
+          next.delete(societyId);
+          return next;
+        });
+      }
+      invalidate();
+    },
+    [requireSignIn],
+  );
+
+  const toggleSave = useCallback(
+    async (eventId: string) => {
+      if (!requireSignIn()) return;
+      const save = !savedIds.includes(eventId);
+      const before = savedIds;
+      // Optimistic, like follow.
+      setSavedIds(save ? [eventId, ...before] : before.filter((id) => id !== eventId));
+      try {
+        await api.setEventSaved(eventId, save);
+      } catch (e) {
+        setSavedIds(before);
+        throw e;
+      }
+    },
+    [savedIds, requireSignIn],
+  );
+
   const value = useMemo(
-    () => ({ ready, user, profile, followIds, refreshProfile, toggleFollow, requireSignIn }),
-    [ready, user, profile, followIds, refreshProfile, toggleFollow, requireSignIn],
+    () => ({
+      ready,
+      user,
+      profile,
+      followIds,
+      hiddenIds,
+      setHidden,
+      savedIds,
+      toggleSave,
+      refreshProfile,
+      toggleFollow,
+      requireSignIn,
+    }),
+    [ready, user, profile, followIds, hiddenIds, setHidden, savedIds, toggleSave, refreshProfile, toggleFollow, requireSignIn],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

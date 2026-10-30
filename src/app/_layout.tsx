@@ -2,13 +2,13 @@ import * as Notifications from 'expo-notifications';
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
 
 import { ToastHost } from '@/components/Toast';
 import { api } from '@/lib/api';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { eventIdFrom, notificationsSupported, refreshReminders, registerForPush } from '@/lib/notifications';
-import { useColors } from '@/lib/theme';
+import { useColors, useIsDark } from '@/lib/theme';
+import { loadBags } from '@/lib/bag';
 import { loadLang, t, takeReturnRoute, useLang } from '@/lib/i18n';
 
 /**
@@ -28,7 +28,11 @@ function NotificationRouting() {
     if (!notificationsSupported) return;
     const open = (r: Notifications.NotificationResponse | null) => {
       const id = eventIdFrom(r);
+      const data = r?.notification.request.content.data;
       if (id) router.push(`/event/${id}`);
+      else if (typeof data?.orderId === 'string') router.push(`/order/${data.orderId}`);
+      else if (typeof data?.productId === 'string' && typeof data?.societyId === 'string')
+        router.push({ pathname: '/shop/[id]', params: { id: data.productId, societyId: data.societyId } });
     };
     open(Notifications.getLastNotificationResponse());
     const sub = Notifications.addNotificationResponseReceivedListener(open);
@@ -56,15 +60,16 @@ function ReturnAfterLanguageChange() {
 }
 
 export default function RootLayout() {
-  const scheme = useColorScheme();
+  const dark = useIsDark();
   const c = useColors();
   const lang = useLang();
   const [langLoaded, setLangLoaded] = useState(false);
-  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+  const base = dark ? DarkTheme : DefaultTheme;
   const theme = { ...base, colors: { ...base.colors, primary: c.tint, background: c.background, card: c.card } };
 
   useEffect(() => {
     loadLang().finally(() => setLangLoaded(true));
+    loadBags();
   }, []);
 
   // The splash screen stays up for the few milliseconds this takes.
@@ -77,27 +82,49 @@ export default function RootLayout() {
       <AuthProvider>
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal', headerTintColor: c.tint }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="event/[id]" options={{ title: '', headerTransparent: true, headerTintColor: '#fff' }} />
-          <Stack.Screen name="society/[id]" options={{ title: '' }} />
+          <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="society/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="sign-in" options={{ presentation: 'modal', title: t('Sign in') }} />
           <Stack.Screen name="edit-profile" options={{ presentation: 'modal', title: t('Edit profile') }} />
           <Stack.Screen name="new-society" options={{ presentation: 'modal', title: t('Register a society') }} />
           <Stack.Screen name="report" options={{ presentation: 'formSheet', title: t('Report'), sheetAllowedDetents: [0.6, 1] }} />
           <Stack.Screen name="manage/[societyId]" options={{ title: t('Manage') }} />
           <Stack.Screen name="manage/event-form" options={{ presentation: 'modal', title: t('Event') }} />
+          <Stack.Screen name="manage/post-form" options={{ presentation: 'modal', title: t('Post') }} />
+          <Stack.Screen name="post/[id]" options={{ title: t('Post') }} />
           <Stack.Screen name="manage/promote" options={{ presentation: 'modal', title: t('Promote event') }} />
           <Stack.Screen name="manage/attendees" options={{ title: t('Attendees') }} />
           <Stack.Screen name="manage/scan" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="admin/index" options={{ title: t('Review queue') }} />
-          <Stack.Screen name="notifications" options={{ title: t('Notifications') }} />
+          <Stack.Screen name="notifications" options={{ title: '' }} />
+          <Stack.Screen name="search" options={{ headerShown: false }} />
           <Stack.Screen name="manage/members" options={{ title: t('Committee') }} />
           <Stack.Screen name="manage/edit-society" options={{ presentation: 'modal', title: t('Edit society') }} />
+          <Stack.Screen name="manage/roster" options={{ title: t('Members') }} />
+          <Stack.Screen name="manage/plan-form" options={{ presentation: 'modal', title: t('Membership plan') }} />
+          <Stack.Screen name="manage/import" options={{ presentation: 'modal', title: t('Import members') }} />
+          <Stack.Screen name="manage/orders" options={{ title: t('Orders') }} />
+          <Stack.Screen name="manage/match" options={{ title: t('Match bank statement') }} />
+          <Stack.Screen name="manage/product-form" options={{ presentation: 'modal', title: t('Product') }} />
+          <Stack.Screen name="manage/payment-settings" options={{ presentation: 'modal', title: t('Payment details') }} />
+          <Stack.Screen name="membership/join" options={{ presentation: 'modal', title: t('Join') }} />
+          <Stack.Screen name="membership/[id]" options={{ title: t('Member card') }} />
+          <Stack.Screen name="shop/index" options={{ title: t('Shop') }} />
+          <Stack.Screen name="shop/[id]" options={{ title: '' }} />
+          <Stack.Screen name="shop/bag" options={{ title: t('Your bag') }} />
+          <Stack.Screen name="manage/pickup-times" options={{ title: t('Pickup times') }} />
+          <Stack.Screen name="order/[id]" options={{ title: t('Order') }} />
+          <Stack.Screen name="fairs" options={{ title: t('Fairs') }} />
+          <Stack.Screen name="fair/[id]" options={{ title: '' }} />
+          <Stack.Screen name="manage/fair" options={{ title: t('Fair') }} />
+          <Stack.Screen name="manage/fair-form" options={{ presentation: 'modal', title: t('Fair') }} />
+          <Stack.Screen name="ticket/[id]" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="welcome" options={{ presentation: 'modal', title: t('Welcome'), gestureEnabled: false }} />
         </Stack>
         <NotificationRouting />
         <ReturnAfterLanguageChange />
         <ToastHost />
-        <StatusBar style="auto" />
+        <StatusBar style={dark ? 'light' : 'dark'} />
       </AuthProvider>
     </ThemeProvider>
   );

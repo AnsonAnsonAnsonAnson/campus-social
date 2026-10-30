@@ -1,6 +1,7 @@
 """Draws the app icon set into assets/ (run: python3 scripts/make-icons.py, needs Pillow).
 
-A white event ticket with a sparkle, on the brand purple. Drawn at 4x and
+A white event ticket with a sparkle on the brand cobalt, plus the iOS 18+
+dark and tinted variants. Drawn at 4x and
 downsampled for smooth edges.
 """
 from pathlib import Path
@@ -11,11 +12,13 @@ ASSETS = Path(__file__).resolve().parent.parent / "assets"
 S = 4  # supersampling factor
 N = 1024 * S
 
-PURPLE_TOP = (124, 50, 158)
-PURPLE_BOTTOM = (78, 27, 102)
-PURPLE = (110, 42, 140)
-GOLD = (215, 169, 59)
+# Design system v2: cobalt 500 -> 700 gradient, cobalt 600 sparkle, tangerine 500 dot.
+COBALT_TOP = (61, 99, 255)
+COBALT_BOTTOM = (26, 60, 196)
+COBALT = (36, 80, 240)
+TANGERINE = (255, 111, 15)
 WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
 
 
 def gradient(size):
@@ -24,7 +27,7 @@ def gradient(size):
     for y in range(size):
         for x in range(size):
             t = (x + y) / (2 * size - 2)
-            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(PURPLE_TOP, PURPLE_BOTTOM)) + (255,)
+            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(COBALT_TOP, COBALT_BOTTOM)) + (255,)
     return img
 
 
@@ -42,7 +45,7 @@ def sparkle(draw, cx, cy, r, fill):
     draw.polygon(pts, fill=fill)
 
 
-def ticket_layer(scale, ink=WHITE, star=PURPLE, dot=GOLD, mono=False):
+def ticket_layer(scale, ink=WHITE, star=COBALT, dot=TANGERINE, mono=False):
     """Ticket centred on a transparent N x N canvas. `scale` is ticket width / canvas."""
     layer = Image.new("RGBA", (N, N), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
@@ -89,6 +92,11 @@ bg = gradient(1024).resize((N, N), Image.BICUBIC)
 icon = Image.alpha_composite(bg, ticket_layer(0.66))
 save(icon, "icon.png", mode="RGB")
 save(icon, "favicon.png", size=48, mode="RGB")
+# iOS 18+ home screen: dark mode shows a cobalt ticket on black; tinted mode
+# recolours a greyscale icon, so the ticket is white and the dot mid-grey.
+black = Image.new("RGBA", (N, N), BLACK + (255,))
+save(Image.alpha_composite(black, ticket_layer(0.66, ink=(61, 99, 255), star=BLACK, dot=(255, 138, 61))), "icon-dark.png", mode="RGB")
+save(Image.alpha_composite(black, ticket_layer(0.66, ink=WHITE, star=BLACK, dot=(150, 150, 150))), "icon-tinted.png", mode="RGB")
 save(bg, "android-icon-background.png")
 # Adaptive icons are cropped to a circle/squircle of ~66% of the canvas.
 save(ticket_layer(0.5), "android-icon-foreground.png")

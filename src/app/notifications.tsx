@@ -9,10 +9,10 @@ import { api, errorMessage, invalidate } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { confirmAsync } from '@/lib/dialog';
 import { formatAgo, hkDate, todayHK } from '@/lib/format';
-import { radius, space, type, useColors } from '@/lib/theme';
+import { space, textStyle, type, useColors } from '@/lib/theme';
 import type { AppNotification, NotificationKind } from '@/lib/types';
 import { useQuery } from '@/lib/useQuery';
-import { t } from '@/lib/i18n';
+import { t, useLang } from '@/lib/i18n';
 
 const ICONS: Record<NotificationKind, IconName> = {
   waitlist_promoted: 'ticket',
@@ -21,10 +21,27 @@ const ICONS: Record<NotificationKind, IconName> = {
   new_event: 'sparkles',
   society_approved: 'shield-checkmark',
   committee_added: 'people',
+  membership_active: 'card',
+  membership_renewal: 'refresh',
+  order_update: 'bag-handle',
+  payment_settings_changed: 'warning',
+  product_available: 'pricetag',
+  fair_update: 'storefront',
+};
+
+/** The button under each message, as in the design. Same tap target as the row. */
+const ACTIONS: Partial<Record<NotificationKind, string>> = {
+  waitlist_promoted: 'View ticket',
+  event_updated: 'View event',
+  new_event: 'View event',
+  membership_active: 'Show card',
+  order_update: 'View order',
+  product_available: 'Shop now',
 };
 
 export default function Notifications() {
   const c = useColors();
+  const lang = useLang();
   const { user } = useAuth();
   const q = useQuery(() => api.listNotifications(), [user?.id]);
   // Remember what was unread when the screen opened, so the dots stay visible
@@ -48,6 +65,12 @@ export default function Notifications() {
 
   const open = (n: AppNotification) => {
     if (n.event_id) router.push(`/event/${n.event_id}`);
+    else if (n.kind === 'membership_active') router.navigate({ pathname: '/tickets', params: { tab: 'cards' } });
+    else if (n.kind === 'order_update') router.navigate({ pathname: '/tickets', params: { tab: 'orders' } });
+    else if (n.kind === 'payment_settings_changed' && n.society_id)
+      router.push({ pathname: '/manage/payment-settings', params: { societyId: n.society_id } });
+    else if (n.kind === 'product_available' && n.society_id) router.push({ pathname: '/shop', params: { societyId: n.society_id } });
+    else if (n.kind === 'fair_update' && n.society_id) router.push(`/manage/${n.society_id}`);
     else if (n.kind === 'committee_added' && n.society_id) router.push(`/manage/${n.society_id}`);
     else if (n.society_id) router.push(`/society/${n.society_id}`);
   };
@@ -64,19 +87,24 @@ export default function Notifications() {
 
   return (
     <>
-      <Stack.Screen options={{ title: t('Notifications') }} />
+      <Stack.Screen options={{ title: '', headerShadowVisible: false, headerStyle: { backgroundColor: c.backgroundPlain } }} />
       {q.loading && !q.data ? (
         <ListSkeleton rows={5} />
       ) : q.error && !q.data ? (
         <ErrorView message={q.error} onRetry={q.refresh} />
       ) : (
         <SectionList
-          style={{ backgroundColor: c.background }}
+          style={{ backgroundColor: c.backgroundPlain }}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
           sections={sections}
           keyExtractor={(n) => n.id}
           stickySectionHeadersEnabled={false}
+          ListHeaderComponent={
+            <Text style={[textStyle('largeTitle', lang), styles.bigTitle, { color: c.text }]} accessibilityRole="header">
+              {t('Inbox')}
+            </Text>
+          }
           refreshControl={<RefreshControl refreshing={q.refreshing} onRefresh={q.refresh} />}
           ListEmptyComponent={
             <EmptyState
@@ -88,7 +116,7 @@ export default function Notifications() {
             />
           }
           renderSectionHeader={({ section }) => <Text style={[styles.section, { color: c.textSecondary }]}>{section.title}</Text>}
-          ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
+          ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: c.border }]} />}
           renderItem={({ item }) => {
             const unread = unreadOnOpen.current?.has(item.id) ?? !item.read_at;
             const tappable = !!(item.event_id || item.society_id);
@@ -99,13 +127,13 @@ export default function Notifications() {
                 accessibilityRole={tappable ? 'button' : undefined}
                 accessibilityLabel={`${unread ? t('Unread. ') : ''}${item.title}. ${item.body}. ${formatAgo(item.created_at)}`}
                 accessibilityHint={t('Long press to delete')}
-                style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : c.card }]}>
-                <View style={[styles.icon, { backgroundColor: item.kind === 'event_cancelled' ? c.danger : c.tint }]}>
-                  <Icon name={ICONS[item.kind]} size={18} color="#fff" />
+                style={({ pressed }) => [styles.row, { backgroundColor: pressed ? c.fill : 'transparent' }]}>
+                <View style={[styles.icon, { backgroundColor: item.kind === 'event_cancelled' ? c.dangerSoft : c.tintSoft }]}>
+                  <Icon name={ICONS[item.kind]} size={20} color={item.kind === 'event_cancelled' ? c.dangerText : c.tintText} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <View style={styles.titleRow}>
-                    <Text style={[type.headline, { color: c.text, flex: 1 }]} numberOfLines={1}>
+                    <Text style={[type.headline, { color: c.text, flex: 1, fontWeight: unread ? '700' : '500' }]} numberOfLines={1}>
                       {item.title}
                     </Text>
                     <Text style={[type.footnote, { color: c.textSecondary }]}>{formatAgo(item.created_at)}</Text>
@@ -113,6 +141,13 @@ export default function Notifications() {
                   <Text style={[type.subhead, { color: c.textSecondary, lineHeight: 20 }]} numberOfLines={3}>
                     {item.body}
                   </Text>
+                  {ACTIONS[item.kind] && tappable && (
+                    <View style={[styles.action, { backgroundColor: item.kind === 'waitlist_promoted' ? c.ink : c.fill }]}>
+                      <Text style={{ color: item.kind === 'waitlist_promoted' ? c.onInk : c.text, fontSize: 14, fontWeight: '600' }}>
+                        {t(ACTIONS[item.kind]!)}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 {unread && <View style={[styles.dot, { backgroundColor: c.tint }]} />}
               </Pressable>
@@ -130,11 +165,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: space.md,
-    marginHorizontal: space.lg,
-    padding: space.md,
-    borderRadius: radius.lg,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
   },
-  icon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  sep: { height: StyleSheet.hairlineWidth, marginLeft: space.lg + 40 + space.md },
+  icon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
   dot: { width: 9, height: 9, borderRadius: 5, marginTop: 6 },
+  bigTitle: { marginHorizontal: space.lg, marginTop: space.xs },
+  action: { alignSelf: 'flex-start', marginTop: space.sm, paddingHorizontal: 14, height: 32, borderRadius: 16, justifyContent: 'center' },
 });
