@@ -95,7 +95,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
     // [background, label, pressed background]
     primary: [c.brand, c.onBrand, c.brandPressed],
     secondary: [c.fill, c.text, c.fillStrong],
-    tinted: [c.tintSoft, c.tintText, c.tintSoft],
+    tinted: [c.brand, c.onBrand, c.brandPressed],
     outline: ['transparent', c.textSecondary, 'transparent'],
     plain: ['transparent', c.tintText, 'transparent'],
     destructive: [c.dangerSoft, c.dangerText, c.dangerSoft],
@@ -264,7 +264,7 @@ export function Pill({ label, tone = 'neutral', icon }: { label: string; tone?: 
     success: [c.successSoft, c.successText],
     warning: [c.warningSoft, c.warningText],
     danger: [c.dangerSoft, c.dangerText],
-    brand: [c.tintSoft, c.tintText],
+    brand: [c.brand, c.onBrand],
     info: [c.infoSoft, c.infoText],
     ink: [c.ink, c.onInk],
   }[tone];

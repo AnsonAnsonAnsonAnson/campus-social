@@ -20,7 +20,7 @@ def rgb(hex_):
     return tuple(int(hex_[i : i + 2], 16) for i in (1, 3, 5))
 
 
-# Background gradient, ticket colour, sparkle (brand), dot (accent); dark icon uses `main` for the ticket.
+# Background (`main`, flat; top/bottom are kept for reference), ticket colour, sparkle (brand), dot (accent); dark icon uses `main` for the ticket.
 BRANDS = {
     "lime": dict(top="#C8F35C", bottom="#97C526", main="#B8F02E", ticket="#0A0A0B", dot="#E0186F", dot_dark="#EA3887"),
     "tomato": dict(top="#CE5332", bottom="#A33012", main="#C73B16", ticket="#FFFFFF", dot="#2443B5", dot_dark="#455FC0"),
@@ -43,16 +43,6 @@ TANGERINE = rgb(B["dot"])
 TICKET = rgb(B["ticket"])
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-
-
-def gradient(size):
-    img = Image.new("RGBA", (size, size))
-    px = img.load()
-    for y in range(size):
-        for x in range(size):
-            t = (x + y) / (2 * size - 2)
-            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(COBALT_TOP, COBALT_BOTTOM)) + (255,)
-    return img
 
 
 def sparkle(draw, cx, cy, r, fill):
@@ -113,7 +103,8 @@ def save(img, name, size=1024, mode="RGBA"):
     img.resize((size, size), Image.LANCZOS).convert(mode).save(ASSETS / name)
 
 
-bg = gradient(1024).resize((N, N), Image.BICUBIC)
+# Flat brand colour, no gradient: the palette used as is.
+bg = Image.new("RGBA", (N, N), COBALT + (255,))
 icon = Image.alpha_composite(bg, ticket_layer(0.66))
 save(icon, "icon.png", mode="RGB")
 save(icon, "favicon.png", size=48, mode="RGB")

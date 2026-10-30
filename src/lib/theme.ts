@@ -81,11 +81,7 @@ const BRANDS = {
       text: '#C73B16',
       soft: '#EDCBBC',
       accentText: '#2443B5',
-      paper: '#F6EFE6',
-      grouped: '#EFE8DF',
-      surfaceFill: '#EAE2D9',
-      surfaceBorder: '#DBD3CA',
-      tabBar: '#F6EFE6',
+      covers: ['#C73B16', '#2443B5', '#2A1A12'],
     },
   },
   /** Ultramarine + tangerine (from Lamine rug & armchair). */
@@ -123,11 +119,7 @@ const BRANDS = {
       text: '#2340C8',
       soft: '#CACBE0',
       accentText: '#A84A1C',
-      paper: '#F4EEE6',
-      grouped: '#ECE7E0',
-      surfaceFill: '#E7E1DC',
-      surfaceBorder: '#D7D2D0',
-      tabBar: '#F4EEE6',
+      covers: ['#2340C8', '#F06A28', '#14183A'],
     },
   },
   /** Rocket cherry + butter (from Rocket 'Meet wet food'). */
@@ -165,11 +157,7 @@ const BRANDS = {
       text: '#B8281D',
       soft: '#EAC7BB',
       accentText: '#796127',
-      paper: '#F7EFE2',
-      grouped: '#F0E7DB',
-      surfaceFill: '#ECE2D5',
-      surfaceBorder: '#DED2C6',
-      tabBar: '#F7EFE2',
+      covers: ['#B8281D', '#3A120D'],
     },
   },
   /** Periwinkle + tomato (from Taily Tales / Rocket blue). */
@@ -207,11 +195,7 @@ const BRANDS = {
       text: '#3B5FC6',
       soft: '#CAD5EF',
       accentText: '#C04624',
-      paper: '#EEF2F9',
-      grouped: '#E7EBF3',
-      surfaceFill: '#E1E6EE',
-      surfaceBorder: '#D3D7E1',
-      tabBar: '#EEF2F9',
+      covers: ['#3B5FC6', '#E2522A', '#1C2440'],
     },
   },
   /** Deep teal + rust (from Rocket husky sofa). */
@@ -249,11 +233,7 @@ const BRANDS = {
       text: '#13505C',
       soft: '#C6CCC6',
       accentText: '#AA4924',
-      paper: '#F3EBE0',
-      grouped: '#EBE4DA',
-      surfaceFill: '#E5DFD5',
-      surfaceBorder: '#D5D1C8',
-      tabBar: '#F3EBE0',
+      covers: ['#13505C', '#C8562A', '#0B2328'],
     },
   },
   /** Butter + cobalt (from Rocket poolside). */
@@ -291,12 +271,8 @@ const BRANDS = {
       text: '#856F2A',
       soft: '#F9EDCA',
       accentText: '#2443B5',
-      paper: '#FBF6EA',
-      grouped: '#F4EFE3',
-      surfaceFill: '#EFE9DD',
-      surfaceBorder: '#E0DBCE',
-      tabBar: '#FBF6EA',
       tintPressed: '#4B4537',
+      covers: ['#2443B5', '#2B2414'],
     },
   },
   /** Pool blue + lemon (from Rocket poolside / YOA). */
@@ -334,11 +310,7 @@ const BRANDS = {
       text: '#1F6FC0',
       soft: '#C8DBEE',
       accentText: '#7A6823',
-      paper: '#F2F6FA',
-      grouped: '#EAEFF4',
-      surfaceFill: '#E4EAEF',
-      surfaceBorder: '#D4DBE2',
-      tabBar: '#F2F6FA',
+      covers: ['#1F6FC0', '#0F2A45'],
     },
   },
   /** Oxblood + oat (from Rocket red, Lamine cream). */
@@ -376,11 +348,7 @@ const BRANDS = {
       text: '#7C1D14',
       soft: '#DDC3B7',
       accentText: '#826240',
-      paper: '#F5ECE0',
-      grouped: '#EEE4D9',
-      surfaceFill: '#E9DFD3',
-      surfaceBorder: '#DBCFC4',
-      tabBar: '#F5ECE0',
+      covers: ['#7C1D14', '#2A0E0A'],
     },
   },
   /** Strawberry milk + sky (from YOA milk). */
@@ -418,12 +386,8 @@ const BRANDS = {
       text: '#B84668',
       soft: '#F4D1DB',
       accentText: '#446BA3',
-      paper: '#FBF1F3',
-      grouped: '#F4E9EC',
-      surfaceFill: '#EFE4E6',
-      surfaceBorder: '#E2D5D8',
-      tabBar: '#FBF1F3',
       tintPressed: '#583943',
+      covers: ['#D9527A', '#5B8FD9', '#3A1622'],
     },
   },
   /** Cobalt + cherry (from Lamine + Rocket). */
@@ -461,11 +425,7 @@ const BRANDS = {
       text: '#2A3FAF',
       soft: '#CCCDDE',
       accentText: '#B12A1F',
-      paper: '#F5F1EA',
-      grouped: '#EDE9E4',
-      surfaceFill: '#E8E4DF',
-      surfaceBorder: '#D8D5D3',
-      tabBar: '#F5F1EA',
+      covers: ['#2A3FAF', '#B12A1F', '#141A3A'],
     },
   },
   /** Electric cobalt with tangerine: the v2 design colours. */
@@ -516,6 +476,8 @@ const roles: {
   soft?: string;
   text?: string;
   accentText?: string;
+  /** Flat cover and logo colours, drawn from the palette, instead of the per-category colours. */
+  covers?: readonly string[];
   /** Warm paper instead of white for feed screens, with matching grouped, fill, border and tab bar. */
   paper?: string;
   grouped?: string;
@@ -797,6 +759,15 @@ export const avatarArt: Record<AvatarFamily, { light: readonly [string, string];
   Slate: { light: ['#EDEDF0', '#48484A'], dark: ['#2C2C2E', '#C7C7CC'], cover: '#52525B' },
 };
 
+// A palette with its own cover colours paints society logos solid in them too, with white initials.
+if (roles.covers?.length) {
+  const covers = roles.covers;
+  (Object.keys(avatarArt) as AvatarFamily[]).forEach((f, i) => {
+    const color = covers[i % covers.length];
+    avatarArt[f] = { light: [color, '#FFFFFF'], dark: [color, '#FFFFFF'], cover: color };
+  });
+}
+
 /** Society category → avatar family. Faith and Other share Slate; the initials tell them apart. */
 export const societyFamily: Record<string, AvatarFamily> = {
   Academic: 'Ocean',
@@ -848,6 +819,10 @@ export function coverVariant(seed: string): 'corner' | 'topRight' | 'tilted' {
  */
 export function coverFor(category: string | null | undefined, seed: string, dark: boolean) {
   const event = category ? categoryArt[category] : undefined;
+  if (roles.covers?.length) {
+    const icon = event?.icon ?? ((category && SOCIETY_ICONS[category]) || 'sparkles-outline');
+    return { color: roles.covers[hash(category || seed) % roles.covers.length], icon };
+  }
   if (event) return { color: dark ? event.coverDark : event.cover, icon: event.icon };
   const family = familyFor(category, seed);
   return { color: avatarArt[family].cover, icon: (category && SOCIETY_ICONS[category]) || 'sparkles-outline' };

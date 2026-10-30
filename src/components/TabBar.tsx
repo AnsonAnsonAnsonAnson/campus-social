@@ -30,7 +30,7 @@ type Item = { key: string; name: string; label: string; focused: boolean; badge?
 
 /**
  * The bottom tab bar from the design: five line icons with labels, the brand
- * colour and a soft brand pill for the current tab, translucent white with a hairline on top.
+ * colour and a solid brand pill for the current tab, translucent white with a hairline on top.
  */
 function TabBarView({ items }: { items: Item[] }) {
   const c = useColors();
@@ -47,7 +47,7 @@ function TabBarView({ items }: { items: Item[] }) {
         },
       ]}>
       {items.map((item) => {
-        const color = item.focused ? c.tint : palette.neutral[500];
+        const color = item.focused ? c.tintText : palette.neutral[500];
         return (
           <Pressable
             key={item.key}
@@ -57,11 +57,11 @@ function TabBarView({ items }: { items: Item[] }) {
             accessibilityState={{ selected: item.focused }}
             accessibilityLabel={item.label}
             style={styles.item}>
-            <View style={[styles.pill, item.focused && { backgroundColor: c.tintSoft }]}>
+            <View style={[styles.pill, item.focused && { backgroundColor: c.brand }]}>
               <Svg width={25} height={25} viewBox="0 0 24 24" fill="none">
                 <Path
                   d={ICONS[item.name] ?? ICONS.discover}
-                  stroke={color}
+                  stroke={item.focused ? c.onBrand : color}
                   strokeWidth={item.focused ? 2.2 : 1.8}
                   strokeLinecap="round"
                   strokeLinejoin="round"
