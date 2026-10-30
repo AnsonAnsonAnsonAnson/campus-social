@@ -233,6 +233,11 @@ function EventsSection({
             />
           )}
           <ListRow
+            icon="megaphone-outline"
+            title={t('Write a post')}
+            onPress={() => router.push({ pathname: '/manage/post-form', params: { societyId } })}
+          />
+          <ListRow
             icon="people-outline"
             title={t('Committee')}
             onPress={() => router.push({ pathname: '/manage/members', params: { societyId } })}

@@ -234,3 +234,38 @@ it('runs a fair: booths, presale on its own, vouchers used a few at a time, sale
   expect((await api.getFair(own.id))!.booths.find((b) => b.id === request.id)).toMatchObject({ status: 'approved', label: 'E3' });
   expect((await api.fairSales(own.id)).some((s) => s.booth === 'E3')).toBe(true);
 });
+
+it('lets the committee post, pin one post and take reports down', async () => {
+  const before = await api.listPosts(CODING_SOCIETY);
+  expect(before[0].pinned).toBe(true);
+  const id = await api.savePost({
+    society_id: CODING_SOCIETY,
+    body: '  Slides from tonight are up  ',
+    image_urls: [],
+    event_id: eid(9),
+    pinned: true,
+  });
+  const posts = await api.listPosts(CODING_SOCIETY);
+  expect(posts[0]).toMatchObject({ id, body: 'Slides from tonight are up', pinned: true, event: { id: eid(9) } });
+  expect(posts.filter((p) => p.pinned)).toHaveLength(1);
+  // Only the society's own events can be promoted.
+  await expect(api.savePost({ society_id: CODING_SOCIETY, body: 'Hi', image_urls: [], event_id: eid(1), pinned: false })).rejects.toThrow();
+  // Not the demo user's society.
+  await expect(
+    api.savePost({ society_id: '10000000-0000-4000-8000-000000000001', body: 'Hi', image_urls: [], event_id: null, pinned: false }),
+  ).rejects.toThrow();
+
+  await api.setPostLiked(id, true);
+  await api.setPostLiked(id, true);
+  expect((await api.getPost(id))?.like_count).toBe(1);
+  expect(await api.myLikedPostIds([id])).toEqual([id]);
+
+  await api.report('post', id, 'Spam or scam');
+  const report = (await api.openReports()).find((r) => r.target_id === id)!;
+  expect(report.target_name).toBe('CU Coding Society: Slides from tonight are up');
+  await api.resolveReport(report.id, 'removed');
+  // The committee still sees it, marked as taken down and no longer pinned.
+  expect(await api.getPost(id)).toMatchObject({ pinned: false, removed_at: expect.any(String) });
+  await api.deletePost(id);
+  expect(await api.getPost(id)).toBeNull();
+});

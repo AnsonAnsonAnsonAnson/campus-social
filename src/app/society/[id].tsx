@@ -6,6 +6,7 @@ import { ActionSheetIOS, Platform, Pressable, RefreshControl, ScrollView, Share,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EventRow } from '@/components/EventCard';
+import { PostCard } from '@/components/PostCard';
 import { ProductRow } from '@/components/ProductCard';
 import { VerifiedBadge } from '@/components/Glyph';
 import { FollowButton } from '@/components/SocietyRow';
@@ -38,13 +39,13 @@ export default function SocietyScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const c = useColors();
   const { user, requireSignIn, hiddenIds, setHidden } = useAuth();
-  const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [picked, setTab] = useState<'posts' | 'upcoming' | 'past' | null>(null);
   const [expanded, setExpanded] = useState(false);
   const insets = useSafeAreaInsets();
 
   const q = useQuery(async () => {
     const now = new Date().toISOString();
-    const [society, upcoming, past, mine, plans, products, memberships] = await Promise.all([
+    const [society, upcoming, past, mine, plans, products, memberships, posts] = await Promise.all([
       api.getSociety(id),
       api.listEvents({ societyIds: [id], from: now }),
       api.listEvents({ societyIds: [id], to: now }),
@@ -52,7 +53,9 @@ export default function SocietyScreen() {
       api.listPlans(id),
       api.listProducts(id),
       api.myMemberships(),
+      api.listPosts(id),
     ]);
+    const liked = new Set(await api.myLikedPostIds(posts.map((p) => p.id)));
     const today = todayHK();
     return {
       society,
@@ -65,6 +68,8 @@ export default function SocietyScreen() {
       plan: plans.find((p) => p.is_open && p.valid_until >= today) ?? null,
       products: products.filter((p) => p.status === 'published'),
       membership: memberships.find((m) => m.society_id === id) ?? null,
+      posts,
+      liked,
     };
   }, [id, user?.id]);
 
@@ -108,7 +113,11 @@ export default function SocietyScreen() {
       ]);
   };
 
+  const { posts, liked, isCommittee } = q.data!;
+  // Open on the posts when there are any; a committee lands there to write the first one.
+  const tab = picked ?? (posts.length || isCommittee ? 'posts' : 'upcoming');
   const list = tab === 'upcoming' ? q.data!.upcoming : q.data!.past;
+  const newPost = () => router.push({ pathname: '/manage/post-form', params: { societyId: s.id } });
 
   return shell(
     <ScrollView
@@ -157,7 +166,7 @@ export default function SocietyScreen() {
           <View style={{ flex: 1 }}>
             <FollowButton societyId={s.id} small={false} style={styles.headerAction} />
           </View>
-          {q.data?.isCommittee && (
+          {isCommittee && (
             <Button
               title={t('Manage')}
               icon="options-outline"
@@ -259,22 +268,67 @@ export default function SocietyScreen() {
           value={tab}
           onChange={setTab}
           tabs={[
+            { value: 'posts', label: t('Posts') },
             { value: 'upcoming', label: `${t('Upcoming')} · ${q.data!.upcoming.length}` },
             { value: 'past', label: t('Past events') },
           ]}
         />
       </View>
-      <View style={{ gap: 14, marginTop: 14 }}>
-        {list.length ? (
-          list.map((e) => <EventRow key={e.id} event={e} compact />)
-        ) : (
-          <EmptyState
-            icon="calendar-outline"
-            title={tab === 'upcoming' ? t('No upcoming events') : t('No past events yet')}
-            body={tab === 'upcoming' ? t('Follow this society to see new events first.') : undefined}
-          />
-        )}
-      </View>
+      {tab === 'posts' ? (
+        <View>
+          {isCommittee && (
+            <Pressable
+              onPress={newPost}
+              accessibilityRole="button"
+              accessibilityLabel={t('Write a post')}
+              style={({ pressed }) => [styles.composer, { borderBottomColor: c.border, opacity: pressed ? 0.7 : 1 }]}>
+              <SocietyAvatar name={s.name} uri={s.logo_url} size={40} category={s.category} />
+              <View style={[styles.composerField, { backgroundColor: c.fill }]}>
+                <Text style={{ color: c.textSecondary, fontSize: 15 }} numberOfLines={1}>
+                  {t('Share an update with your followers…')}
+                </Text>
+              </View>
+              <Icon name="image-outline" size={22} color={c.textSecondary} />
+            </Pressable>
+          )}
+          {posts.length ? (
+            posts.map((p) => (
+              <PostCard
+                key={`${p.id}:${p.like_count}:${liked.has(p.id)}`}
+                post={p}
+                liked={liked.has(p.id)}
+                canManage={isCommittee}
+                showSociety={false}
+              />
+            ))
+          ) : (
+            <View style={{ marginTop: 14 }}>
+              <EmptyState
+                icon="megaphone-outline"
+                title={t('No posts yet')}
+                body={
+                  isCommittee
+                    ? t('Share news, photos and event promos. Followers see them here.')
+                    : t('Updates from {name} will show up here.', { name: s.short_name ?? s.name })
+                }
+                action={isCommittee ? <Button small title={t('Write a post')} icon="add" onPress={newPost} /> : undefined}
+              />
+            </View>
+          )}
+        </View>
+      ) : (
+        <View style={{ gap: 14, marginTop: 14 }}>
+          {list.length ? (
+            list.map((e) => <EventRow key={e.id} event={e} compact />)
+          ) : (
+            <EmptyState
+              icon="calendar-outline"
+              title={tab === 'upcoming' ? t('No upcoming events') : t('No past events yet')}
+              body={tab === 'upcoming' ? t('Follow this society to see new events first.') : undefined}
+            />
+          )}
+        </View>
+      )}
     </ScrollView>,
   );
 }
@@ -371,5 +425,14 @@ const styles = StyleSheet.create({
     marginHorizontal: space.lg,
     marginTop: space.lg,
   },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  composerField: { flex: 1, height: 40, borderRadius: radius.pill, justifyContent: 'center', paddingHorizontal: space.lg },
   joinIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 });

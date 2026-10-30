@@ -44,6 +44,8 @@ import type {
   Profile,
   Registration,
   ReportTarget,
+  PostInput,
+  SocietyPost,
   ReviewStatus,
   Society,
   SocietyInput,
@@ -86,6 +88,9 @@ export interface Backend {
   listSocieties(q: { search?: string; category?: string }): Promise<Society[]>;
   getSociety(id: string): Promise<Society | null>;
   listCampusDates(fromDay: string, toDay: string): Promise<CampusDate[]>;
+  /** A society's posts, pinned first, then newest. The committee also sees posts moderators took down. */
+  listPosts(societyId: string): Promise<SocietyPost[]>;
+  getPost(id: string): Promise<SocietyPost | null>;
 
   // Signed-in student
   myFollowIds(): Promise<string[]>;
@@ -96,6 +101,9 @@ export interface Backend {
   /** Events this person saved for later (private to them). */
   mySavedEventIds(): Promise<string[]>;
   setEventSaved(eventId: string, saved: boolean): Promise<void>;
+  /** Which of these posts this person liked (private to them). */
+  myLikedPostIds(postIds: string[]): Promise<string[]>;
+  setPostLiked(postId: string, liked: boolean): Promise<void>;
   myTickets(): Promise<Ticket[]>;
   myRegistration(eventId: string): Promise<MyRegistration | null>;
   waitlistPosition(eventId: string): Promise<number>;
@@ -118,6 +126,10 @@ export interface Backend {
   updateSociety(id: string, patch: SocietyPatch): Promise<void>;
   saveEvent(input: EventInput): Promise<string>;
   deleteEvent(id: string): Promise<void>;
+  /** Creates or edits a post. Pinning one unpins the society's other posts. */
+  savePost(input: PostInput): Promise<string>;
+  setPostPinned(id: string, pinned: boolean): Promise<void>;
+  deletePost(id: string): Promise<void>;
   listAttendees(eventId: string): Promise<Attendee[]>;
   checkIn(eventId: string, ticketCode: string): Promise<CheckInResult>;
   /** Manual check-in (or undo) from the attendee list. */
@@ -234,7 +246,7 @@ export interface Backend {
   /** Mark a major event so it leads "Most anticipated" (this week / month) on Discover. */
   setEventFeatured(id: string, featured: boolean): Promise<void>;
   openReports(): Promise<OpenReport[]>;
-  /** 'removed' takes the reported event down (or rejects the society / banner). */
+  /** 'removed' takes the reported event or post down (or rejects the society / banner). */
   resolveReport(id: string, action: 'dismissed' | 'removed'): Promise<void>;
 }
 

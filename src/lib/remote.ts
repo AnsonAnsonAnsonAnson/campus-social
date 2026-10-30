@@ -36,6 +36,7 @@ import type {
   Registration,
   Society,
   SocietyMember,
+  SocietyPost,
   Ticket,
   TicketOrder,
 } from './types';
@@ -67,6 +68,7 @@ if (supabase && Platform.OS !== 'web') {
 const SOCIETY_SUMMARY = 'id, name, short_name, logo_url, verified, college';
 const SOCIETY_CARD = `${SOCIETY_SUMMARY}, category`;
 const EVENT_WITH_SOCIETY = `*, society:societies!inner(${SOCIETY_SUMMARY})`;
+const POST_FIELDS = `*, society:societies!inner(${SOCIETY_CARD}), event:events(id, title, starts_at, ends_at, location, cover_url, category, status)`;
 const TICKET_ORDER = 'orders(id, ref, status, total_hkd, expires_at, payment_method, member_price, receipt_at, created_at)';
 
 /** Registrations come back with every order they ever had; keep the one that counts. */
@@ -197,6 +199,22 @@ export const remoteBackend: Backend = {
     return check(await db().from('campus_dates').select('*').lte('starts_on', to).gte('ends_on', from).order('starts_on')) as CampusDate[];
   },
 
+  async listPosts(societyId) {
+    return check(
+      await db()
+        .from('society_posts')
+        .select(POST_FIELDS)
+        .eq('society_id', societyId)
+        .order('pinned', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(50),
+    ) as SocietyPost[];
+  },
+
+  async getPost(id) {
+    return check(await db().from('society_posts').select(POST_FIELDS).eq('id', id).maybeSingle()) as SocietyPost | null;
+  },
+
   async myHiddenSocietyIds() {
     if (!(await currentUser())) return [];
     const rows = check(await db().from('society_blocks').select('society_id'));
@@ -237,6 +255,20 @@ export const remoteBackend: Backend = {
       if (error && error.code !== '23505') throw new Error(error.message);
     } else {
       check(await db().from('saved_events').delete().eq('event_id', eventId));
+    }
+  },
+  async myLikedPostIds(postIds) {
+    if (!postIds.length || !(await currentUser())) return [];
+    const rows = check(await db().from('post_likes').select('post_id').in('post_id', postIds));
+    return (rows ?? []).map((r: { post_id: string }) => r.post_id);
+  },
+  async setPostLiked(postId, liked) {
+    await requireUserId();
+    if (liked) {
+      const { error } = await db().from('post_likes').insert({ post_id: postId });
+      if (error && error.code !== '23505') throw new Error(error.message);
+    } else {
+      check(await db().from('post_likes').delete().eq('post_id', postId));
     }
   },
   async myTickets() {
@@ -331,6 +363,27 @@ export const remoteBackend: Backend = {
         .single(),
     );
     return (row as { id: string }).id;
+  },
+  async savePost(input) {
+    const { id, society_id, ...fields } = input;
+    if (id) {
+      check(await db().from('society_posts').update(fields).eq('id', id));
+      return id;
+    }
+    const row = check(
+      await db()
+        .from('society_posts')
+        .insert({ society_id, ...fields })
+        .select('id')
+        .single(),
+    );
+    return (row as { id: string }).id;
+  },
+  async setPostPinned(id, pinned) {
+    check(await db().from('society_posts').update({ pinned }).eq('id', id));
+  },
+  async deletePost(id) {
+    check(await db().from('society_posts').delete().eq('id', id));
   },
   async deleteEvent(id) {
     check(await db().from('events').delete().eq('id', id));

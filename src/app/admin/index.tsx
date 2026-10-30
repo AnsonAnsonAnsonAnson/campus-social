@@ -18,6 +18,7 @@ const takeDownLabel = (type: OpenReport['target_type']) =>
     event: t('Hide event'),
     society: t('Reject society'),
     banner: t('Pull banner'),
+    post: t('Hide post'),
   })[type];
 
 /** Review queue for the app team: reports, new societies and banner requests. */
@@ -66,6 +67,7 @@ export default function Admin() {
   const view = (r: OpenReport) => {
     if (r.target_type === 'event') router.push(`/event/${r.target_id}`);
     else if (r.target_type === 'society') router.push(`/society/${r.target_id}`);
+    else if (r.target_type === 'post') router.push(`/post/${r.target_id}`);
   };
 
   if (q.loading) return <ListSkeleton rows={4} />;
