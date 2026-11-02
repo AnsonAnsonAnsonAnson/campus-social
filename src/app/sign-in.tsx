@@ -125,10 +125,12 @@ export default function SignIn() {
               <Field
                 label={t('CUHK email')}
                 placeholder="1155xxxxxx@link.cuhk.edu.hk"
-                value={email}
+                // Uncontrolled: a controlled email field drops or repeats letters on iOS when typing quickly.
+                defaultValue={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 autoCorrect={false}
+                spellCheck={false}
                 keyboardType="email-address"
                 textContentType="emailAddress"
                 autoComplete="email"
@@ -149,10 +151,12 @@ export default function SignIn() {
             <>
               <Field
                 label={t('Email')}
-                value={email}
+                // Uncontrolled: a controlled email field drops or repeats letters on iOS when typing quickly.
+                defaultValue={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 autoCorrect={false}
+                spellCheck={false}
                 keyboardType="email-address"
                 textContentType="username"
               />
