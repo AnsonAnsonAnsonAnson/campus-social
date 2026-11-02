@@ -1,4 +1,4 @@
-import { router, Stack } from 'expo-router';
+import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -89,7 +89,6 @@ export default function SignIn() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.backgroundPlain }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.top, { paddingTop: Math.max(insets.top, space.md) }]}>
         <Pressable
           onPress={step === 'email' ? close : () => setStep('email')}
@@ -125,10 +124,12 @@ export default function SignIn() {
               <Field
                 label={t('CUHK email')}
                 placeholder="1155xxxxxx@link.cuhk.edu.hk"
-                value={email}
+                // Uncontrolled: a controlled email field drops or repeats letters on iOS when typing quickly.
+                defaultValue={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 autoCorrect={false}
+                spellCheck={false}
                 keyboardType="email-address"
                 textContentType="emailAddress"
                 autoComplete="email"
@@ -149,10 +150,12 @@ export default function SignIn() {
             <>
               <Field
                 label={t('Email')}
-                value={email}
+                // Uncontrolled: a controlled email field drops or repeats letters on iOS when typing quickly.
+                defaultValue={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 autoCorrect={false}
+                spellCheck={false}
                 keyboardType="email-address"
                 textContentType="username"
               />

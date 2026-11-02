@@ -84,7 +84,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="society/[id]" options={{ headerShown: false }} />
-          <Stack.Screen name="sign-in" options={{ presentation: 'modal', title: t('Sign in') }} />
+          <Stack.Screen name="sign-in" options={{ presentation: 'modal', headerShown: false }} />
           <Stack.Screen name="edit-profile" options={{ presentation: 'modal', title: t('Edit profile') }} />
           <Stack.Screen name="new-society" options={{ presentation: 'modal', title: t('Register a society') }} />
           <Stack.Screen name="report" options={{ presentation: 'formSheet', title: t('Report'), sheetAllowedDetents: [0.6, 1] }} />
